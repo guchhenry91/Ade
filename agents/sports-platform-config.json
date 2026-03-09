@@ -1,0 +1,179 @@
+{
+  "platform": "multi-league-analytics-and-betting-intelligence",
+  "competitions": {
+    "soccer": ["English Premier League", "UEFA Champions League", "La Liga"],
+    "basketball": ["NBA"],
+    "american_football": ["NFL"]
+  },
+  "prediction_model": {
+    "type": "multi-factor",
+    "core_metrics": [
+      "team Elo ratings",
+      "power rankings",
+      "recent form",
+      "player availability",
+      "coaching tendencies",
+      "statistical efficiency",
+      "betting market signals"
+    ],
+    "soccer_factors": [
+      "expected goals (xG)",
+      "expected goals conceded",
+      "team form (last 5 matches)",
+      "home vs away performance",
+      "head-to-head statistics",
+      "injuries and suspensions",
+      "possession metrics",
+      "shot creation metrics",
+      "defensive structure",
+      "expected possession value (EPV)"
+    ],
+    "nba_factors": [
+      "offensive rating",
+      "defensive rating",
+      "pace",
+      "player efficiency rating (PER)",
+      "lineup efficiency",
+      "team net rating",
+      "recent form (last 5 games)",
+      "home vs away performance",
+      "injury reports"
+    ],
+    "nfl_factors": [
+      "offensive efficiency",
+      "defensive efficiency",
+      "quarterback metrics",
+      "yards per play",
+      "red zone efficiency",
+      "injury reports",
+      "recent form",
+      "head-to-head results",
+      "team power rankings"
+    ]
+  },
+  "outputs": {
+    "prediction_report": "workspace/sports-predictions/YYYY-MM-DD.md",
+    "betting_report": "workspace/sports-betting/YYYY-MM-DD.md",
+    "telegram_summary_fields": [
+      "match/game",
+      "predicted winner",
+      "win probability",
+      "confidence score",
+      "detected value opportunity"
+    ]
+  },
+  "live_monitoring": {
+    "pre_publish_validation": {
+      "required": true,
+      "scope": "all supported sports predictions",
+      "sources": [
+        "official league injury/suspension reports",
+        "official team availability reports",
+        "confirmed starting lineups/depth charts",
+        "trusted beat/news updates"
+      ],
+      "sport_specific_sources": {
+        "NBA": ["nba.com injury report", "official team status reports", "confirmed starting lineups"],
+        "NFL": ["official NFL/game status reports", "inactives list", "depth chart updates"],
+        "EPL/UCL/La Liga": ["official club team news", "confirmed XI announcements", "suspension lists"]
+      },
+      "rule": "Do not include unavailable/out players or invalid team assumptions; re-run model after availability checks before publish."
+    },
+    "watch_items": [
+      "injuries",
+      "starting lineups",
+      "team news",
+      "roster changes",
+      "coaching announcements",
+      "suspension news",
+      "betting line movement",
+      "sharp betting activity",
+      "weather conditions for NFL games"
+    ],
+    "on_significant_change": [
+      "recalculate predictions",
+      "update probability models",
+      "notify Commander"
+    ]
+  },
+  "betting_intelligence": {
+    "tracks": [
+      "opening odds",
+      "line movement",
+      "sharp vs public trends",
+      "implied probability",
+      "model vs market value gaps"
+    ],
+    "detects": [
+      "value bets",
+      "unusual odds movement",
+      "sharp money indicators"
+    ],
+    "flag_rule": "If model probability differs significantly from sportsbook implied probability, flag Potential Value Opportunity",
+    "required_output_fields": [
+      "event",
+      "sportsbook odds",
+      "model probability",
+      "implied probability",
+      "value edge percentage",
+      "recommended lean"
+    ],
+    "requires_commander_approval": true
+  },
+  "commander_supervision": {
+    "review_if_confidence_below": 60,
+    "verify_unusual_prediction_changes": true,
+    "confirm_betting_signals": true,
+    "log_path": "workspace/agents/commander-status.md",
+    "telegram_notify_important_updates": true
+  },
+  "continuous_monitoring": {
+    "enabled": true,
+    "principles": [
+      "accuracy",
+      "transparency",
+      "probability-based reasoning"
+    ]
+  },
+  "player_prop_modeling": {
+    "soccer_anytime_scorer": {
+      "required_inputs": [
+        "season goals per game",
+        "last 5 and last 10 form",
+        "xG and non-penalty xG",
+        "shots on target per 90",
+        "team attacking involvement share",
+        "expected minutes/starting status"
+      ],
+      "output_fields": [
+        "anytime scorer probability",
+        "shots on target projection",
+        "confidence rating",
+        "value edge vs market implied probability"
+      ]
+    },
+    "nba_player_props": {
+      "required_inputs": [
+        "season averages (points, rebounds, 3PM)",
+        "last 5 and last 10 game form",
+        "home/away splits",
+        "projected minutes and usage",
+        "opponent matchup profile",
+        "confirmed availability/starting status"
+      ],
+      "output_fields": [
+        "points over probability",
+        "rebounds over probability",
+        "three-pointers made over probability",
+        "confidence rating",
+        "value edge vs implied probability"
+      ],
+      "rule": "Include player probabilities for points, rebounds, and three-pointers in NBA reports when player data is requested."
+    }
+  },
+  "performance_memory": {
+    "enabled": true,
+    "path": "workspace/agents/performance-memory/",
+    "policy": "After each game, log prediction outcome, calibration error, and key miss/hit reasons; use logs to recalibrate next-game probabilities."
+  }
+}

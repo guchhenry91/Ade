@@ -1,0 +1,28 @@
+http:
+  routers:
+    mission:
+      rule: "Host(`mission.henryopenclaw.cloud`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: mission-service
+
+    canvas:
+      rule: "Host(`canvas.henryopenclaw.cloud`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: canvas-service
+
+  services:
+    mission-service:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8787"
+
+    canvas-service:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:18789"

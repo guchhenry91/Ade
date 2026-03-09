@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "web-research-assistant": {
+      "version": "0.1.0",
+      "installedAt": 1773035475473
+    },
+    "deep-scraper": {
+      "version": "1.0.1",
+      "installedAt": 1773035477077
+    },
+    "clawdbot-filesystem": {
+      "version": "1.0.2",
+      "installedAt": 1773035478300
+    },
+    "social-media-scheduler": {
+      "version": "1.0.0",
+      "installedAt": 1773040265194
+    },
+    "moltguard": {
+      "version": "6.7.23",
+      "installedAt": 1773040269011
+    },
+    "system-resource-monitor": {
+      "version": "1.0.0",
+      "installedAt": 1773040270662
+    }
+  }
+}

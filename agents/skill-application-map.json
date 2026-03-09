@@ -1,0 +1,79 @@
+{
+  "global": {
+    "applies_to": [
+      "Commander Agent",
+      "Sports Prediction Agent",
+      "Betting Intelligence Agent",
+      "TikTok Content Agent",
+      "Job Research Agent",
+      "Temporary Specialist Agents"
+    ],
+    "skills": [
+      "strategic_planning",
+      "continuous_monitoring",
+      "trend_intelligence",
+      "performance_memory",
+      "dynamic_agent_creation",
+      "risk_analysis",
+      "smart_scheduler",
+      "system_self_healing",
+      "mission_control_insight",
+      "decision_escalation",
+      "soccer_analyzer",
+      "web_research_intelligence",
+      "data_extraction_scraper",
+      "workspace_file_manager",
+      "social_media_content_tools",
+      "system_security_guard",
+      "system_health_monitor"
+    ]
+  },
+  "commander_enforcement": {
+    "enforces": true,
+    "rules": {
+      "escalate_if_confidence_below": 60,
+      "escalate_on_conflicting_signals": true,
+      "escalate_on_security_or_financial_action": true,
+      "require_approval_before_execution": true
+    },
+    "dynamic_specialists": {
+      "soccer_analyzer": {
+        "spawnable": true,
+        "mode": "temporary",
+        "integrates_with": [
+          "Sports Prediction Agent",
+          "Betting Intelligence Agent",
+          "Commander Agent"
+        ]
+      }
+    }
+  },
+  "proactive_intelligence_layer": {
+    "enabled": true,
+    "config": "workspace/agents/proactive-intelligence-layer.json"
+  },
+  "specialist_agent_factory": {
+    "enabled": true,
+    "config": "workspace/agents/specialist-agent-factory.json"
+  },
+  "mission_control_insight": {
+    "telemetry_fields": [
+      "active_agents",
+      "current_tasks",
+      "task_progress",
+      "pending_approvals",
+      "system_health",
+      "logs_and_alerts"
+    ],
+    "dashboard_source": "workspace/mission-control/server.py"
+  },
+  "performance_memory_path": "workspace/agents/performance-memory/",
+  "complementary_skill_sources": {
+    "web_research_intelligence": "skills/web-research-assistant",
+    "data_extraction_scraper": "skills/deep-scraper",
+    "workspace_file_manager": "skills/clawdbot-filesystem",
+    "social_media_content_tools": "skills/social-media-scheduler",
+    "system_security_guard": "skills/moltguard",
+    "system_health_monitor": "skills/system-resource-monitor"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "scheduling": {
+    "sports_prediction_agent": {
+      "tasks": [
+        "detect upcoming games",
+        "run prediction analysis 1-2 hours before kickoff/tip-off",
+        "monitor late-breaking news",
+        "update predictions dynamically"
+      ],
+      "cron_profiles": [
+        "0 6 * * * daily model recalibration + feature refresh",
+        "*/15 * * * * pre-event scan and event-timer checks",
+        "*/10 * * * * live news monitor"
+      ]
+    },
+    "betting_intelligence_agent": {
+      "tasks": [
+        "monitor odds movement continuously",
+        "evaluate model vs market gaps",
+        "publish value opportunities for Commander review"
+      ],
+      "cron_profiles": [
+        "*/30 * * * * odds intelligence cycle"
+      ]
+    },
+    "commander_supervisor": {
+      "tasks": [
+        "review predictions below 60% confidence",
+        "verify unusual line/model changes",
+        "approve or reject betting signals",
+        "log decisions and notify Telegram when important"
+      ],
+      "cron_profiles": [
+        "*/15 * * * * supervision/approval cycle"
+      ]
+    }
+  }
+}

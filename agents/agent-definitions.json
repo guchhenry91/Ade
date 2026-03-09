@@ -1,0 +1,39 @@
+{
+  "version": "1.0",
+  "supervision": {
+    "commanderAgent": "Commander Agent",
+    "rulesPreserved": true
+  },
+  "agents": [
+    {
+      "name": "Commander Agent",
+      "role": "Supervises worker agents, validates low-confidence outputs, verifies anomalies, approves betting signals, and publishes Telegram updates",
+      "status": "active"
+    },
+    {
+      "name": "Sports Prediction Agent",
+      "role": "Runs multi-factor predictions for EPL, UEFA Champions League, La Liga, NBA, NFL; performs dynamic updates on breaking news",
+      "status": "active"
+    },
+    {
+      "name": "Betting Intelligence Agent",
+      "role": "Monitors odds markets, detects value gaps, tracks line movement, and submits recommendations for Commander approval",
+      "status": "active"
+    },
+    {
+      "name": "TikTok Content Agent",
+      "role": "Generates daily TikTok scripts/production outputs",
+      "status": "active"
+    },
+    {
+      "name": "Faceless TikTok Growth Agent",
+      "role": "Builds high-retention faceless TikTok concepts, hooks, shotlists, captions, and posting experiments optimized for growth",
+      "status": "active"
+    },
+    {
+      "name": "Job Research Agent",
+      "role": "Tracks and reports job opportunities",
+      "status": "active"
+    }
+  ]
+}

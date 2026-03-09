@@ -1,0 +1,47 @@
+{
+  "enabled": true,
+  "orchestrator": "Commander Agent",
+  "skill_dependency": "dynamic_agent_creation",
+  "temporary_specialists": [
+    "lineup-analyzer",
+    "trend-analyzer",
+    "salary-intelligence-agent",
+    "injury-impact-agent",
+    "NBA lineup analyzer",
+    "betting market scanner",
+    "TikTok hook generator",
+    "salary intelligence researcher",
+    "soccer_analyzer"
+  ],
+  "soccer_analyzer": {
+    "supported_competitions": [
+      "English Premier League",
+      "UEFA Champions League",
+      "La Liga"
+    ],
+    "metrics": [
+      "expected goals (xG)",
+      "expected goals conceded",
+      "team form (last 5 matches)",
+      "home vs away performance",
+      "head-to-head data",
+      "injuries and suspensions",
+      "possession metrics",
+      "shot creation metrics",
+      "defensive structure",
+      "expected possession value (EPV)"
+    ],
+    "output": [
+      "predicted winner",
+      "projected scoreline",
+      "win probability",
+      "confidence score",
+      "key tactical insights"
+    ],
+    "integrates_with": [
+      "Sports Prediction Agent",
+      "Betting Intelligence Agent",
+      "Commander Agent"
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+# OpenClaw topic routing + monitoring cron
+# Keep existing schedules intact; these are additive routing/monitoring jobs.
+*/5 * * * * /usr/bin/python3 /data/.openclaw/workspace/agents/telegram_topic_listener.py >> /data/.openclaw/workspace/agents/status/topic-listener.log 2>&1
+*/15 * * * * /usr/bin/python3 /data/.openclaw/workspace/agents/workers/sports_prediction_worker.py --routes /data/.openclaw/workspace/agents/telegram-routes.json >> /data/.openclaw/workspace/agents/status/sports-worker.log 2>&1
+*/30 * * * * /usr/bin/python3 /data/.openclaw/workspace/agents/workers/betting_intelligence_worker.py --routes /data/.openclaw/workspace/agents/telegram-routes.json >> /data/.openclaw/workspace/agents/status/betting-worker.log 2>&1
+0 10 * * * /usr/bin/python3 /data/.openclaw/workspace/agents/workers/tiktok_daily_worker.py >> /data/.openclaw/workspace/agents/status/tiktok-worker.log 2>&1
+*/30 * * * * /usr/bin/python3 /data/.openclaw/workspace/agents/workers/job_research_worker.py --routes /data/.openclaw/workspace/agents/telegram-routes.json >> /data/.openclaw/workspace/agents/status/jobs-worker.log 2>&1
+*/15 * * * * /usr/bin/python3 /data/.openclaw/workspace/agents/workers/commander_supervisor_worker.py --routes /data/.openclaw/workspace/agents/telegram-routes.json >> /data/.openclaw/workspace/agents/status/commander-worker.log 2>&1
+*/5 * * * * /usr/bin/python3 /data/.openclaw/workspace/agents/commander_watchdog.py >> /data/.openclaw/workspace/agents/status/watchdog.log 2>&1
+*/5 * * * * /usr/bin/python3 /data/.openclaw/workspace/agents/notification_dispatcher.py >> /data/.openclaw/workspace/agents/status/notifications.log 2>&1
+0 9 * * * /usr/bin/python3 /data/.openclaw/workspace/agents/daily_briefing.py >> /data/.openclaw/workspace/agents/status/daily-briefing.log 2>&1
+*/15 * * * * /usr/bin/python3 /data/.openclaw/workspace/agents/autonomous_intelligence_engine.py >> /data/.openclaw/workspace/agents/status/autonomous-intel.log 2>&1
+*/15 * * * * /usr/bin/python3 /data/.openclaw/workspace/agents/workers/nba_gameday_pregame_worker.py >> /data/.openclaw/workspace/agents/status/nba-pregame.log 2>&1
+*/15 * * * * /usr/bin/python3 /data/.openclaw/workspace/agents/workers/epl_match_tickets_worker.py >> /data/.openclaw/workspace/agents/status/epl-tickets.log 2>&1
+0 2 * * * /bin/bash /data/.openclaw/workspace/agents/backup_openclaw.sh
+0 8 * * 1 /usr/bin/python3 /data/.openclaw/workspace/agents/performance_weekly_analysis.py >> /data/.openclaw/workspace/agents/status/performance-weekly.log 2>&1
+* * * * * /bin/bash /data/.openclaw/workspace/mission-control/start-mission-control.sh

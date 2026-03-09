@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BACKUP_ROOT="/data/backups/openclaw"
+LOG="/data/.openclaw/workspace/agents/system-restore.log"
+
+mkdir -p "$(dirname "$LOG")"
+
+echo "[$(date -u +'%F %T UTC')] restore invoked: $*" >> "$LOG"
+python3 /data/.openclaw/workspace/agents/notify_commander.py "@HenryAgentsbot Restore started." || true
+
+SNAP=""
+if [ "${1:-}" = "--latest" ]; then
+  SNAP=$(ls -1t "$BACKUP_ROOT"/openclaw-*.tar.gz | head -n1)
+elif [ "${1:-}" = "--snapshot" ] && [ -n "${2:-}" ]; then
+  SNAP=$(ls -1t "$BACKUP_ROOT"/openclaw-${2}_*.tar.gz 2>/dev/null | head -n1 || true)
+else
+  echo "Usage: restore_openclaw --latest | restore_openclaw --snapshot YYYY-MM-DD" >&2
+  exit 1
+fi
+
+if [ -z "$SNAP" ] || [ ! -f "$SNAP" ]; then
+  echo "[$(date -u +'%F %T UTC')] restore failed: snapshot not found" >> "$LOG"
+  python3 /data/.openclaw/workspace/agents/notify_commander.py "@HenryAgentsbot Restore failed: snapshot not found." || true
+  exit 1
+fi
+
+if ! gzip -t "$SNAP"; then
+  echo "[$(date -u +'%F %T UTC')] restore failed: integrity check failed ($SNAP)" >> "$LOG"
+  python3 /data/.openclaw/workspace/agents/notify_commander.py "@HenryAgentsbot Restore failed: archive integrity check failed." || true
+  exit 1
+fi
+
+# Stop containers/services (best-effort)
+docker stop openclaw-harw-openclaw-1 >/dev/null 2>&1 || true
+pkill -f "/data/.openclaw/workspace/agents/telegram_command_listener.py" >/dev/null 2>&1 || true
+
+# Restore
+tar -xzf "$SNAP" -C / >> "$LOG" 2>&1
+
+# Post-restore verification
+[ -d /data/.openclaw/workspace ] || { echo "workspace missing" >> "$LOG"; exit 1; }
+[ -f /data/.openclaw/workspace/AGENTS.md ] || { echo "AGENTS.md missing" >> "$LOG"; exit 1; }
+[ -f /data/.openclaw/workspace/agents/telegram-routes.json ] || { echo "telegram-routes missing" >> "$LOG"; exit 1; }
+
+# Restart services (best-effort)
+docker start openclaw-harw-openclaw-1 >/dev/null 2>&1 || true
+openclaw gateway restart >/dev/null 2>&1 || true
+
+# Telegram connectivity check (best-effort)
+python3 - <<'PY' >> /data/.openclaw/workspace/agents/system-restore.log 2>&1
+import json, urllib.request
+cfg=json.load(open('/data/.openclaw/openclaw.json'))
+tok=cfg.get('channels',{}).get('telegram',{}).get('botToken')
+if tok:
+  with urllib.request.urlopen(f'https://api.telegram.org/bot{tok}/getMe',timeout=20) as r:
+    print('telegram_connectivity',json.loads(r.read().decode()).get('ok'))
+PY
+
+echo "[$(date -u +'%F %T UTC')] restore complete: $SNAP" >> "$LOG"
+python3 /data/.openclaw/workspace/agents/notify_commander.py "@HenryAgentsbot Restore completed successfully." || true

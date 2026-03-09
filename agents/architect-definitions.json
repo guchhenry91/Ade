@@ -1,0 +1,38 @@
+{
+  "agent_architect": {
+    "enabled": true,
+    "operator": {
+      "name": "Ade",
+      "telegram_user_id": 8385872564
+    },
+    "notifications_topic": "commander-control",
+    "limits": {
+      "max_runtime_seconds": 600,
+      "memory_profile": "lightweight",
+      "persistent_sessions": false
+    },
+    "supervision": {
+      "commander_approval_required": true,
+      "retry_on_failure": 1,
+      "validate_results": true,
+      "mandatory_termination": true
+    },
+    "specialists": [
+      {
+        "name": "Sports Lineup Analyzer",
+        "purpose": "Analyze confirmed lineups before matches",
+        "topic": "sports-analytics"
+      },
+      {
+        "name": "TikTok Trend Analyzer",
+        "purpose": "Find viral video opportunities",
+        "topic": "tiktok-production"
+      },
+      {
+        "name": "Salary Intelligence Agent",
+        "purpose": "Enhance job search intelligence",
+        "topic": "job-opportunities"
+      }
+    ]
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "framework": "advanced-multi-agent-skill-framework",
+  "enabled": true,
+  "skills": [
+    {
+      "name": "strategic_planning",
+      "enabled": true,
+      "description": "Break goals into executable tasks, assign owners, and generate timelines."
+    },
+    {
+      "name": "continuous_monitoring",
+      "enabled": true,
+      "description": "Continuously monitor external signals and trigger automatic updates."
+    },
+    {
+      "name": "trend_intelligence",
+      "enabled": true,
+      "description": "TikTok-focused trend, hook, audio, and format intelligence with production-ready outputs."
+    },
+    {
+      "name": "performance_memory",
+      "enabled": true,
+      "description": "Store and use historical outcomes to improve future decisions."
+    },
+    {
+      "name": "dynamic_agent_creation",
+      "enabled": true,
+      "description": "Create temporary specialist agents for focused tasks and retire after completion."
+    },
+    {
+      "name": "risk_analysis",
+      "enabled": true,
+      "description": "Attach confidence/risk scoring to major outputs."
+    },
+    {
+      "name": "smart_scheduler",
+      "enabled": true,
+      "description": "Auto-schedule recurring tasks and maintain execution cadence."
+    },
+    {
+      "name": "system_self_healing",
+      "enabled": true,
+      "description": "Detect failures, repair automatically, and notify Commander."
+    },
+    {
+      "name": "mission_control_insight",
+      "enabled": true,
+      "description": "Expose telemetry for Mission Control UI (tasks, status, approvals, health, logs)."
+    },
+    {
+      "name": "decision_escalation",
+      "enabled": true,
+      "description": "Escalate low-confidence/high-risk/conflicting decisions to Commander before execution."
+    },
+    {
+      "name": "soccer_analyzer",
+      "enabled": true,
+      "description": "Deep tactical/statistical football analysis for EPL, UEFA Champions League, and La Liga with proactive monitoring and dynamic recalculation."
+    },
+    {
+      "name": "web_research_intelligence",
+      "enabled": true,
+      "description": "External web search, summarization, and research aggregation for operational agents.",
+      "source_skill": "web-research-assistant",
+      "install_status": "installed"
+    },
+    {
+      "name": "data_extraction_scraper",
+      "enabled": true,
+      "description": "Structured extraction from HTML/pages/tables/articles for jobs, sports, and trends.",
+      "source_skill": "deep-scraper",
+      "install_status": "installed"
+    },
+    {
+      "name": "workspace_file_manager",
+      "enabled": true,
+      "description": "Structured file/report/directory management across workspace outputs.",
+      "source_skill": "clawdbot-filesystem",
+      "install_status": "installed"
+    },
+    {
+      "name": "social_media_content_tools",
+      "enabled": true,
+      "description": "Caption/hashtag/engagement packaging support for TikTok content workflows.",
+      "source_skill": "social-media-scheduler",
+      "install_status": "installed"
+    },
+    {
+      "name": "system_security_guard",
+      "enabled": true,
+      "description": "Security guardrail skill for credential safety, unsafe command blocking, and skill audits.",
+      "source_skill": "moltguard",
+      "install_status": "installed"
+    },
+    {
+      "name": "system_health_monitor",
+      "enabled": true,
+      "description": "Deeper system diagnostics for CPU/memory/container/heartbeat anomaly detection.",
+      "source_skill": "system-resource-monitor",
+      "install_status": "installed"
+    }
+  ]
+}

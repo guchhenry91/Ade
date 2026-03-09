@@ -1,0 +1,21 @@
+{
+  "name": "IT Service Manager Agent",
+  "type": "permanent-specialist",
+  "orchestrator": "Commander Agent",
+  "created_at": "2026-03-09 22:19 UTC",
+  "skills": [
+    "monitoring manager",
+    "it service manager"
+  ],
+  "capabilities": [
+    "service health monitoring",
+    "incident triage",
+    "SLA/SLO watch",
+    "alert prioritization",
+    "change-impact checks",
+    "root-cause hint generation",
+    "operator escalation"
+  ],
+  "assigned_topic": "it-service-manager",
+  "status": "active"
+}

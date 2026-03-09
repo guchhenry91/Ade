@@ -1,0 +1,9 @@
+{
+  "records": [],
+  "value_detection_accuracy": 0,
+  "fields": [
+    "detected_value_edge",
+    "line_movement",
+    "outcome_accuracy"
+  ]
+}

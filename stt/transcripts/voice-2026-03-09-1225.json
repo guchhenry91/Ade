@@ -1,0 +1,12 @@
+{
+  "source": "/data/.openclaw/workspace/stt/inbox/voice-2026-03-09-1225.ogg",
+  "language": "en",
+  "duration": 3.4135,
+  "segments": [
+    {
+      "start": 0.43,
+      "end": 3.15,
+      "text": "So what is the video gonna be available?"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+node_modules/
+remotion/node_modules/
+remotion/public/voice-*.mp3
+remotion/public/bg-*.mp4
+remotion/.cache/
+*.pack
+*.log
+.env

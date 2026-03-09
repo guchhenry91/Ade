@@ -1,0 +1,9 @@
+{
+  "records": [],
+  "job_match_success_rate": 0,
+  "fields": [
+    "job_role",
+    "match_score",
+    "application_outcome"
+  ]
+}

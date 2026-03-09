@@ -1,0 +1,10 @@
+{
+  "task": "continuous IT service monitoring and incident management",
+  "status": "running",
+  "progress": 15,
+  "last_action": "bound to dedicated topic",
+  "last_update": "2026-03-09 22:19 UTC",
+  "next_action": "collect gateway, agent, and scheduler health telemetry",
+  "reasoning_summary": "Permanent specialist active under Commander oversight.",
+  "assigned_topic": "it-service-manager"
+}

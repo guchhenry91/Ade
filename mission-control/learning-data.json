@@ -1,0 +1,12 @@
+{
+  "sports": {"accuracy": {}, "confidence_adjustments": {}, "recent_lessons": []},
+  "tiktok": {
+    "pattern_scores": {},
+    "top_hooks": [],
+    "engagement_history": [],
+    "tracked_metrics": ["views", "likes", "shares", "comments"],
+    "recent_lessons": []
+  },
+  "jobs": {"source_quality": {}, "salary_benchmarks": {}, "recent_lessons": []},
+  "last_updated": null
+}

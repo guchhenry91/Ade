@@ -1,0 +1,18 @@
+{
+  "operator_name": "Ade",
+  "operator_telegram_user_id": 8385872564,
+  "operator_mention": "@HenryAgentsbot",
+  "tiktok_ping_mention": "@Jasonopen",
+  "reporting_bot": {
+    "username": "@HenryAgentsbot",
+    "env_token_key": "TELEGRAM_REPORTING_BOT_TOKEN",
+    "token": "8175302857:AAE18KHdB9Wa7Yxvpt3FzWJMWkLo57z62Qw"
+  },
+  "topics": {
+    "sports-analytics": { "chat_id": -1003659714036, "message_thread_id": 65 },
+    "tiktok-production": { "chat_id": -1003659714036, "message_thread_id": 66 },
+    "job-opportunities": { "chat_id": -1003659714036, "message_thread_id": 67 },
+    "betting-insights": { "chat_id": -1003659714036, "message_thread_id": 68 },
+    "commander-control": { "chat_id": -1003659714036, "message_thread_id": 69 }
+  }
+}

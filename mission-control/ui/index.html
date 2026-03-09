@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mission Control</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="dot healthy" id="statusDot"></span>
+        <h1>Mission Control</h1>
+      </div>
+      <div class="topstats">
+        <div><b id="activeAgents">0</b><span>Active Agents</span></div>
+        <div><b id="uptime">-</b><span>Uptime</span></div>
+      </div>
+      <div class="topactions">
+        <input id="globalSearch" placeholder="Global search" />
+        <button id="quickCmd">Quick Command</button>
+        <button id="darkToggle">Dark</button>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <button class="nav active" data-view="dashboard">Dashboard</button>
+      <button class="nav" data-view="agents">Agents</button>
+      <button class="nav" data-view="activity">Activity</button>
+      <button class="nav" data-view="approvals">Approvals</button>
+      <button class="nav" data-view="performance">Performance</button>
+      <button class="nav" data-view="telemetry">Telemetry</button>
+      <button class="nav" data-view="dynamic">Dynamic Agents</button>
+      <button class="nav" data-view="notifications">Notifications</button>
+      <button class="nav" data-view="goals">Goals</button>
+      <button class="nav" data-view="intel">📡 Intel</button>
+      <button class="nav" data-view="controls">System Controls</button>
+    </aside>
+
+    <main class="workspace">
+      <section id="view-dashboard" class="view active">
+        <div class="grid cols-2">
+          <article class="card"><h3>System Health</h3><div id="systemHealth"></div></article>
+          <article class="card"><h3>Agent Overview</h3><div id="agentOverview"></div></article>
+          <article class="card"><h3>Live Activity (20)</h3><pre id="liveFeed"></pre></article>
+          <article class="card"><h3>Approval Queue</h3><div id="approvalQueue"></div></article>
+          <article class="card"><h3>Performance Insights</h3><div id="performanceInsights"></div></article>
+          <article class="card"><h3>Timeline</h3><div id="timelineBar" class="timeline"></div></article>
+        </div>
+      </section>
+
+      <section id="view-agents" class="view">
+        <div class="grid cols-3" id="agentCards"></div>
+        <article class="card" id="agentDetail"><h3>Agent Detail</h3><div>Select an agent card</div></article>
+      </section>
+
+      <section id="view-activity" class="view"><article class="card"><h3>Activity Feed</h3><pre id="activityFull"></pre></article></section>
+      <section id="view-approvals" class="view"><article class="card"><h3>Approvals</h3><div id="approvalsFull"></div></article></section>
+      <section id="view-performance" class="view"><article class="card"><h3>Performance Intelligence</h3><div id="performanceFull"></div></article></section>
+      <section id="view-telemetry" class="view"><article class="card"><h3>System Telemetry</h3><div id="telemetryFull"></div></article></section>
+      <section id="view-dynamic" class="view"><article class="card"><h3>Dynamic Agent Control</h3><div id="dynamicFull"></div></article></section>
+      <section id="view-notifications" class="view"><article class="card"><h3>Notifications</h3><div id="notificationsFull"></div></article></section>
+      <section id="view-goals" class="view"><article class="card"><h3>Goals</h3><div id="goalsFull"></div></article></section>
+      <section id="view-intel" class="view">
+        <article class="card"><h3>Daily Brief</h3><div id="intelBrief"></div></article>
+        <article class="card"><h3>Add Intel Item</h3>
+          <div class="grid cols-2">
+            <input id="intelTitle" placeholder="Title" />
+            <input id="intelSource" placeholder="Source link" />
+            <select id="intelCategory">
+              <option>AI News</option><option>Industry Trends</option><option>Competitor Watch</option><option>Opportunities</option>
+            </select>
+            <select id="intelImportance">
+              <option>🔥 hot</option><option>⚡ notable</option><option>📌 reference</option>
+            </select>
+          </div>
+          <textarea id="intelSummary" placeholder="Summary" style="width:100%;margin-top:8px;border-radius:10px;padding:8px;background:var(--panel);color:var(--text);border:1px solid var(--border);"></textarea>
+          <button id="intelAddBtn" style="margin-top:8px">Add Intel</button>
+        </article>
+        <article class="card"><h3>Filters</h3>
+          <div class="grid cols-2">
+            <select id="intelFilterCategory"><option>All</option><option>AI News</option><option>Industry Trends</option><option>Competitor Watch</option><option>Opportunities</option></select>
+            <select id="intelFilterImportance"><option>All</option><option>🔥 hot</option><option>⚡ notable</option><option>📌 reference</option></select>
+          </div>
+        </article>
+        <article class="card"><h3>Intel Feed</h3><div id="intelFeed"></div></article>
+      </section>
+      <section id="view-controls" class="view"><article class="card"><h3>Safety & Control</h3><div id="controlsFull"></div></article></section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

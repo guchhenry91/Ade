@@ -1,0 +1,69 @@
+{
+  "date": "2026-03-09",
+  "format": "mp4",
+  "aspect_ratio": "9:16",
+  "resolution": "1080x1920",
+  "length_seconds": 20,
+  "script": [
+    "The money trick most people discover years too late.",
+    "Use one clear money system instead of random tips.",
+    "Try this for 7 days and track results. Follow for more money breakdowns."
+  ],
+  "voiceover": "gtts",
+  "renderer": "remotion",
+  "composition": "faceless-money-template",
+  "trend_score": 62,
+  "niche": "money",
+  "preset": {
+    "voice_tone": "assertive",
+    "caption_style": "mobile-bold-highlight",
+    "editing_speed": "fast",
+    "music_energy": "medium",
+    "footage_style": "real-human-money",
+    "niche": "money"
+  },
+  "footage": {
+    "ok": true,
+    "source": "local",
+    "path": "/data/.openclaw/workspace/tiktok/videos/2026-03-09/final.mp4",
+    "meta": {
+      "query": "person stressed bills money",
+      "category": "money",
+      "candidates": []
+    }
+  },
+  "captions": {
+    "captions": [
+      {
+        "text": "The money trick most people discover years too late.",
+        "start": 0.0,
+        "end": 4.05,
+        "highlight_words": [
+          "The",
+          "money"
+        ]
+      },
+      {
+        "text": "Use one clear money system instead of random tips.",
+        "start": 4.05,
+        "end": 8.1,
+        "highlight_words": [
+          "Use",
+          "one"
+        ]
+      },
+      {
+        "text": "Try this for 7 days and track results. Follow for more money breakdowns.",
+        "start": 8.1,
+        "end": 13.95,
+        "highlight_words": [
+          "Try",
+          "this"
+        ]
+      }
+    ],
+    "style": "mobile-bold-highlight"
+  },
+  "validation": "ok",
+  "file_size_bytes": 9382345
+}

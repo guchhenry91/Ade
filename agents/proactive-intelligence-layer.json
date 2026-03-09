@@ -1,0 +1,46 @@
+{
+  "enabled": true,
+  "orchestrator": "Commander Agent",
+  "skill_dependency": "continuous_monitoring",
+  "agents": {
+    "Sports Prediction Agent": {
+      "signals": [
+        "injuries",
+        "lineup announcements",
+        "odds movement",
+        "sharp betting activity",
+        "weather conditions (NFL)"
+      ],
+      "on_significant_signal": [
+        "generate analysis",
+        "notify Commander",
+        "publish summary to sports-analytics"
+      ]
+    },
+    "Job Research Agent": {
+      "signals": [
+        "new job listings",
+        "salary changes",
+        "recruiter activity",
+        "company hiring trends"
+      ],
+      "on_significant_signal": [
+        "generate analysis",
+        "notify Commander",
+        "publish summary to job-opportunities"
+      ]
+    },
+    "TikTok Content Agent": {
+      "signals": [
+        "trending sounds",
+        "viral hooks",
+        "emerging content formats"
+      ],
+      "on_significant_signal": [
+        "generate analysis",
+        "notify Commander",
+        "publish summary to tiktok-production"
+      ]
+    }
+  }
+}

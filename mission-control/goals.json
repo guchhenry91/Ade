@@ -1,0 +1,10 @@
+{
+  "period": "weekly",
+  "metrics": {
+    "tiktok_videos_produced": { "target": 7, "current": 0 },
+    "sports_predictions_generated": { "target": 50, "current": 0 },
+    "betting_alerts_detected": { "target": 20, "current": 0 },
+    "jobs_discovered": { "target": 30, "current": 0 }
+  },
+  "last_updated": null
+}

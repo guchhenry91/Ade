@@ -1,0 +1,12 @@
+{
+  "records": [],
+  "prediction_accuracy": 0,
+  "fields": [
+    "game",
+    "prediction",
+    "odds",
+    "model_probability",
+    "final_result",
+    "prediction_accuracy"
+  ]
+}
