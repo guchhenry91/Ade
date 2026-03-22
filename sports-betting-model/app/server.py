@@ -589,12 +589,14 @@ def _build_soccer_games(today_str: str) -> list:
                         if stat not in ("goals", "shotsOnTarget", "shots"):
                             continue
                         seen_names.add(lname)
-                        # Derive shots/game (use value directly for shot stats; for goals, estimate shots)
+                        # ESPN leaders return season totals; divide by approx games played
+                        approx_games = 30  # conservative mid-season estimate
                         if stat == "goals":
-                            shots_pg = max(1.5, val * 4)   # rough: ~1 goal per 4 shots
+                            goals_pg = val / approx_games
+                            shots_pg = max(1.5, goals_pg / 0.12)  # back-calc from goal rate
                             xg_shot  = 0.12
-                        else:
-                            shots_pg = val
+                        else:  # shotsOnTarget, shots
+                            shots_pg = max(1.5, val / approx_games)
                             xg_shot  = 0.12
                         goal_prob = scorer_probability(xg_shot, shots_pg) * 100
                         confidence_lbl = "HIGH" if goal_prob >= 60 else "MEDIUM" if goal_prob >= 40 else "LOW"
@@ -759,13 +761,13 @@ async def today_page(request: Request):
 def _build_mlb_props(today_str: str) -> tuple[list, int]:
     """
     Build MLB player prop cards.
-    Uses PrizePicks lines as market lines + ESPN/MLB Stats API averages for probabilities.
-    This avoids the avg=line bug (which gives 56.8% for everything).
+    Primary: PrizePicks market lines + MLB Stats API per-game season averages.
+    Falls back to line-as-median (50/50) when no MLB Stats data found.
     """
-    from data.mlb_data    import get_games as mlb_get_games
+    from data.mlb_data    import get_games as mlb_get_games, search_mlb_player, \
+                                   get_pitcher_season_stats, get_batter_season_stats
     from data.prizepicks  import get_mlb_projections
     from models.mlb_model import build_pitcher_props, build_batter_props
-    from utils.stats      import shot_attempt_over_under, confidence_label
 
     all_props: list = []
     try:
@@ -773,69 +775,85 @@ def _build_mlb_props(today_str: str) -> tuple[list, int]:
         total_games = len(games)
         print(f"[MLB] {total_games} games today")
 
-        # Build PrizePicks line lookup: {(name_lower, stat_key): line}
-        _MLB_STAT_KEY = {
-            "strikeouts": "so", "hits allowed": "hits_a", "hits":     "hits",
-            "total bases": "tb", "home runs":   "hr",     "rbis":     "rbi",
-            "runs":        "runs", "walks":      "bb",     "innings":  "ip",
-            "earned runs": "er",
-        }
-        pp_lines_mlb: dict[tuple, float] = {}
+        pp_projections: list = []
         try:
-            for proj in get_mlb_projections():
-                stat_raw = (proj.get("stat") or "").lower()
-                sk = next((v for k, v in _MLB_STAT_KEY.items() if k in stat_raw), None)
-                if not sk:
-                    continue
-                name_key = (proj.get("name") or "").lower().strip()
-                line_val  = float(proj.get("line") or 0)
-                if line_val > 0:
-                    pp_lines_mlb[(name_key, sk)] = line_val
-            print(f"[MLB] PrizePicks line lookup: {len(pp_lines_mlb)} entries")
+            pp_projections = get_mlb_projections()
+            print(f"[MLB] PrizePicks: {len(pp_projections)} projections")
         except Exception as _ppe:
             print(f"[MLB] PrizePicks fetch failed: {_ppe}")
 
-        # Build props from ESPN leaders using real season averages + PP lines
-        for g in games:
-            for ldr in g.get("leaders", []):
-                name = ldr.get("name", "")
-                stat = ldr.get("stat", "")
-                val  = float(ldr.get("value", 0) or 0)
-                pos  = ldr.get("position", "")
-                if not name or val <= 0:
-                    continue
-                name_lower = name.lower().strip()
-                is_pitcher = pos in ("SP", "RP", "P") or stat in ("strikeouts", "earnedRunAverage")
-                if is_pitcher:
-                    # Use PP line if available, else derive from season avg
-                    so_avg = val if stat == "strikeouts" else 5.0
-                    so_line = pp_lines_mlb.get((name_lower, "so"), max(0.5, round(so_avg * 2) / 2 - 0.5))
-                    pstats = {"so_pg": so_avg, "ip_pg": 5.5, "so_line": so_line}
-                    props = build_pitcher_props(pstats)
-                else:
-                    hits_avg = val if stat == "hits" else 0.9
-                    hits_line = pp_lines_mlb.get((name_lower, "hits"), max(0.5, round(hits_avg * 2) / 2 - 0.5))
-                    tb_avg  = float(ldr.get("tb", 0) or 1.5)
-                    tb_line = pp_lines_mlb.get((name_lower, "tb"), max(0.5, round(tb_avg * 2) / 2 - 0.5))
-                    bstats  = {"hits_pg": hits_avg, "hits_line": hits_line,
-                               "tb_pg":  tb_avg,   "tb_line":   tb_line,
-                               "runs_pg": 0.6}
-                    props = build_batter_props(bstats)
-                if props:
-                    all_props.append({
-                        "name": name, "pos": pos,
-                        "team": ldr.get("team_id", ""),
-                        "opponent": "",
-                        "props": props,
-                    })
+        if not pp_projections:
+            return all_props, total_games
 
-        # Supplement with PrizePicks-only props (players not in ESPN leaders)
-        if pp_lines_mlb and not all_props:
-            # Full PrizePicks fallback when ESPN leaders unavailable
-            from models.mlb_model import build_props_from_prizepicks
-            pp_raw = get_mlb_projections()
-            if pp_raw:
-                all_props = build_props_from_prizepicks(pp_raw)
+        # Map PP stat names → model stat keys
+        _MLB_STAT_KEY = {
+            "strikeout": "so",     "inning":      "ip",
+            "hit":       "hits",   "total base":  "tb",
+            "home run":  "hr",     "rbi":         "rbi",
+            "run":       "runs",   "walk":        "bb",
+            "earned run": "er",
+        }
+
+        # Group PP projections by player name
+        player_projs: dict[str, list] = {}
+        for proj in pp_projections:
+            n = (proj.get("name") or "").strip()
+            if n:
+                player_projs.setdefault(n, []).append(proj)
+
+        for player_name, projs in player_projs.items():
+            stat_types = [(p.get("stat") or "").lower() for p in projs]
+            is_pitcher = any(
+                any(k in s for k in ("strikeout", "inning", "earned run"))
+                for s in stat_types
+            )
+
+            # Fetch real per-game season averages from MLB Stats API
+            season_stats: dict = {}
+            pos = projs[0].get("pos", "")
+            mlb_player = search_mlb_player(player_name)
+            if mlb_player and mlb_player.get("id"):
+                mlb_id = mlb_player["id"]
+                pos = mlb_player.get("pos", pos)
+                if is_pitcher or pos in ("SP", "RP", "P"):
+                    season_stats = get_pitcher_season_stats(mlb_id) or {}
+                    is_pitcher = True
+                else:
+                    season_stats = get_batter_season_stats(mlb_id) or {}
+
+            # Collect PP line overrides for this player
+            pp_lines: dict[str, float] = {}
+            for proj in projs:
+                stat_raw = (proj.get("stat") or "").lower()
+                sk = next((v for k, v in _MLB_STAT_KEY.items() if k in stat_raw), None)
+                if sk:
+                    line_val = float(proj.get("line") or 0)
+                    if line_val > 0:
+                        pp_lines[sk + "_line"] = line_val
+
+            if is_pitcher:
+                # Use MLB Stats API per-game avg; fall back to PP line as median estimate
+                so_pg = season_stats.get("so_pg") or pp_lines.get("so_line") or 0
+                ip_pg = season_stats.get("ip_pg") or pp_lines.get("ip_line") or 0
+                pstats = {"so_pg": so_pg, "ip_pg": ip_pg, **pp_lines}
+                props = build_pitcher_props(pstats)
+            else:
+                hits_pg = season_stats.get("hits_pg") or pp_lines.get("hits_line") or 0
+                tb_pg   = season_stats.get("tb_pg")   or pp_lines.get("tb_line")   or 0
+                runs_pg = season_stats.get("runs_pg", 0.6) or 0.6
+                bstats  = {"hits_pg": hits_pg, "tb_pg": tb_pg, "runs_pg": runs_pg, **pp_lines}
+                props = build_batter_props(bstats)
+
+            if props:
+                all_props.append({
+                    "name": player_name,
+                    "pos":  pos,
+                    "team": projs[0].get("team", ""),
+                    "opponent": "",
+                    "props": props,
+                })
+            if len(all_props) >= 60:  # cap to avoid overwhelming the page
+                break
 
     except Exception:
         traceback.print_exc()
