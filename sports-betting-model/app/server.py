@@ -37,6 +37,21 @@ app = FastAPI(title="Sports Betting Model", version="1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    return HTMLResponse(
+        content=f"<pre style='color:red;background:#111;padding:20px;'>"
+                f"ERROR on {request.url.path}\n\n{tb}</pre>",
+        status_code=500,
+    )
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
+
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
 def signals_to_rows(signals) -> list[dict]:
