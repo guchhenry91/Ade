@@ -4,12 +4,23 @@ Primary  : ESPN public API  (no key)
 Secondary: balldontlie.io   (free, BALLDONTLIE_KEY env var for higher limits)
 """
 from __future__ import annotations
+import re
 import logging
 from typing import Any, Dict, List, Optional
 
 from data.fetcher import espn_fetch, bdl_fetch
 
 logger = logging.getLogger(__name__)
+
+
+def _espn_team_id(team_obj) -> str:
+    """Extract team_id from ESPN team object — handles $ref URL references."""
+    if not isinstance(team_obj, dict):
+        return ""
+    if "$ref" in team_obj:
+        m = re.search(r'/teams/(\d+)', team_obj["$ref"])
+        return m.group(1) if m else ""
+    return str(team_obj.get("id", ""))
 
 
 # ── Scoreboard / today's games ───────────────────────────────────────────────
@@ -42,7 +53,7 @@ def get_games(dates: Optional[str] = None) -> List[Dict]:
                 ath = entry.get("athlete", {})
                 leaders.append({
                     "name":     ath.get("displayName", ""),
-                    "team_id":  str(ath.get("team", {}).get("id", "")),
+                    "team_id":  _espn_team_id(ath.get("team", {})),
                     "stat":     cat_name,
                     "display":  cat.get("displayName", cat_name),
                     "value":    float(entry.get("value", 0) or 0),

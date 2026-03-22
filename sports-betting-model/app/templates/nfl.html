@@ -1,266 +1,238 @@
 {% extends "base.html" %}
-{% block title %}NFL – Betting Model{% endblock %}
+{% block title %}NFL Picks – Live Betting Model{% endblock %}
+{% block head %}
+<style>
+  .prob-bar-home { background: #f97316; }
+  .prob-bar-away { background: #a855f7; }
+  .winner-glow   { border-left: 3px solid #f97316; }
+  .book-pill     { background: #1a1a30; border: 1px solid #2e2e52; }
+  .player-tbl th { color:#64748b; font-size:.65rem; text-transform:uppercase;
+                   letter-spacing:.05em; padding:4px 8px; border-bottom:1px solid #1e2035; }
+  .player-tbl td { font-size:.75rem; padding:5px 8px; border-bottom:1px solid #181828; }
+  .player-tbl tr:hover td { background:rgba(255,255,255,.03); }
+  .pick-over  { color:#4ade80; font-weight:700; }
+  .pick-under { color:#f87171; font-weight:700; }
+  .pick-fair  { color:#94a3b8; }
+</style>
+{% endblock %}
+
 {% block content %}
-
-<div class="mb-6">
-  <h1 class="text-2xl font-bold text-white">🏈 NFL Analyser</h1>
-  <p class="text-slate-400 text-sm mt-1">2025 Season Stats · Game Winner · TD Scorer · Yardage Props</p>
+<div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+  <div>
+    <h1 class="text-3xl font-bold text-white">🏈 NFL Picks</h1>
+    <p class="text-slate-400 mt-1">
+      {{ today }} ·
+      <span class="text-orange-400 font-medium">{{ total }}</span>
+      game{{ 's' if total != 1 else '' }}
+      {% if not has_odds_key %}
+        · <span class="text-yellow-600 text-xs">Set <code>ODDS_API_KEY</code> for sportsbook odds</span>
+      {% endif %}
+    </p>
+  </div>
+  <a href="/nfl" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium">↻ Refresh</a>
 </div>
 
-{% if error %}
-<div class="bg-red-900/40 border border-red-700 text-red-300 rounded-xl px-4 py-3 mb-6 text-sm">
-  ⚠️ {{ error }}
+{% if total == 0 %}
+<div class="card rounded-xl p-12 text-center">
+  <p class="text-4xl mb-3">🏟</p>
+  <p class="text-white font-semibold text-lg">No NFL games right now</p>
+  <p class="text-slate-400 mt-1 text-sm">NFL season runs September – February. Check back during the season.</p>
 </div>
-{% endif %}
+{% else %}
 
-<!-- Mode tabs -->
-<div class="flex gap-2 mb-6">
-  {% for m, label in [('game','🏟 Game'), ('td','🏃 TD Scorer'), ('yards','📏 Yards Props')] %}
-  <button onclick="setMode('{{ m }}')"
-    class="mode-btn px-4 py-2 rounded-lg text-sm font-medium border border-border transition-colors"
-    id="tab-{{ m }}">{{ label }}</button>
-  {% endfor %}
-</div>
+{% for game in games %}
+{% set gid = loop.index0|string %}
+<div class="card rounded-xl overflow-hidden mb-6">
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-  <div class="lg:col-span-1">
-    <form method="post" action="/nfl" class="card rounded-xl p-5 space-y-4">
-      <input type="hidden" name="mode" id="mode-input" value="{{ mode or 'game' }}"/>
-
-      <!-- GAME MODE -->
-      <div id="section-game" class="space-y-3">
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Home Team</label>
-            <input name="home_team" placeholder="e.g. LA Rams" class="w-full rounded-lg px-3 py-2 text-sm"/>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Away Team</label>
-            <input name="away_team" placeholder="e.g. Buffalo Bills" class="w-full rounded-lg px-3 py-2 text-sm"/>
-          </div>
-        </div>
-        <div>
-          <p class="text-xs text-slate-500 mb-2">Quick fill:</p>
-          <div class="flex flex-wrap gap-1">
-            {% for g in [('LA Rams','Buffalo Bills'),('Baltimore Ravens','Kansas City Chiefs'),
-                         ('Philadelphia Eagles','Detroit Lions')] %}
-            <button type="button"
-              onclick="document.querySelector('[name=home_team]').value='{{ g[0] }}'; document.querySelector('[name=away_team]').value='{{ g[1] }}';"
-              class="text-xs bg-slate-800 hover:bg-orange-900 border border-border px-2 py-1 rounded">
-              {{ g[0] }} vs {{ g[1] }}
-            </button>
-            {% endfor %}
-          </div>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Point Spread (home)</label>
-          <input name="spread" placeholder="e.g. -3.0 (home favoured)" class="w-full rounded-lg px-3 py-2 text-sm"/>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Total Line</label>
-          <input name="total_line" placeholder="e.g. 51.5" class="w-full rounded-lg px-3 py-2 text-sm"/>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Home ML</label>
-            <input name="home_ml" placeholder="e.g. 1.87" class="w-full rounded-lg px-3 py-2 text-sm"/>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Away ML</label>
-            <input name="away_ml" placeholder="e.g. 2.00" class="w-full rounded-lg px-3 py-2 text-sm"/>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Home PPG</label>
-            <input name="home_ppg" value="23.0" class="w-full rounded-lg px-3 py-2 text-sm"/>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Away PPG</label>
-            <input name="away_ppg" value="23.0" class="w-full rounded-lg px-3 py-2 text-sm"/>
-          </div>
-        </div>
-      </div>
-
-      <!-- TD SCORER MODE -->
-      <div id="section-td" class="space-y-3">
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Player Name</label>
-          <input name="player_name" id="player_name_td" placeholder="e.g. James Cook"
-                 class="w-full rounded-lg px-3 py-2 text-sm"/>
-        </div>
-        <div>
-          <p class="text-xs text-slate-500 mb-2">Quick fill (2025 real stats):</p>
-          <div class="flex flex-wrap gap-1">
-            {% for p in players %}
-            <button type="button"
-              onclick='fillNFLPlayer({{ p | tojson }})'
-              class="text-xs bg-slate-800 hover:bg-orange-900 border border-border px-2 py-1 rounded">
-              {{ p.name.split(' ')[-1] }}
-            </button>
-            {% endfor %}
-          </div>
-        </div>
-        <div class="grid grid-cols-3 gap-2">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Season TDs</label>
-            <input name="season_tds" id="nfl_tds" placeholder="12" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Rush Att</label>
-            <input name="rush_att" id="nfl_rush_att" placeholder="307" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Rec Tgts</label>
-            <input name="rec_tgt" id="nfl_rec_tgt" placeholder="52" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Games</label>
-            <input name="games" id="nfl_games" value="17" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">TD odds</label>
-            <input name="td_odds" placeholder="e.g. 2.10" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
-          </div>
-        </div>
-      </div>
-
-      <!-- YARDS MODE -->
-      <div id="section-yards" class="space-y-3">
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Player Name</label>
-          <input name="player_name" id="player_name_yds" placeholder="e.g. Puka Nacua"
-                 class="w-full rounded-lg px-3 py-2 text-sm"/>
-        </div>
-        <div>
-          <p class="text-xs text-slate-500 mb-2">Quick fill:</p>
-          <div class="flex flex-wrap gap-1">
-            {% for p in players %}
-            <button type="button"
-              onclick='fillNFLPlayerYds({{ p | tojson }})'
-              class="text-xs bg-slate-800 hover:bg-orange-900 border border-border px-2 py-1 rounded">
-              {{ p.name.split(' ')[-1] }}
-            </button>
-            {% endfor %}
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Rush yds (season)</label>
-            <input name="rush_yds" id="nfl_rush_yds" placeholder="1621" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Rush yds line</label>
-            <input name="rush_line" id="nfl_rush_line" placeholder="94.5" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Rec yds (season)</label>
-            <input name="rec_yds" id="nfl_rec_yds" placeholder="1715" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Rec yds line</label>
-            <input name="rec_line" id="nfl_rec_line" placeholder="104.5" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Pass yds (season)</label>
-            <input name="pass_yds" id="nfl_pass_yds" placeholder="4707" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Pass yds line</label>
-            <input name="pass_line" id="nfl_pass_line" placeholder="272.5" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
-          </div>
-        </div>
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">Games</label>
-          <input name="games" value="17" class="w-32 rounded-lg px-2 py-1.5 text-sm"/>
-        </div>
-      </div>
-
-      <button type="submit" class="btn-primary w-full rounded-lg py-2.5 font-semibold text-sm">
-        Analyse →
-      </button>
-    </form>
+  <div class="px-5 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
+    <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+      {% if game.kickoff %}
+        <span>{{ game.kickoff[:10] }}</span>
+        {% if game.kickoff|length > 10 %}<span>{{ game.kickoff[11:16] }} UTC</span>{% endif %}
+      {% endif %}
+      {% if game.bookmaker %}
+        <span class="book-pill px-2 py-0.5 rounded text-slate-400">📚 {{ game.bookmaker }}</span>
+      {% endif %}
+      {% if game.book_total %}
+        <span class="book-pill px-2 py-0.5 rounded text-slate-300">O/U {{ game.book_total }}</span>
+      {% endif %}
+    </div>
+    <span class="text-xs px-2 py-0.5 rounded-full
+      {% if 'FINAL' in (game.status or '') or game.status=='Final' %}bg-slate-700 text-slate-300
+      {% elif 'PROGRESS' in (game.status or '') %}bg-green-900 text-green-300
+      {% else %}bg-orange-900 text-orange-300{% endif %}">
+      {% if 'FINAL' in (game.status or '') or game.status=='Final' %}Final
+      {% elif 'PROGRESS' in (game.status or '') %}🔴 Live
+      {% else %}Upcoming{% endif %}
+    </span>
   </div>
 
-  <!-- Results -->
-  <div class="lg:col-span-2">
-    {% set submitted = true %}
-    {% include "_signals_table.html" %}
+  <div class="p-5 grid grid-cols-1 xl:grid-cols-5 gap-6">
 
-    {% if not rows %}
-    <!-- 2025 Stats reference -->
-    <div class="card rounded-xl p-5">
-      <h3 class="text-sm font-semibold text-white mb-3">2025 NFL Season Final Stats</h3>
-      <div class="overflow-x-auto">
-        <table class="w-full text-xs">
-          <thead><tr class="text-left text-slate-500 border-b border-border">
-            <th class="pb-2">Player</th><th class="pb-2 text-right">TDs</th>
-            <th class="pb-2 text-right">Rush Yds</th><th class="pb-2 text-right">Rec Yds</th>
-            <th class="pb-2 text-right">Pass Yds</th>
-          </tr></thead>
-          <tbody>
-            {% for p in players %}
-            <tr class="border-b border-border/30">
-              <td class="py-1.5 text-slate-300">{{ p.name }}</td>
-              <td class="py-1.5 text-right text-orange-400 font-mono">{{ p.tds }}</td>
-              <td class="py-1.5 text-right font-mono text-slate-400">{{ p.rush_yds or '–' }}</td>
-              <td class="py-1.5 text-right font-mono text-slate-400">{{ p.rec_yds or '–' }}</td>
-              <td class="py-1.5 text-right font-mono text-slate-400">{{ p.pass_yds or '–' }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    <!-- Win probability -->
+    <div class="xl:col-span-2 space-y-4">
+
+      <div class="{% if game.predicted_winner == game.home_team %}winner-glow pl-3{% endif %}">
+        <div class="flex items-center justify-between mb-1.5">
+          <div class="flex items-center gap-2">
+            {% if game.predicted_winner == game.home_team %}<span class="text-yellow-400 text-lg">★</span>{% endif %}
+            <span class="font-semibold {% if game.predicted_winner == game.home_team %}text-white{% else %}text-slate-400{% endif %}">
+              {{ game.home_team }}
+            </span>
+            <span class="text-xs text-slate-600">(Home)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            {% if game.home_score is not none %}<span class="text-xl font-bold text-white">{{ game.home_score }}</span>{% endif %}
+            {% if game.book_home_ml %}
+              <span class="book-pill text-xs px-1.5 py-0.5 rounded {% if game.book_home_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
+                {{ game.book_home_ml }}
+              </span>
+            {% endif %}
+            <span class="text-sm font-bold {% if game.predicted_winner == game.home_team %}text-orange-300{% else %}text-slate-500{% endif %}">
+              {{ game.home_prob }}%
+            </span>
+          </div>
+        </div>
+        <div class="w-full bg-slate-800 rounded-full h-2">
+          <div class="prob-bar-home h-2 rounded-full" style="width:{{ game.home_prob }}%"></div>
+        </div>
+      </div>
+
+      <div class="{% if game.predicted_winner == game.away_team %}winner-glow pl-3{% endif %}">
+        <div class="flex items-center justify-between mb-1.5">
+          <div class="flex items-center gap-2">
+            {% if game.predicted_winner == game.away_team %}<span class="text-yellow-400 text-lg">★</span>{% endif %}
+            <span class="font-semibold {% if game.predicted_winner == game.away_team %}text-white{% else %}text-slate-400{% endif %}">
+              {{ game.away_team }}
+            </span>
+            <span class="text-xs text-slate-600">(Away)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            {% if game.away_score is not none %}<span class="text-xl font-bold text-white">{{ game.away_score }}</span>{% endif %}
+            {% if game.book_away_ml %}
+              <span class="book-pill text-xs px-1.5 py-0.5 rounded {% if game.book_away_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
+                {{ game.book_away_ml }}
+              </span>
+            {% endif %}
+            <span class="text-sm font-bold {% if game.predicted_winner == game.away_team %}text-orange-300{% else %}text-slate-500{% endif %}">
+              {{ game.away_prob }}%
+            </span>
+          </div>
+        </div>
+        <div class="w-full bg-slate-800 rounded-full h-2">
+          <div class="prob-bar-away h-2 rounded-full" style="width:{{ game.away_prob }}%"></div>
+        </div>
+      </div>
+
+      <div class="bg-slate-900/60 rounded-lg px-4 py-3 space-y-1 text-sm">
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">🏆 Winner pick</span>
+          <span class="text-white font-semibold">{{ game.predicted_winner }}
+            <span class="text-slate-500 font-normal">({{ game.win_prob }}%)</span>
+          </span>
+        </div>
+        {% if game.spread %}
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">📊 Spread</span>
+          <span class="text-slate-300">{{ game.spread }}</span>
+        </div>
+        {% endif %}
+        {% if game.book_total %}
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">🎯 Total</span>
+          <span class="text-slate-300">{{ game.book_total }}</span>
+        </div>
+        {% endif %}
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">📈 Confidence</span>
+          <span class="text-xs px-2 py-0.5 rounded-full font-medium
+            {% if game.confidence=='HIGH' %}badge-high{% elif game.confidence=='MEDIUM' %}badge-medium{% else %}badge-low{% endif %}">
+            {{ game.confidence }}
+          </span>
+        </div>
       </div>
     </div>
-    {% endif %}
+
+    <!-- Player props -->
+    <div class="xl:col-span-3 space-y-4">
+      {% for team_label, roster, color in [
+          (game.home_team, game.home_roster, 'text-orange-300'),
+          (game.away_team, game.away_roster, 'text-purple-300'),
+      ] %}
+      {% if roster %}
+      <div>
+        <div class="flex items-center justify-between px-1 mb-1">
+          <span class="text-xs font-semibold uppercase tracking-wider {{ color }}">{{ team_label }}</span>
+          <span class="text-xs text-slate-600">Season O/U · {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}</span>
+        </div>
+        <div class="overflow-x-auto rounded" style="background:#0e0e1e;">
+          <table class="player-tbl w-full">
+            <thead><tr>
+              <th class="text-left">Player</th>
+              <th class="text-center">Pos</th>
+              <th class="text-center">Stat</th>
+              <th class="text-center">Avg/G</th>
+              <th class="text-center">Line</th>
+              <th class="text-center">Over%</th>
+              <th class="text-center">Pick</th>
+            </tr></thead>
+            <tbody>
+            {% for p in roster %}
+              {% set pr = p.props[0] if p.props else none %}
+              <tr>
+                <td class="text-slate-200 font-medium">{{ p.name }}</td>
+                <td class="text-slate-500 text-center">{{ p.pos or '—' }}</td>
+                {% if pr %}
+                <td class="text-slate-500 text-center text-xs">{{ pr.stat }}</td>
+                <td class="text-slate-300 text-center font-mono">{{ pr.avg }}</td>
+                <td class="text-slate-500 text-center font-mono">{{ pr.line }}</td>
+                <td class="text-center">
+                  <span class="{% if pr.over_prob > 55 %}text-green-400{% elif pr.over_prob < 45 %}text-red-400{% else %}text-slate-500{% endif %} font-medium">
+                    {{ pr.over_prob }}%
+                  </span>
+                </td>
+                <td class="text-center">
+                  <span class="{% if pr.pick=='OVER' %}pick-over{% elif pr.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}">
+                    {{ pr.pick }}
+                  </span>
+                </td>
+                {% else %}
+                <td colspan="5" class="text-slate-700 text-center">—</td>
+                {% endif %}
+              </tr>
+              {% for pr2 in p.props[1:] %}
+              <tr style="background:rgba(0,0,0,.18);">
+                <td colspan="2" class="text-slate-700 text-right text-xs pr-2">↳</td>
+                <td class="text-slate-500 text-center text-xs">{{ pr2.stat }}</td>
+                <td class="text-slate-300 text-center font-mono text-xs">{{ pr2.avg }}</td>
+                <td class="text-slate-500 text-center font-mono text-xs">{{ pr2.line }}</td>
+                <td class="text-center text-xs">
+                  <span class="{% if pr2.over_prob > 55 %}text-green-400{% elif pr2.over_prob < 45 %}text-red-400{% else %}text-slate-500{% endif %}">
+                    {{ pr2.over_prob }}%
+                  </span>
+                </td>
+                <td class="text-center">
+                  <span class="{% if pr2.pick=='OVER' %}pick-over{% elif pr2.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %} text-xs">
+                    {{ pr2.pick }}
+                  </span>
+                </td>
+              </tr>
+              {% endfor %}
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+
+      {% if not game.home_roster and not game.away_roster %}
+      <p class="text-xs text-slate-600 italic">No player data available for this game.</p>
+      {% endif %}
+    </div>
+
   </div>
 </div>
-
-{% endblock %}
-{% block scripts %}
-<script>
-const mode = "{{ mode or 'game' }}";
-function setMode(m) {
-  document.getElementById('mode-input').value = m;
-  ['game','td','yards'].forEach(s => {
-    document.getElementById('section-'+s).style.display = s === m ? 'block' : 'none';
-    const btn = document.getElementById('tab-'+s);
-    btn.classList.toggle('bg-orange-700', s === m);
-    btn.classList.toggle('text-white', s === m);
-    btn.classList.toggle('text-slate-400', s !== m);
-  });
-}
-setMode(mode);
-
-function fillNFLPlayer(p) {
-  const pn = document.getElementById('player_name_td');
-  if(pn) pn.value = p.name;
-  const mp = document.querySelector('[name=player_name]');
-  if(mp) mp.value = p.name;
-  if(document.getElementById('nfl_tds')) document.getElementById('nfl_tds').value = p.tds;
-  if(document.getElementById('nfl_rush_att')) document.getElementById('nfl_rush_att').value = p.rush_att;
-  if(document.getElementById('nfl_rec_tgt')) document.getElementById('nfl_rec_tgt').value = p.rec_tgt;
-  if(document.getElementById('nfl_games')) document.getElementById('nfl_games').value = p.games;
-}
-
-function fillNFLPlayerYds(p) {
-  const pn = document.getElementById('player_name_yds');
-  if(pn) pn.value = p.name;
-  const mp = document.querySelector('[name=player_name]');
-  if(mp) mp.value = p.name;
-  if(document.getElementById('nfl_rush_yds')) document.getElementById('nfl_rush_yds').value = p.rush_yds || '';
-  if(document.getElementById('nfl_rec_yds'))  document.getElementById('nfl_rec_yds').value  = p.rec_yds  || '';
-  if(document.getElementById('nfl_pass_yds')) document.getElementById('nfl_pass_yds').value = p.pass_yds || '';
-  // auto line = avg * 0.9
-  const g = p.games || 17;
-  if(p.rush_yds && document.getElementById('nfl_rush_line'))
-    document.getElementById('nfl_rush_line').value = (Math.round(p.rush_yds/g * 0.9 * 2)/2).toFixed(1);
-  if(p.rec_yds && document.getElementById('nfl_rec_line'))
-    document.getElementById('nfl_rec_line').value = (Math.round(p.rec_yds/g * 0.9 * 2)/2).toFixed(1);
-  if(p.pass_yds && document.getElementById('nfl_pass_line'))
-    document.getElementById('nfl_pass_line').value = (Math.round(p.pass_yds/g * 0.9 * 2)/2).toFixed(1);
-}
-</script>
+{% endfor %}
+{% endif %}
 {% endblock %}

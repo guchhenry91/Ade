@@ -37,435 +37,36 @@ app = FastAPI(title="Sports Betting Model", version="1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# ── Shared helpers ────────────────────────────────────────────────────────────
 
 def signals_to_rows(signals) -> list[dict]:
     return [s.to_dict() for s in rank_signals(signals)]
 
 
 def parse_odds_json(raw: str) -> dict:
-    """Safely parse a JSON odds string from a form field."""
     try:
         return json.loads(raw) if raw and raw.strip() else {}
     except Exception:
         return {}
 
 
-# ── pages ─────────────────────────────────────────────────────────────────────
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return TEMPLATES.TemplateResponse("index.html", {"request": request})
-
-
-# ─────────────────────────────────────────────
-#  SOCCER
-# ─────────────────────────────────────────────
-
-@app.get("/soccer", response_class=HTMLResponse)
-async def soccer_page(request: Request):
-    return TEMPLATES.TemplateResponse("soccer.html", {
-        "request": request,
-        "rows": [],
-        "error": None,
-        "leagues": ["EPL", "UCL", "LIGA", "L1"],
-        "league_names": {
-            "EPL": "Premier League",
-            "UCL": "Champions League",
-            "LIGA": "La Liga",
-            "L1": "Ligue 1",
-        },
-    })
-
-
-@app.post("/soccer", response_class=HTMLResponse)
-async def soccer_analyze(
-    request: Request,
-    home_team: str = Form(...),
-    away_team: str = Form(...),
-    league: str    = Form("EPL"),
-    home_odds: str = Form(""),
-    draw_odds: str = Form(""),
-    away_odds: str = Form(""),
-    ou_over:   str = Form(""),
-    ou_under:  str = Form(""),
-    btts_odds: str = Form(""),
-    cs_odds:   str = Form(""),   # JSON string: {"1-0": 6.5, ...}
-):
-    error = None
-    rows  = []
-    cs_grid = []
+def _ml_to_prob(ml) -> float:
+    """American-odds string/number → implied win probability."""
     try:
-        model = FootballModel(league)
-
-        market_odds: dict = {}
-        if home_odds or draw_odds or away_odds:
-            winner = {}
-            if home_odds: winner["home"] = float(home_odds)
-            if draw_odds: winner["draw"] = float(draw_odds)
-            if away_odds: winner["away"] = float(away_odds)
-            market_odds["winner"] = winner
-        if ou_over or ou_under:
-            ou = {}
-            if ou_over:  ou["over"]  = float(ou_over)
-            if ou_under: ou["under"] = float(ou_under)
-            market_odds["ou25"] = ou
-        if btts_odds:
-            market_odds["btts"] = float(btts_odds)
-        if cs_odds.strip():
-            market_odds["correct_score"] = parse_odds_json(cs_odds)
-
-        signals  = model.analyze_fixture(home_team, away_team, market_odds)
-        rows     = signals_to_rows(signals)
-
-        # separate correct score grid for visual display
-        home_xg, away_xg = model._match_xg(home_team, away_team)
-        grid = correct_score_grid(home_xg, away_xg, max_goals=5)
-        cs_grid = [
-            {"score": f"{h}-{a}", "prob": f"{p*100:.1f}%",
-             "prob_raw": round(p * 100, 1),
-             "result": "H" if h > a else ("D" if h == a else "A")}
-            for h, a, p in grid[:12]
-        ]
-
-    except Exception as e:
-        error = str(e)
-        traceback.print_exc()
-
-    return TEMPLATES.TemplateResponse("soccer.html", {
-        "request":    request,
-        "rows":       rows,
-        "cs_grid":    cs_grid,
-        "error":      error,
-        "home_team":  home_team,
-        "away_team":  away_team,
-        "league":     league,
-        "leagues":    ["EPL", "UCL", "LIGA", "L1"],
-        "league_names": {
-            "EPL": "Premier League", "UCL": "Champions League",
-            "LIGA": "La Liga",       "L1": "Ligue 1",
-        },
-    })
+        v = float(str(ml).replace("+", "").replace("EVEN", "100").strip())
+        return 100 / (v + 100) if v > 0 else abs(v) / (abs(v) + 100)
+    except (TypeError, ValueError):
+        return 0.5
 
 
-# ─────────────────────────────────────────────
-#  NBA
-# ─────────────────────────────────────────────
+# ── Game-data builders (reused by today + sport pages) ───────────────────────
 
-@app.get("/nba", response_class=HTMLResponse)
-async def nba_page(request: Request):
-    return TEMPLATES.TemplateResponse("nba.html", {
-        "request": request, "rows": [], "error": None,
-        "players": _NBA_PRESETS,
-    })
-
-
-@app.post("/nba", response_class=HTMLResponse)
-async def nba_analyze(
-    request: Request,
-    mode:        str   = Form("props"),   # "game" | "props"
-    home_team:   str   = Form(""),
-    away_team:   str   = Form(""),
-    home_ml:     str   = Form(""),
-    away_ml:     str   = Form(""),
-    total_line:  str   = Form(""),
-    home_ortg:   str   = Form("115.0"),
-    away_ortg:   str   = Form("115.0"),
-    home_pace:   str   = Form("100.0"),
-    away_pace:   str   = Form("100.0"),
-    player_name: str   = Form(""),
-    avg_pts:     str   = Form(""),
-    avg_reb:     str   = Form(""),
-    avg_ast:     str   = Form(""),
-    avg_3pm:     str   = Form(""),
-    line_pts:    str   = Form(""),
-    line_reb:    str   = Form(""),
-    line_ast:    str   = Form(""),
-    line_3pm:    str   = Form(""),
-):
-    error = None
-    rows  = []
-    try:
-        model   = NBAModel(season=2025)
-        signals = []
-
-        if mode == "game" and home_team and away_team:
-            ml_odds = {}
-            if home_ml: ml_odds["home"] = float(home_ml)
-            if away_ml: ml_odds["away"] = float(away_ml)
-            signals += model.game_winner_signals(home_team, away_team,
-                                                  market_odds=ml_odds or None)
-            if total_line:
-                ou_odds = {"over": 1.91, "under": 1.91}
-                signals += model.total_points_signals(
-                    home_team, away_team,
-                    line      = float(total_line),
-                    home_ortg = float(home_ortg),
-                    away_ortg = float(away_ortg),
-                    home_pace = float(home_pace),
-                    away_pace = float(away_pace),
-                    market_odds = ou_odds,
-                )
-
-        elif mode == "props" and player_name:
-            avgs  = {}
-            lines = {}
-            if avg_pts:  avgs["pts"]  = float(avg_pts)
-            if avg_reb:  avgs["reb"]  = float(avg_reb)
-            if avg_ast:  avgs["ast"]  = float(avg_ast)
-            if avg_3pm:  avgs["3pm"]  = float(avg_3pm)
-            if line_pts: lines["pts"] = float(line_pts)
-            if line_reb: lines["reb"] = float(line_reb)
-            if line_ast: lines["ast"] = float(line_ast)
-            if line_3pm: lines["3pm"] = float(line_3pm)
-            if avgs and lines:
-                signals = model.player_props_by_name(
-                    player_name, lines, known_avgs=avgs)
-
-        rows = signals_to_rows(signals)
-
-    except Exception as e:
-        error = str(e)
-        traceback.print_exc()
-
-    return TEMPLATES.TemplateResponse("nba.html", {
-        "request":     request,
-        "rows":        rows,
-        "error":       error,
-        "mode":        mode,
-        "player_name": player_name,
-        "players":     _NBA_PRESETS,
-    })
-
-
-# ─────────────────────────────────────────────
-#  NFL
-# ─────────────────────────────────────────────
-
-@app.get("/nfl", response_class=HTMLResponse)
-async def nfl_page(request: Request):
-    return TEMPLATES.TemplateResponse("nfl.html", {
-        "request": request, "rows": [], "error": None,
-        "players": _NFL_PRESETS,
-    })
-
-
-@app.post("/nfl", response_class=HTMLResponse)
-async def nfl_analyze(
-    request: Request,
-    mode:       str = Form("game"),   # "game" | "td" | "yards"
-    home_team:  str = Form(""),
-    away_team:  str = Form(""),
-    spread:     str = Form(""),
-    home_ml:    str = Form(""),
-    away_ml:    str = Form(""),
-    total_line: str = Form(""),
-    home_ppg:   str = Form("23.0"),
-    away_ppg:   str = Form("23.0"),
-    # TD / yards
-    player_name: str = Form(""),
-    season_tds:  str = Form(""),
-    rush_att:    str = Form(""),
-    rec_tgt:     str = Form(""),
-    games:       str = Form("17"),
-    td_odds:     str = Form(""),
-    rush_yds:    str = Form(""),
-    rec_yds:     str = Form(""),
-    pass_yds:    str = Form(""),
-    rush_line:   str = Form(""),
-    rec_line:    str = Form(""),
-    pass_line:   str = Form(""),
-):
-    error = None
-    rows  = []
-    try:
-        model   = NFLModel(season=2025)
-        signals = []
-
-        if mode == "game" and home_team and away_team:
-            sp   = float(spread) if spread else None
-            ml   = {}
-            if home_ml: ml["home"] = float(home_ml)
-            if away_ml: ml["away"] = float(away_ml)
-            signals += model.game_winner_signals(home_team, away_team,
-                                                  spread=sp, market_odds=ml or None)
-            if spread:
-                signals += model.spread_signals(home_team, away_team, float(spread),
-                                                 market_odds={"home": 1.91, "away": 1.91})
-            if total_line:
-                signals += model.total_points_signals(
-                    home_team, away_team,
-                    line        = float(total_line),
-                    home_stats  = {"pointsPerGame": float(home_ppg)},
-                    away_stats  = {"pointsPerGame": float(away_ppg)},
-                    market_odds = {"over": 1.91, "under": 1.91},
-                )
-
-        elif mode == "td" and player_name:
-            from utils.stats import nfl_td_prob, edge_pct, kelly_fraction, confidence_label
-            from utils.odds  import BetSignal
-            g    = int(games) if games else 17
-            ra   = float(rush_att) if rush_att else 0
-            rt   = float(rec_tgt)  if rec_tgt  else 0
-            rz_c = ra / g * 0.15
-            rz_t = rt / g * 0.12
-            prob = nfl_td_prob(rz_t, rz_c, games=1)
-            odds = float(td_odds) if td_odds else None
-            ep   = edge_pct(prob, odds) if odds else None
-            signals.append(BetSignal(
-                sport="American Football", league="NFL",
-                market="ANYTIME_TD_SCORER",
-                selection=f"{player_name} – Anytime TD",
-                model_prob=prob, market_odds=odds, edge_pct=ep,
-                confidence=confidence_label(prob),
-                notes=f"RZ carries/gm {rz_c:.1f}  RZ tgt/gm {rz_t:.1f}  TDs: {season_tds}",
-            ))
-
-        elif mode == "yards" and player_name:
-            from utils.stats import shot_attempt_over_under, confidence_label
-            from utils.odds  import BetSignal
-            g  = int(games) if games else 17
-            for total_yds, line_val, market_label in [
-                (rush_yds, rush_line, "PLAYER_RUSHING_YARDS_OU"),
-                (rec_yds,  rec_line,  "PLAYER_RECEIVING_YARDS_OU"),
-                (pass_yds, pass_line, "PLAYER_PASSING_YARDS_OU"),
-            ]:
-                if total_yds and line_val:
-                    avg  = float(total_yds) / g
-                    line = float(line_val)
-                    ov, un = shot_attempt_over_under(avg, line, std_factor=0.35)
-                    for lbl, prob in [(f"Over {line}", ov), (f"Under {line}", un)]:
-                        signals.append(BetSignal(
-                            sport="American Football", league="NFL",
-                            market=market_label,
-                            selection=f"{player_name} – {lbl} yds",
-                            model_prob=prob,
-                            confidence=confidence_label(prob),
-                            notes=f"Season avg: {avg:.1f} yds/gm",
-                        ))
-
-        rows = signals_to_rows(signals)
-
-    except Exception as e:
-        error = str(e)
-        traceback.print_exc()
-
-    return TEMPLATES.TemplateResponse("nfl.html", {
-        "request":     request,
-        "rows":        rows,
-        "error":       error,
-        "mode":        mode,
-        "player_name": player_name,
-        "players":     _NFL_PRESETS,
-    })
-
-
-# ─────────────────────────────────────────────
-#  REPORTS
-# ─────────────────────────────────────────────
-
-@app.get("/reports", response_class=HTMLResponse)
-async def reports_page(request: Request):
-    reports_dir = Path(__file__).parent.parent / "reports"
-    files = sorted(reports_dir.glob("*.md"), reverse=True) if reports_dir.exists() else []
-    reports = []
-    for f in files:
-        content = f.read_text()
-        reports.append({"date": f.stem, "content": content, "name": f.name})
-    return TEMPLATES.TemplateResponse("reports.html", {
-        "request": request, "reports": reports,
-    })
-
-
-# ─────────────────────────────────────────────
-#  DEMO — run all real 2025-26 data
-# ─────────────────────────────────────────────
-
-@app.get("/demo", response_class=HTMLResponse)
-async def demo_page(request: Request):
-    try:
-        import demo as demo_mod
-        signals = (
-            demo_mod.demo_epl()
-            + demo_mod.demo_ucl()
-            + demo_mod.demo_liga()
-            + demo_mod.demo_ligue1()
-            + demo_mod.demo_nba()
-            + demo_mod.demo_nfl()
-        )
-        save_markdown_report(signals, outdir=str(Path(__file__).parent.parent / "reports"))
-        rows = signals_to_rows(signals)
-        value = signals_to_rows(filter_value_bets(signals, min_edge=2.0))
-    except Exception as e:
-        traceback.print_exc()
-        rows  = []
-        value = []
-    return TEMPLATES.TemplateResponse("demo.html", {
-        "request": request,
-        "rows":    rows,
-        "value":   value,
-        "total":   len(rows),
-    })
-
-
-# ─────────────────────────────────────────────
-#  JSON API endpoints (for JS fetch)
-# ─────────────────────────────────────────────
-
-@app.get("/today", response_class=HTMLResponse)
-async def today_page(request: Request):
+def _build_nba_games(today_str: str) -> list:
     from data.nba_data  import get_games as nba_get_games
-    from data.nfl_data  import get_games as nfl_get_games
-    from data.football_data import get_fixtures, get_team_players as get_soccer_players
     from data.odds_api  import build_odds_lookup, find_game_odds, decimal_to_american
-    from utils.stats    import (
-        poisson_match_probs, confidence_label,
-        shot_attempt_over_under, threept_made_ou,
-    )
-    import os
+    from utils.stats    import confidence_label, shot_attempt_over_under, threept_made_ou
 
-    today_str    = date.today().strftime("%Y%m%d")
-    today_label  = date.today().strftime("%A, %B %d %Y")
-    games        = []
-    has_odds_key = bool(os.getenv("ODDS_API_KEY"))
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _ml_to_prob(ml) -> float:
-        """American-odds string/number → implied win probability."""
-        try:
-            v = float(str(ml).replace("+", "").replace("EVEN", "100").strip())
-            return 100 / (v + 100) if v > 0 else abs(v) / (abs(v) + 100)
-        except (TypeError, ValueError):
-            return 0.5
-
-    def _make_nba_props(avg_pts, avg_fg3m, avg_reb, avg_ast):
-        """Return list of model O/U prop dicts for an NBA player."""
-        props = []
-        for stat, avg, std in [
-            ("PTS",  avg_pts,  0.28),
-            ("3PM",  avg_fg3m, None),
-            ("REB",  avg_reb,  0.32),
-            ("AST",  avg_ast,  0.35),
-        ]:
-            if avg < 0.5:
-                continue
-            line = max(0.5, round(avg * 2) / 2 - 0.5)
-            if std is None:
-                over_p, under_p = threept_made_ou(avg, line)
-            else:
-                over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
-            pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
-            props.append({
-                "stat": stat, "avg": avg, "line": line,
-                "over_prob":  round(over_p  * 100, 1),
-                "under_prob": round(under_p * 100, 1),
-                "pick": pick,
-                "confidence": confidence_label(max(over_p, under_p)),
-            })
-        return props
-
-    # ─────────────────── NBA ────────────────────────────────────────────────
+    games = []
     try:
         nba_book_lookup = build_odds_lookup("NBA")
 
@@ -475,22 +76,23 @@ async def today_page(request: Request):
             home_id   = str(g.get("home_id", ""))
             away_id   = str(g.get("away_id", ""))
 
-            # Win probability from ESPN moneyline (no extra API calls!)
             h_prob = _ml_to_prob(g.get("home_ml")) if g.get("home_ml") else 0.55
             a_prob = 1 - h_prob
             predicted_winner = home_team if h_prob >= a_prob else away_team
             win_prob = h_prob if h_prob >= a_prob else a_prob
 
-            # Sportsbook odds (Odds API — optional)
             book = find_game_odds(nba_book_lookup, home_team, away_team) or {}
 
-            # ── Players from ESPN scoreboard leaders (no BDL needed) ──────
             def _nba_roster(team_id: str) -> list:
                 player_map: dict = {}
                 for ldr in g.get("leaders", []):
-                    if str(ldr.get("team_id")) != team_id:
+                    ldr_tid = ldr.get("team_id", "")
+                    # Include if team_id matches or is empty (fallback — ESPN $ref)
+                    if ldr_tid and ldr_tid != team_id:
                         continue
-                    name = ldr["name"]
+                    name = ldr.get("name", "")
+                    if not name:
+                        continue
                     stat = ldr["stat"]
                     val  = float(ldr["value"])
                     if name not in player_map:
@@ -502,13 +104,33 @@ async def today_page(request: Request):
                           "threePointFieldGoalsMade": "fg3m"}.get(stat)
                     if sk:
                         player_map[name][sk] = val
+
                 out = []
                 for p in player_map.values():
-                    out.append({
-                        **p,
-                        "props": _make_nba_props(
-                            p["pts"], p["fg3m"], p["reb"], p["ast"]),
-                    })
+                    props = []
+                    for stat, avg, std in [
+                        ("PTS", p["pts"],  0.28),
+                        ("3PM", p["fg3m"], None),
+                        ("REB", p["reb"],  0.32),
+                        ("AST", p["ast"],  0.35),
+                    ]:
+                        if avg < 0.5:
+                            continue
+                        line = max(0.5, round(avg * 2) / 2 - 0.5)
+                        if std is None:
+                            over_p, under_p = threept_made_ou(avg, line)
+                        else:
+                            over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
+                        pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
+                        props.append({
+                            "stat": stat, "avg": avg, "line": line,
+                            "over_prob":  round(over_p  * 100, 1),
+                            "under_prob": round(under_p * 100, 1),
+                            "pick": pick,
+                            "confidence": confidence_label(max(over_p, under_p)),
+                        })
+                    if props:
+                        out.append({**p, "props": props})
                 return out
 
             home_roster = _nba_roster(home_id)
@@ -539,10 +161,18 @@ async def today_page(request: Request):
     except Exception:
         traceback.print_exc()
 
-    # ─────────────────── NFL ────────────────────────────────────────────────
+    return games
+
+
+def _build_nfl_games() -> list:
+    from data.nfl_data  import get_games as nfl_get_games
+    from data.odds_api  import build_odds_lookup, find_game_odds, decimal_to_american
+    from utils.stats    import confidence_label, shot_attempt_over_under
+
+    _NFL_GAMES = 17
+    games = []
     try:
         nfl_book_lookup = build_odds_lookup("NFL")
-        _NFL_GAMES = 17
 
         for g in nfl_get_games():
             home_team = g.get("home_team") or "TBD"
@@ -557,24 +187,28 @@ async def today_page(request: Request):
 
             book = find_game_odds(nfl_book_lookup, home_team, away_team) or {}
 
+            _stat_map = {
+                "passingYards":        ("Pass Yds",  0.40),
+                "rushingYards":        ("Rush Yds",  0.55),
+                "receivingYards":      ("Rec Yds",   0.60),
+                "passingTouchdowns":   ("Pass TDs",  0.70),
+                "rushingTouchdowns":   ("Rush TDs",  0.80),
+                "receivingTouchdowns": ("Rec TDs",   0.80),
+                "receptions":         ("Receptions", 0.40),
+            }
+
             def _nfl_roster(team_id: str) -> list:
                 player_map: dict = {}
-                _stat_map = {
-                    "passingYards":        ("Pass Yds",  0.40),
-                    "rushingYards":        ("Rush Yds",  0.55),
-                    "receivingYards":      ("Rec Yds",   0.60),
-                    "passingTouchdowns":   ("Pass TDs",  0.70),
-                    "rushingTouchdowns":   ("Rush TDs",  0.80),
-                    "receivingTouchdowns": ("Rec TDs",   0.80),
-                    "receptions":         ("Receptions", 0.40),
-                }
                 for ldr in g.get("leaders", []):
-                    if str(ldr.get("team_id")) != team_id:
+                    ldr_tid = ldr.get("team_id", "")
+                    if ldr_tid and ldr_tid != team_id:
                         continue
-                    name = ldr["name"]
+                    name = ldr.get("name", "")
+                    pos  = ldr.get("position", "")
+                    if not name:
+                        continue
                     stat = ldr["stat"]
                     val  = float(ldr.get("value", 0))
-                    pos  = ldr.get("position", "")
                     if name not in player_map:
                         player_map[name] = {"name": name, "pos": pos, "season_stats": {}}
                     player_map[name]["season_stats"][stat] = val
@@ -605,7 +239,7 @@ async def today_page(request: Request):
             home_roster = _nfl_roster(home_id)
             away_roster = _nfl_roster(away_id)
             if not home_roster and not away_roster:
-                continue   # skip games with no player data (off-season etc.)
+                continue
 
             games.append({
                 "sport": "Football", "league": "NFL", "sport_icon": "🏈",
@@ -632,13 +266,21 @@ async def today_page(request: Request):
     except Exception:
         traceback.print_exc()
 
-    # ─────────────────── Soccer ─────────────────────────────────────────────
+    return games
+
+
+def _build_soccer_games(today_str: str) -> list:
+    from data.football_data import get_fixtures, get_team_players as get_soccer_players
+    from data.odds_api      import build_odds_lookup, find_game_odds, decimal_to_american
+    from utils.stats        import poisson_match_probs, confidence_label
+
     soccer_leagues = [
         ("EPL",  "Premier League"),
         ("UCL",  "Champions League"),
         ("LIGA", "La Liga"),
         ("L1",   "Ligue 1"),
     ]
+    games = []
     for league_key, league_name in soccer_leagues:
         try:
             book_lookup = build_odds_lookup(league_key)
@@ -660,7 +302,6 @@ async def today_page(request: Request):
                 book = find_game_odds(book_lookup, home_team, away_team) or {}
 
                 def _soccer_roster(team_name: str, team_xg: float) -> list:
-                    # Fetch real players for this team (api-football per-team endpoint)
                     team_pl = get_soccer_players(league_key, team_name, season=2024)
                     sigs = model.player_anytime_scorer_signals(
                         f"{home_team} vs {away_team}", team_name, team_xg,
@@ -671,12 +312,8 @@ async def today_page(request: Request):
                         if "Lead Striker (estimate)" in s.selection:
                             continue
                         notes = s.notes or ""
-                        shots = ""
-                        xg_sh = ""
-                        if "Shots/game:" in notes:
-                            shots = notes.split("Shots/game:")[1].strip().split()[0]
-                        if "xG/shot:" in notes:
-                            xg_sh = notes.split("xG/shot:")[1].strip().split()[0]
+                        shots = notes.split("Shots/game:")[1].strip().split()[0] if "Shots/game:" in notes else ""
+                        xg_sh = notes.split("xG/shot:")[1].strip().split()[0] if "xG/shot:" in notes else ""
                         out.append({
                             "name":       s.selection,
                             "shots_pg":   shots,
@@ -684,20 +321,13 @@ async def today_page(request: Request):
                             "goal_prob":  round(s.model_prob * 100, 1),
                             "confidence": s.confidence,
                         })
-                    # If api-football returned no players, show the estimate
                     if not out and not team_pl:
                         for s in sigs:
                             out.append({
-                                "name":      s.selection,
-                                "shots_pg":  "—",
-                                "xg_shot":   "—",
-                                "goal_prob": round(s.model_prob * 100, 1),
-                                "confidence": s.confidence,
+                                "name": s.selection, "shots_pg": "—", "xg_shot": "—",
+                                "goal_prob": round(s.model_prob * 100, 1), "confidence": s.confidence,
                             })
                     return out
-
-                home_roster = _soccer_roster(home_team, home_xg)
-                away_roster = _soccer_roster(away_team, away_xg)
 
                 games.append({
                     "sport": "Soccer", "league": league_name, "sport_icon": "⚽",
@@ -718,19 +348,134 @@ async def today_page(request: Request):
                     "book_away_ml": decimal_to_american(book["away_ml"]) if book.get("away_ml") else None,
                     "book_draw_ml": decimal_to_american(book.get("draw_ml")) if book.get("draw_ml") else None,
                     "book_total":   book.get("total_line"),
-                    "home_roster": home_roster,
-                    "away_roster": away_roster,
+                    "home_roster":  _soccer_roster(home_team, home_xg),
+                    "away_roster":  _soccer_roster(away_team, away_xg),
                 })
         except Exception:
             traceback.print_exc()
 
+    return games
+
+
+# ── pages ─────────────────────────────────────────────────────────────────────
+
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return TEMPLATES.TemplateResponse("index.html", {"request": request})
+
+
+# ─────────────────────────────────────────────
+#  SOCCER — live fixtures dashboard
+# ─────────────────────────────────────────────
+
+@app.get("/soccer", response_class=HTMLResponse)
+async def soccer_page(request: Request):
+    today_str   = date.today().strftime("%Y%m%d")
+    today_label = date.today().strftime("%A, %B %d %Y")
+    games       = _build_soccer_games(today_str)
+    return TEMPLATES.TemplateResponse("soccer.html", {
+        "request": request, "games": games,
+        "today": today_label, "total": len(games),
+        "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+    })
+
+
+# ─────────────────────────────────────────────
+#  NBA — live games dashboard
+# ─────────────────────────────────────────────
+
+@app.get("/nba", response_class=HTMLResponse)
+async def nba_page(request: Request):
+    today_str   = date.today().strftime("%Y%m%d")
+    today_label = date.today().strftime("%A, %B %d %Y")
+    games       = _build_nba_games(today_str)
+    return TEMPLATES.TemplateResponse("nba.html", {
+        "request": request, "games": games,
+        "today": today_label, "total": len(games),
+        "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+    })
+
+
+# ─────────────────────────────────────────────
+#  NFL — live games dashboard
+# ─────────────────────────────────────────────
+
+@app.get("/nfl", response_class=HTMLResponse)
+async def nfl_page(request: Request):
+    today_label = date.today().strftime("%A, %B %d %Y")
+    games       = _build_nfl_games()
+    return TEMPLATES.TemplateResponse("nfl.html", {
+        "request": request, "games": games,
+        "today": today_label, "total": len(games),
+        "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+    })
+
+
+# ─────────────────────────────────────────────
+#  REPORTS
+# ─────────────────────────────────────────────
+
+@app.get("/reports", response_class=HTMLResponse)
+async def reports_page(request: Request):
+    reports_dir = Path(__file__).parent.parent / "reports"
+    files = sorted(reports_dir.glob("*.md"), reverse=True) if reports_dir.exists() else []
+    reports = []
+    for f in files:
+        content = f.read_text()
+        reports.append({"date": f.stem, "content": content, "name": f.name})
+    return TEMPLATES.TemplateResponse("reports.html", {
+        "request": request, "reports": reports,
+    })
+
+
+# ─────────────────────────────────────────────
+#  DEMO
+# ─────────────────────────────────────────────
+
+@app.get("/demo", response_class=HTMLResponse)
+async def demo_page(request: Request):
+    try:
+        import demo as demo_mod
+        signals = (
+            demo_mod.demo_epl()
+            + demo_mod.demo_ucl()
+            + demo_mod.demo_liga()
+            + demo_mod.demo_ligue1()
+            + demo_mod.demo_nba()
+            + demo_mod.demo_nfl()
+        )
+        save_markdown_report(signals, outdir=str(Path(__file__).parent.parent / "reports"))
+        rows  = signals_to_rows(signals)
+        value = signals_to_rows(filter_value_bets(signals, min_edge=2.0))
+    except Exception:
+        traceback.print_exc()
+        rows  = []
+        value = []
+    return TEMPLATES.TemplateResponse("demo.html", {
+        "request": request, "rows": rows, "value": value, "total": len(rows),
+    })
+
+
+# ─────────────────────────────────────────────
+#  TODAY — all sports combined
+# ─────────────────────────────────────────────
+
+@app.get("/today", response_class=HTMLResponse)
+async def today_page(request: Request):
+    today_str   = date.today().strftime("%Y%m%d")
+    today_label = date.today().strftime("%A, %B %d %Y")
+    games = (
+        _build_nba_games(today_str)
+        + _build_nfl_games()
+        + _build_soccer_games(today_str)
+    )
     return TEMPLATES.TemplateResponse("today.html", {
         "request":      request,
         "games":        games,
         "today":        today_label,
         "total":        len(games),
         "refresh_secs": 300,
-        "has_odds_key": has_odds_key,
+        "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
     })
 
 
@@ -741,7 +486,7 @@ async def api_correct_score(home_xg: float = 1.5, away_xg: float = 1.2):
 
 
 # ─────────────────────────────────────────────
-#  Preset data for quick-fill
+#  Preset data (kept for demo / reference)
 # ─────────────────────────────────────────────
 
 _NBA_PRESETS = [

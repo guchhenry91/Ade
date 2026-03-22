@@ -3,12 +3,23 @@ NFL data layer.
 Source: ESPN public API (no key required).
 """
 from __future__ import annotations
+import re
 import logging
 from typing import Any, Dict, List, Optional
 
 from data.fetcher import espn_fetch
 
 logger = logging.getLogger(__name__)
+
+
+def _espn_team_id(team_obj) -> str:
+    """Extract team_id from ESPN team object — handles $ref URL references."""
+    if not isinstance(team_obj, dict):
+        return ""
+    if "$ref" in team_obj:
+        m = re.search(r'/teams/(\d+)', team_obj["$ref"])
+        return m.group(1) if m else ""
+    return str(team_obj.get("id", ""))
 
 
 # ── Scoreboard ───────────────────────────────────────────────────────────────
@@ -45,8 +56,8 @@ def get_games(week: Optional[int] = None, season: int = 2024) -> List[Dict]:
                 ath = entry.get("athlete", {})
                 leaders.append({
                     "name":          ath.get("displayName", ""),
-                    "team_id":       str(ath.get("team", {}).get("id", "")),
-                    "position":      ath.get("position", {}).get("abbreviation", ""),
+                    "team_id":       _espn_team_id(ath.get("team", {})),
+                    "position":      (ath.get("position") or {}).get("abbreviation", ""),
                     "stat":          cat_name,
                     "value":         float(entry.get("value", 0) or 0),
                     "display_value": entry.get("displayValue", ""),
