@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}Sports Betting Model{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#6366f1', dark: '#4f46e5' },
+            surface: '#1e1e2e',
+            card: '#2a2a3e',
+            border: '#3a3a5c',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #13131f; }
+    .card { background: #1e1e2e; border: 1px solid #2e2e4a; }
+    .badge-high   { background:#14532d; color:#86efac; }
+    .badge-medium { background:#713f12; color:#fde68a; }
+    .badge-low    { background:#1e1b4b; color:#a5b4fc; }
+    .badge-edge-pos { background:#14532d; color:#86efac; }
+    .badge-edge-neg { background:#7f1d1d; color:#fca5a5; }
+    .nav-link { transition: color .15s; }
+    .nav-link:hover { color: #818cf8; }
+    .nav-link.active { color: #818cf8; border-bottom: 2px solid #818cf8; }
+    input,select { background:#252540; border:1px solid #3a3a5c; color:#e2e8f0; }
+    input:focus,select:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,.25); }
+    .btn-primary { background:#6366f1; color:white; transition:background .15s; }
+    .btn-primary:hover { background:#4f46e5; }
+    .table-row:nth-child(even) { background: rgba(255,255,255,.025); }
+    .cs-cell { transition: all .15s; }
+    .cs-cell:hover { transform: scale(1.05); }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body class="text-slate-200 min-h-screen">
+
+<!-- NAV -->
+<nav class="card border-b border-border sticky top-0 z-50">
+  <div class="max-w-7xl mx-auto px-4 flex items-center gap-6 h-14">
+    <a href="/" class="text-brand font-bold text-lg tracking-tight flex items-center gap-2">
+      <span class="text-2xl">🎯</span> BetModel
+    </a>
+    <div class="flex gap-1 ml-4 text-sm font-medium text-slate-400">
+      {% set current = request.url.path %}
+      {% for href, label, icon in [
+          ('/', 'Dashboard', '🏠'),
+          ('/soccer', 'Soccer', '⚽'),
+          ('/nba', 'NBA', '🏀'),
+          ('/nfl', 'NFL', '🏈'),
+          ('/demo', 'Live Demo', '⚡'),
+          ('/reports', 'Reports', '📊'),
+      ] %}
+      <a href="{{ href }}"
+         class="nav-link px-3 py-4 {% if current == href %}active{% endif %}">
+        {{ icon }} {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main class="max-w-7xl mx-auto px-4 py-8">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="text-center text-xs text-slate-600 py-6 mt-8 border-t border-border">
+  Sports Betting Model · Probabilities only · Not financial advice
+</footer>
+
+<script>
+  // auto-fill preset player stats
+  function fillPreset(data) {
+    const fields = ['pts','reb','ast','3pm','name','rush_yds','rec_yds','pass_yds','tds','rush_att','rec_tgt','games'];
+    fields.forEach(f => {
+      const el = document.getElementById('avg_'+f) || document.getElementById(f) || document.getElementById('player_name');
+      if (el && data[f] !== undefined) el.value = data[f];
+    });
+    const pn = document.getElementById('player_name');
+    if (pn && data.name) pn.value = data.name;
+    // auto-set lines to ~season avg
+    if (data.pts)  { const l = document.getElementById('line_pts'); if(l) l.value = (Math.round(data.pts * 2)/2 - 0.5).toFixed(1); }
+    if (data.reb)  { const l = document.getElementById('line_reb'); if(l) l.value = (Math.round(data.reb * 2)/2 - 0.5).toFixed(1); }
+    if (data.ast)  { const l = document.getElementById('line_ast'); if(l) l.value = (Math.round(data.ast * 2)/2 - 0.5).toFixed(1); }
+    if (data['3pm']){ const l = document.getElementById('line_3pm'); if(l) l.value = (Math.round(data['3pm'] * 2)/2 - 0.5).toFixed(1); }
+  }
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

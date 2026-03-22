@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Live Demo – Sports Betting Model{% endblock %}
+{% block content %}
+
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold text-white">⚡ Live Demo</h1>
+    <p class="text-slate-400 text-sm mt-1">All 2025-26 real season stats — {{ total }} signals generated</p>
+  </div>
+  <a href="/demo" class="btn-primary px-4 py-2 rounded-lg text-sm font-semibold">
+    ↻ Refresh
+  </a>
+</div>
+
+{% if value %}
+<div class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">
+    🔥 Value Bets
+    <span class="text-sm font-normal text-slate-500">(edge ≥ 2%)</span>
+  </h2>
+  {% set rows = value %}
+  {% include "_signals_table.html" %}
+</div>
+{% endif %}
+
+<div>
+  <h2 class="text-lg font-semibold text-white mb-3">All Signals</h2>
+  {% set rows = rows %}
+  {% include "_signals_table.html" %}
+</div>
+
+{% endblock %}

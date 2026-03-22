@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Soccer – Betting Model{% endblock %}
+{% block content %}
+
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-white">⚽ Soccer Analyser</h1>
+  <p class="text-slate-400 text-sm mt-1">Premier League · Champions League · La Liga · Ligue 1</p>
+</div>
+
+{% if error %}
+<div class="bg-red-900/40 border border-red-700 text-red-300 rounded-xl px-4 py-3 mb-6 text-sm">
+  ⚠️ {{ error }}
+</div>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <!-- FORM -->
+  <div class="lg:col-span-1">
+    <form method="post" action="/soccer" class="card rounded-xl p-5 space-y-4">
+
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">League</label>
+        <select name="league" class="w-full rounded-lg px-3 py-2 text-sm">
+          {% for k in leagues %}
+          <option value="{{ k }}" {% if k == league %}selected{% endif %}>
+            {{ league_names[k] }} ({{ k }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Home Team</label>
+          <input name="home_team" value="{{ home_team or '' }}" placeholder="e.g. Man City"
+                 class="w-full rounded-lg px-3 py-2 text-sm"/>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Away Team</label>
+          <input name="away_team" value="{{ away_team or '' }}" placeholder="e.g. Arsenal"
+                 class="w-full rounded-lg px-3 py-2 text-sm"/>
+        </div>
+      </div>
+
+      <!-- Quick fixtures -->
+      <div>
+        <p class="text-xs text-slate-500 mb-2">Quick fill:</p>
+        <div class="flex flex-wrap gap-2">
+          {% for fix in [
+            ('Man City','Arsenal','EPL'),('Liverpool','Chelsea','EPL'),
+            ('Real Madrid','Barcelona','LIGA'),
+            ('Real Madrid','Man City','UCL'),('Bayern Munich','Arsenal','UCL'),
+            ('PSG','Marseille','L1'),
+          ] %}
+          <button type="button" onclick="fillFixture('{{ fix[0] }}','{{ fix[1] }}','{{ fix[2] }}')"
+            class="text-xs bg-slate-800 hover:bg-indigo-900 border border-border px-2 py-1 rounded transition-colors">
+            {{ fix[0] }} vs {{ fix[1] }}
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Odds inputs -->
+      <details class="group">
+        <summary class="cursor-pointer text-sm text-indigo-400 font-medium select-none">
+          + Bookmaker odds (optional — enables edge %)
+        </summary>
+        <div class="mt-3 space-y-3">
+          <div>
+            <p class="text-xs text-slate-500 mb-1">Match Winner</p>
+            <div class="grid grid-cols-3 gap-2">
+              <input name="home_odds" placeholder="Home" class="rounded-lg px-2 py-1.5 text-sm"/>
+              <input name="draw_odds" placeholder="Draw" class="rounded-lg px-2 py-1.5 text-sm"/>
+              <input name="away_odds" placeholder="Away" class="rounded-lg px-2 py-1.5 text-sm"/>
+            </div>
+          </div>
+          <div>
+            <p class="text-xs text-slate-500 mb-1">Over / Under 2.5 Goals</p>
+            <div class="grid grid-cols-2 gap-2">
+              <input name="ou_over"  placeholder="Over odds"  class="rounded-lg px-2 py-1.5 text-sm"/>
+              <input name="ou_under" placeholder="Under odds" class="rounded-lg px-2 py-1.5 text-sm"/>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <p class="text-xs text-slate-500 mb-1">BTTS odds</p>
+              <input name="btts_odds" placeholder="e.g. 1.72" class="w-full rounded-lg px-2 py-1.5 text-sm"/>
+            </div>
+          </div>
+          <div>
+            <p class="text-xs text-slate-500 mb-1">Correct Score odds (JSON)</p>
+            <textarea name="cs_odds" rows="3"
+              placeholder='{"1-0": 6.5, "0-0": 9.0, "2-1": 8.0, "1-1": 5.5}'
+              class="w-full rounded-lg px-2 py-1.5 text-xs font-mono resize-none"></textarea>
+          </div>
+        </div>
+      </details>
+
+      <button type="submit" class="btn-primary w-full rounded-lg py-2.5 font-semibold text-sm">
+        Analyse Fixture →
+      </button>
+    </form>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="lg:col-span-2">
+
+    {% if cs_grid %}
+    <!-- Correct Score Grid -->
+    <div class="card rounded-xl p-5 mb-6">
+      <h2 class="font-semibold text-white mb-4">
+        🎯 Correct Score Probabilities
+        <span class="text-sm font-normal text-slate-500 ml-2">{{ home_team }} vs {{ away_team }}</span>
+      </h2>
+      <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+        {% for cell in cs_grid %}
+        <div class="cs-cell rounded-lg p-2 text-center cursor-default
+          {% if cell.result == 'H' %}bg-indigo-900/50 border border-indigo-700/50
+          {% elif cell.result == 'D' %}bg-slate-800/80 border border-slate-700/50
+          {% else %}bg-purple-900/50 border border-purple-700/50{% endif %}">
+          <div class="font-bold text-white text-sm">{{ cell.score }}</div>
+          <div class="text-xs mt-0.5
+            {% if cell.result == 'H' %}text-indigo-300
+            {% elif cell.result == 'D' %}text-slate-400
+            {% else %}text-purple-300{% endif %}">
+            {{ cell.prob }}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="flex gap-4 mt-3 text-xs text-slate-500">
+        <span><span class="text-indigo-400">■</span> Home Win</span>
+        <span><span class="text-slate-400">■</span> Draw</span>
+        <span><span class="text-purple-400">■</span> Away Win</span>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Signals table -->
+    {% set submitted = home_team %}
+    {% include "_signals_table.html" %}
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function fillFixture(home, away, league) {
+  document.querySelector('[name=home_team]').value = home;
+  document.querySelector('[name=away_team]').value = away;
+  document.querySelector('[name=league]').value = league;
+}
+</script>
+{% endblock %}

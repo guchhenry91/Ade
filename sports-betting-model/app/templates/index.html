@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – Sports Betting Model{% endblock %}
+{% block content %}
+
+<div class="mb-8">
+  <h1 class="text-3xl font-bold text-white">Sports Betting Model</h1>
+  <p class="text-slate-400 mt-1">Probability-based signals for NBA · NFL · EPL · UCL · La Liga · Ligue 1</p>
+</div>
+
+<!-- Quick-access cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+
+  <!-- Soccer -->
+  <a href="/soccer" class="card rounded-xl p-5 hover:border-indigo-500 transition-colors group">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">⚽</span>
+      <div>
+        <h2 class="font-semibold text-white group-hover:text-indigo-400">Soccer</h2>
+        <p class="text-xs text-slate-500">EPL · UCL · La Liga · Ligue 1</p>
+      </div>
+    </div>
+    <ul class="text-sm text-slate-400 space-y-1">
+      <li>✓ Match Winner (1X2)</li>
+      <li>✓ Over / Under Goals</li>
+      <li>✓ Correct Score (top 10)</li>
+      <li>✓ BTTS · Player Shots · Anytime Scorer</li>
+    </ul>
+  </a>
+
+  <!-- NBA -->
+  <a href="/nba" class="card rounded-xl p-5 hover:border-indigo-500 transition-colors group">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">🏀</span>
+      <div>
+        <h2 class="font-semibold text-white group-hover:text-indigo-400">NBA</h2>
+        <p class="text-xs text-slate-500">2025-26 Season</p>
+      </div>
+    </div>
+    <ul class="text-sm text-slate-400 space-y-1">
+      <li>✓ Game Winner (moneyline)</li>
+      <li>✓ Total Points O/U</li>
+      <li>✓ Points · Rebounds · Assists O/U</li>
+      <li>✓ Three-Pointers Made O/U</li>
+    </ul>
+  </a>
+
+  <!-- NFL -->
+  <a href="/nfl" class="card rounded-xl p-5 hover:border-indigo-500 transition-colors group">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">🏈</span>
+      <div>
+        <h2 class="font-semibold text-white group-hover:text-indigo-400">NFL</h2>
+        <p class="text-xs text-slate-500">2025 Regular Season Stats</p>
+      </div>
+    </div>
+    <ul class="text-sm text-slate-400 space-y-1">
+      <li>✓ Game Winner · Spread</li>
+      <li>✓ Total Points O/U</li>
+      <li>✓ Anytime TD Scorer</li>
+      <li>✓ Rush · Rec · Pass Yards O/U</li>
+    </ul>
+  </a>
+
+  <!-- Live Demo -->
+  <a href="/demo" class="card rounded-xl p-5 hover:border-yellow-500 transition-colors group">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">⚡</span>
+      <div>
+        <h2 class="font-semibold text-white group-hover:text-yellow-400">Live Demo</h2>
+        <p class="text-xs text-slate-500">All 2025-26 real stats — one click</p>
+      </div>
+    </div>
+    <p class="text-sm text-slate-400">Runs all leagues with real current season data. Generates 400+ signals instantly.</p>
+  </a>
+
+  <!-- Reports -->
+  <a href="/reports" class="card rounded-xl p-5 hover:border-indigo-500 transition-colors group">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">📊</span>
+      <div>
+        <h2 class="font-semibold text-white group-hover:text-indigo-400">Reports</h2>
+        <p class="text-xs text-slate-500">Saved markdown reports</p>
+      </div>
+    </div>
+    <p class="text-sm text-slate-400">View all previously generated analysis reports.</p>
+  </a>
+
+  <!-- How it works -->
+  <div class="card rounded-xl p-5">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="text-3xl">🧮</span>
+      <div>
+        <h2 class="font-semibold text-white">How it works</h2>
+        <p class="text-xs text-slate-500">Statistical models</p>
+      </div>
+    </div>
+    <ul class="text-sm text-slate-400 space-y-1">
+      <li>⚽ Poisson xG · Dixon-Coles</li>
+      <li>🏀 Net-rating logistic model</li>
+      <li>🏈 Normal CDF spread model</li>
+      <li>📈 Quarter-Kelly bet sizing</li>
+    </ul>
+  </div>
+
+</div>
+
+<!-- Stats banner -->
+<div class="card rounded-xl p-6">
+  <h2 class="text-lg font-semibold text-white mb-4">2025-26 Season Highlights</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+    <div>
+      <p class="text-2xl font-bold text-indigo-400">35.3</p>
+      <p class="text-xs text-slate-500 mt-1">Luka Doncic PPG<br/>(NBA scoring leader)</p>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-indigo-400">22</p>
+      <p class="text-xs text-slate-500 mt-1">Haaland EPL goals<br/>(Golden Boot leader)</p>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-indigo-400">46</p>
+      <p class="text-xs text-slate-500 mt-1">Stafford NFL TDs<br/>(2025 NFL MVP)</p>
+    </div>
+    <div>
+      <p class="text-2xl font-bold text-indigo-400">13</p>
+      <p class="text-xs text-slate-500 mt-1">Mbappé UCL goals<br/>(League phase record)</p>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
