@@ -40,7 +40,7 @@
 {% set pr = p.props[0] if p.props else p %}
 {% set pick = pr.get('pick', p.get('pick', 'FAIR')) %}
 {% set conf_pct = (pr.get('over_prob', p.get('over_prob', 50)) if pick != 'UNDER' else pr.get('under_prob', p.get('under_prob', 50))) %}
-{% set stars_n = (conf_pct / 20)|int %}
+{% set stars_n = pr.get('stars', p.get('stars', (conf_pct / 20)|int)) %}
 {% set stat_key = (pr.get('stat', p.get('stat','')) or '')|lower|replace(' ','-') %}
 
 <div class="prop-card {% if pick=='OVER' %}over-card{% elif pick=='UNDER' %}under-card{% else %}fair-card{% endif %}"

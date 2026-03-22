@@ -242,6 +242,60 @@ def get_team_players_with_averages(team_abbr: str, season: int = 2024) -> List[D
     return sorted(result, key=lambda x: x["min"], reverse=True)
 
 
+# ── Standings (win% per team) ────────────────────────────────────────────────
+
+_standings_cache: dict = {}  # {"data": {...}, "ts": float}
+_STANDINGS_TTL = 6 * 3600   # 6-hour cache
+
+
+def get_nba_win_pcts() -> Dict[str, float]:
+    """
+    Return {team_name_lower: win_pct} from ESPN NBA standings.
+    Cached for 6 hours. Falls back to {} on failure.
+    """
+    import time
+    now = time.time()
+    if _standings_cache.get("ts", 0) + _STANDINGS_TTL > now:
+        return _standings_cache.get("data", {})
+
+    result: Dict[str, float] = {}
+    try:
+        data = espn_fetch("basketball", "nba", "standings")
+        if not data:
+            return result
+        # ESPN standings may be nested under "children" (by conference) or flat
+        entries: list = []
+        for child in data.get("children", [data]):
+            st = child.get("standings", child)
+            entries.extend(st.get("entries", []))
+        if not entries:
+            entries = data.get("standings", {}).get("entries", [])
+
+        for entry in entries:
+            team = entry.get("team", {})
+            name = (team.get("displayName") or "").lower()
+            abbr = (team.get("abbreviation") or "").lower()
+            wins = losses = 0
+            for s in entry.get("stats", []):
+                sname = s.get("name", "")
+                if sname == "wins":
+                    wins = int(s.get("value", 0) or 0)
+                elif sname == "losses":
+                    losses = int(s.get("value", 0) or 0)
+            total = wins + losses
+            if total > 0:
+                pct = wins / total
+                result[name] = pct
+                result[abbr] = pct
+        logger.debug("NBA standings loaded: %d teams", len(result))
+    except Exception as e:
+        logger.warning("NBA standings fetch failed: %s", e)
+
+    _standings_cache["data"] = result
+    _standings_cache["ts"]   = now
+    return result
+
+
 # ── Net-rating helper ────────────────────────────────────────────────────────
 
 def get_team_net_rating(team_id: str) -> float:

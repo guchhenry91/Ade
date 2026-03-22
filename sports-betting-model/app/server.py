@@ -78,7 +78,8 @@ def _ml_to_prob(ml) -> float:
 # ── Game-data builders (reused by today + sport pages) ───────────────────────
 
 def _build_nba_games(today_str: str) -> list:
-    from data.nba_data   import get_games as nba_get_games, get_team_players_with_averages
+    from data.nba_data   import get_games as nba_get_games, \
+                                get_team_players_with_averages, get_nba_win_pcts
     from data.odds_api   import build_odds_lookup, find_game_odds, decimal_to_american
     from data.prizepicks import get_nba_projections
     from data.fetcher    import bdl_fetch
@@ -137,8 +138,9 @@ def _build_nba_games(today_str: str) -> list:
                         all_logs[pid].append(stat)
         return all_logs
 
-    # NBA per-game stat caps to reject ESPN fantasy composites
-    _STAT_CAPS = {"pts": 50.0, "reb": 25.0, "ast": 20.0, "fg3m": 10.0}
+    # NBA per-game stat caps to reject ESPN fantasy composites / season totals
+    # No modern player averages > these thresholds per game
+    _STAT_CAPS = {"pts": 45.0, "reb": 20.0, "ast": 15.0, "fg3m": 7.0}
 
     # Stat key → BDL field name for game-log lookup
     _BDL_FIELD = {"pts": "pts", "reb": "reb", "ast": "ast", "3pm": "fg3m",
@@ -209,6 +211,9 @@ def _build_nba_games(today_str: str) -> list:
             "trend":          trend,
         }
 
+    # Hard per-game caps — values above these are season totals or fantasy composites
+    _PG_MAX = {"pts": 45.0, "reb": 20.0, "ast": 15.0, "3pm": 7.0}
+
     def _nba_props_from_avgs(players: list, game_logs: dict = None) -> list:
         """Build props from player dicts with real BDL per-game averages."""
         out = []
@@ -223,6 +228,9 @@ def _build_nba_games(today_str: str) -> list:
                 ("3PM", "fg3m", "3pm",  None),
             ]:
                 avg_val = float(p.get(avg_key) or p.get(sk) or 0)
+                # Reject impossible per-game values (season totals / fantasy composites)
+                if avg_val > _PG_MAX.get(sk, 45.0):
+                    avg_val = 0.0
                 prop    = _make_prop(stat_label, avg_val, std, name, sk,
                                      player_id=player_id, game_logs=game_logs)
                 if prop:
@@ -261,7 +269,8 @@ def _build_nba_games(today_str: str) -> list:
 
     games = []
     try:
-        nba_book_lookup = build_odds_lookup("NBA")
+        nba_book_lookup  = build_odds_lookup("NBA")
+        nba_standings    = get_nba_win_pcts()  # {team_name_lower: win_pct} — 6h cache
 
         for g in nba_get_games(dates=today_str):
             home_team = g.get("home_team") or "TBD"
@@ -271,23 +280,31 @@ def _build_nba_games(today_str: str) -> list:
             home_abbr = g.get("home_abbr", "")
             away_abbr = g.get("away_abbr", "")
 
-            # Win probability: moneyline odds → team records → default
+            # Win probability: 1) moneyline  2) ESPN standings  3) scoreboard records  4) 55%
             if g.get("home_ml"):
                 h_prob = _ml_to_prob(g.get("home_ml"))
             else:
-                hw = g.get("home_wins", 0) or 0
-                hl = g.get("home_losses", 0) or 0
-                aw = g.get("away_wins", 0) or 0
-                al = g.get("away_losses", 0) or 0
-                if hw + hl > 0 and aw + al > 0:
-                    # log5 formula: home_rate * (1-away_rate) / (home_rate*(1-away_rate) + (1-home_rate)*away_rate)
-                    hr = (hw + 0.03 * (hw + hl)) / (hw + hl)  # +3% home court adj to wins
-                    ar = aw / (aw + al)
-                    # Normalize so h+a=1
-                    h_prob = hr / (hr + ar)
-                    h_prob = max(0.30, min(0.75, h_prob))  # clamp to reasonable range
+                # Try ESPN standings first (most reliable)
+                h_wpct = (nba_standings.get(home_team.lower())
+                          or nba_standings.get(home_abbr.lower()))
+                a_wpct = (nba_standings.get(away_team.lower())
+                          or nba_standings.get(away_abbr.lower()))
+
+                if h_wpct is not None and a_wpct is not None and h_wpct + a_wpct > 0:
+                    raw = h_wpct / (h_wpct + a_wpct)
+                    h_prob = max(0.25, min(0.75, raw * 0.97 + 0.03))  # +3% HCA
                 else:
-                    h_prob = 0.55
+                    # Fall back to scoreboard team records (log5)
+                    hw = g.get("home_wins", 0) or 0
+                    hl = g.get("home_losses", 0) or 0
+                    aw = g.get("away_wins", 0) or 0
+                    al = g.get("away_losses", 0) or 0
+                    if hw + hl > 0 and aw + al > 0:
+                        hr = (hw / (hw + hl)) * 0.97 + 0.03  # +3% HCA
+                        ar = aw / (aw + al)
+                        h_prob = max(0.25, min(0.75, hr / (hr + ar)))
+                    else:
+                        h_prob = 0.55
             a_prob = 1 - h_prob
             predicted_winner = home_team if h_prob >= a_prob else away_team
             win_prob = h_prob if h_prob >= a_prob else a_prob
@@ -505,7 +522,8 @@ def _build_nfl_games() -> list:
 
 
 def _build_soccer_games(today_str: str) -> list:
-    from data.football_data import get_fixtures, get_team_players as get_soccer_players
+    from data.football_data import (get_fixtures, get_team_players as get_soccer_players,
+                                    get_soccer_win_pcts)
     from data.odds_api      import build_odds_lookup, find_game_odds, decimal_to_american
     from utils.stats        import poisson_match_probs, confidence_label
 
@@ -518,15 +536,35 @@ def _build_soccer_games(today_str: str) -> list:
     games = []
     for league_key, league_name in soccer_leagues:
         try:
-            book_lookup = build_odds_lookup(league_key)
-            fixtures    = get_fixtures(league_key, dates=today_str)
-            model       = FootballModel(league_key)
+            book_lookup   = build_odds_lookup(league_key)
+            fixtures      = get_fixtures(league_key, dates=today_str)
+            model         = FootballModel(league_key)
+            soc_standings = get_soccer_win_pcts(league_key)  # 6h cache
 
             for fix in fixtures:
                 home_team = fix.get("home_team") or "TBD"
                 away_team = fix.get("away_team") or "TBD"
-                home_xg, away_xg = model._match_xg(home_team, away_team)
-                h_prob, d_prob, a_prob = poisson_match_probs(home_xg, away_xg)
+
+                # Win probability: ESPN standings → Poisson xG model → defaults
+                h_wpct = soc_standings.get(home_team.lower())
+                a_wpct = soc_standings.get(away_team.lower())
+
+                if h_wpct is not None and a_wpct is not None and h_wpct + a_wpct > 0:
+                    # Standings-based: home advantage +5% for soccer
+                    raw_h = h_wpct / (h_wpct + a_wpct)
+                    raw_h = max(0.20, min(0.80, raw_h * 0.95 + 0.05))  # +5% HCA
+                    # Draw probability: stronger when teams are evenly matched
+                    d_prob = max(0.05, 0.28 - abs(raw_h - 0.5) * 0.30)
+                    h_prob = raw_h * (1 - d_prob)
+                    a_prob = (1 - raw_h) * (1 - d_prob)
+                    # Normalize to 100%
+                    total  = h_prob + d_prob + a_prob
+                    h_prob, d_prob, a_prob = h_prob/total, d_prob/total, a_prob/total
+                else:
+                    # Fall back to Poisson xG model
+                    home_xg, away_xg = model._match_xg(home_team, away_team)
+                    h_prob, d_prob, a_prob = poisson_match_probs(home_xg, away_xg)
+
                 if h_prob >= d_prob and h_prob >= a_prob:
                     predicted_winner, win_prob = home_team, h_prob
                 elif d_prob >= a_prob:

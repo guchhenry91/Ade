@@ -288,6 +288,67 @@ def get_team_players(league_key: str, team_name: str, season: int = 2024) -> Lis
     return sorted(players, key=lambda x: x["shots_total"], reverse=True)
 
 
+# ── Soccer standings (win% per team per league) ──────────────────────────────
+
+import time as _time
+_soccer_standings_cache: Dict[str, Dict] = {}  # {league_key: {"data": {...}, "ts": float}}
+_SOCCER_STANDINGS_TTL = 6 * 3600  # 6-hour cache
+
+
+def get_soccer_win_pcts(league_key: str) -> Dict[str, float]:
+    """
+    Return {team_name_lower: win_pct} from ESPN soccer standings for *league_key*.
+    Cached per-league for 6 hours. Falls back to {} on failure.
+    """
+    now = _time.time()
+    cached = _soccer_standings_cache.get(league_key, {})
+    if cached.get("ts", 0) + _SOCCER_STANDINGS_TTL > now:
+        return cached.get("data", {})
+
+    slug = SOCCER_LEAGUES.get(league_key, "")
+    result: Dict[str, float] = {}
+    if not slug:
+        return result
+    try:
+        data = espn_fetch("soccer", slug, "standings")
+        if not data:
+            return result
+        # ESPN standings may be under "children" (by conference/group) or flat
+        entries: list = []
+        for child in data.get("children", [data]):
+            st = child.get("standings", child)
+            entries.extend(st.get("entries", []))
+        if not entries:
+            entries = data.get("standings", {}).get("entries", [])
+
+        for entry in entries:
+            team = entry.get("team", {})
+            name = (team.get("displayName") or "").lower()
+            abbr = (team.get("abbreviation") or "").lower()
+            wins = losses = draws = 0
+            for s in entry.get("stats", []):
+                sname = s.get("name", "")
+                if sname == "wins":
+                    wins = int(s.get("value", 0) or 0)
+                elif sname == "losses":
+                    losses = int(s.get("value", 0) or 0)
+                elif sname == "ties":
+                    draws = int(s.get("value", 0) or 0)
+            total = wins + losses + draws
+            if total > 0:
+                pct = wins / total
+                if name:
+                    result[name] = pct
+                if abbr:
+                    result[abbr] = pct
+        logger.debug("Soccer standings %s: %d teams", league_key, len(result))
+    except Exception as e:
+        logger.warning("Soccer standings fetch failed %s: %s", league_key, e)
+
+    _soccer_standings_cache[league_key] = {"data": result, "ts": now}
+    return result
+
+
 # ── Team form / head-to-head helper ─────────────────────────────────────────
 
 def compute_team_xg_averages(xg_data: List[Dict], team_name: str) -> Dict[str, float]:

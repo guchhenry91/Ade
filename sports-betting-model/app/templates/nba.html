@@ -34,8 +34,16 @@
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 6px;
 }
-.stat-name { font-size: 12px; font-weight: 700; color: var(--txt2);
+.stat-name { font-size: 12px; font-weight: 700;
              text-transform: uppercase; letter-spacing: .06em; }
+/* Per-stat color coding */
+.stat-name[data-stat="pts"]  { color: #00d4ff; }  /* cyan */
+.stat-name[data-stat="reb"]  { color: #00ff88; }  /* green */
+.stat-name[data-stat="ast"]  { color: #ff9500; }  /* orange */
+.stat-name[data-stat="3pm"]  { color: #bf5af2; }  /* purple */
+.stat-name[data-stat="stl"],
+.stat-name[data-stat="blk"]  { color: #ff6b6b; }  /* red accent */
+.stat-name:not([data-stat])  { color: var(--txt2); }
 .stat-line { font-size: 11px; color: var(--txt3); }
 
 .stat-pick-row {
@@ -151,10 +159,10 @@
 
     {% for p in roster %}
     {# Find highest-confidence prop for sort key and filter matching #}
-    {% set best_conf = namespace(val=0, stat='') %}
+    {% set best_conf = namespace(val=0, stat='', stars=0) %}
     {% for pr in p.props %}
       {% set c = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
-      {% if c > best_conf.val %}{% set best_conf.val = c %}{% set best_conf.stat = pr.stat|lower %}{% endif %}
+      {% if c > best_conf.val %}{% set best_conf.val = c %}{% set best_conf.stat = pr.stat|lower %}{% set best_conf.stars = pr.stars %}{% endif %}
     {% endfor %}
 
     <div class="player-card"
@@ -184,7 +192,7 @@
             {{ pr0.stat }} {{ pr0.pick }}
           </div>
           <div style="font-size:10px;color:var(--txt3);margin-top:2px;">
-            {% set stars_n = (best_conf.val / 20)|int %}
+            {% set stars_n = best_conf.stars %}
             {% for i in range(5) %}<span {% if i >= stars_n %}class="star-empty"{% endif %} style="font-size:11px;">★</span>{% endfor %}
           </div>
         </div>
@@ -199,7 +207,7 @@
 
         <div class="stat-top">
           <div>
-            <span class="stat-name">{{ pr.stat }}</span>
+            <span class="stat-name" data-stat="{{ pr.stat|lower }}">{{ pr.stat }}</span>
             <span class="stat-line"> · Line {{ pr.line }}</span>
           </div>
           <div class="pick-badge {% if pick=='OVER' %}pick-over{% elif pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}"
@@ -209,12 +217,13 @@
         </div>
 
         <div class="stat-pick-row">
-          <span class="stat-pct {% if pick=='OVER' %}pct-over{% elif pick=='UNDER' %}pct-under{% else %}pct-fair{% endif %}">
+          <span class="stat-pct {% if pick=='OVER' %}pct-over{% elif pick=='UNDER' %}pct-under{% else %}pct-fair{% endif %}"
+                style="{% if pick=='OVER' %}color:#00ff88{% elif pick=='UNDER' %}color:#ff4444{% else %}color:#888888{% endif %}">
             {{ conf_pct }}%
           </span>
           <div class="pbar-wrap" style="flex:1;height:6px;">
             <div class="pbar-fill {% if pick=='OVER' %}pbar-over{% elif pick=='UNDER' %}pbar-under{% else %}pbar-fair{% endif %}"
-                 style="width:{{ conf_pct }}%"></div>
+                 style="width:{{ conf_pct }}%;{% if pick=='OVER' %}background:#00ff88{% elif pick=='UNDER' %}background:#ff4444{% else %}background:#888888{% endif %}"></div>
           </div>
           <span class="badge-{{ pr.confidence|lower }}" style="font-size:10px;">{{ pr.confidence }}</span>
         </div>
@@ -222,8 +231,9 @@
         <div class="stat-avgs">
           <span class="avg-item">Season <strong>{{ pr.avg }}</strong></span>
           {% if pr.last5_avg is not none %}
-          <span class="avg-item {% if pr.trend == '↑' %}trend-up{% elif pr.trend == '↓' %}trend-down{% else %}trend-flat{% endif %}">
-            L5 <strong>{{ pr.last5_avg }}</strong> {{ pr.trend }}
+          <span class="avg-item">
+            L5 <strong>{{ pr.last5_avg }}</strong>
+            <span style="{% if pr.trend == '↑' %}color:#00ff88{% elif pr.trend == '↓' %}color:#ff4444{% else %}color:#888888{% endif %}">{{ pr.trend }}</span>
           </span>
           {% endif %}
           {% if pr.last10_avg is not none %}
