@@ -60,6 +60,21 @@ def get_games(dates: Optional[str] = None) -> List[Dict]:
                     "display_value": entry.get("displayValue", ""),
                 })
 
+        def _record_wins_losses(competitor: dict) -> tuple:
+            """Extract (wins, losses) from ESPN competitor records."""
+            for rec in competitor.get("records", []):
+                if rec.get("type") in ("total", "overall"):
+                    summary = rec.get("summary", "")
+                    try:
+                        parts = summary.split("-")
+                        return int(parts[0]), int(parts[1])
+                    except (IndexError, ValueError):
+                        pass
+            return 0, 0
+
+        home_w, home_l = _record_wins_losses(home)
+        away_w, away_l = _record_wins_losses(away)
+
         games.append({
             "id":              event.get("id"),
             "name":            event.get("name"),
@@ -76,6 +91,10 @@ def get_games(dates: Optional[str] = None) -> List[Dict]:
             "spread":          odds.get("spread"),
             "over_under":      odds.get("overUnder"),
             "home_ml":         odds.get("moneyLineOdds"),
+            "home_wins":       home_w,
+            "home_losses":     home_l,
+            "away_wins":       away_w,
+            "away_losses":     away_l,
             "leaders":         leaders,
         })
     return games

@@ -271,7 +271,23 @@ def _build_nba_games(today_str: str) -> list:
             home_abbr = g.get("home_abbr", "")
             away_abbr = g.get("away_abbr", "")
 
-            h_prob = _ml_to_prob(g.get("home_ml")) if g.get("home_ml") else 0.55
+            # Win probability: moneyline odds → team records → default
+            if g.get("home_ml"):
+                h_prob = _ml_to_prob(g.get("home_ml"))
+            else:
+                hw = g.get("home_wins", 0) or 0
+                hl = g.get("home_losses", 0) or 0
+                aw = g.get("away_wins", 0) or 0
+                al = g.get("away_losses", 0) or 0
+                if hw + hl > 0 and aw + al > 0:
+                    # log5 formula: home_rate * (1-away_rate) / (home_rate*(1-away_rate) + (1-home_rate)*away_rate)
+                    hr = (hw + 0.03 * (hw + hl)) / (hw + hl)  # +3% home court adj to wins
+                    ar = aw / (aw + al)
+                    # Normalize so h+a=1
+                    h_prob = hr / (hr + ar)
+                    h_prob = max(0.30, min(0.75, h_prob))  # clamp to reasonable range
+                else:
+                    h_prob = 0.55
             a_prob = 1 - h_prob
             predicted_winner = home_team if h_prob >= a_prob else away_team
             win_prob = h_prob if h_prob >= a_prob else a_prob

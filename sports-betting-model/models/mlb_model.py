@@ -25,13 +25,19 @@ _BATTER_MARKETS: List[Tuple[str, str, float, float]] = [
 
 
 def build_pitcher_props(player: Dict) -> List[Dict]:
-    """Build prop cards for a pitcher from season-average stats."""
+    """Build prop cards for a pitcher from season-average stats.
+    If player dict contains a '<stat>_line' key, uses that as the market line
+    instead of generating one from the season avg (avoids constant-probability bug).
+    """
     props: List[Dict] = []
     for label, key, std, min_avg in _PITCHER_MARKETS:
         avg = float(player.get(key, 0) or 0)
         if avg < min_avg:
             continue
-        line     = max(0.5, round(avg * 2) / 2 - 0.5)
+        # Use pp_line if available, otherwise generate from avg
+        line_key = key[:-3] + "_line"  # "so_pg" → "so_line"
+        raw_line = player.get(line_key)
+        line     = float(raw_line) if raw_line else max(0.5, round(avg * 2) / 2 - 0.5)
         over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
         props.append({
@@ -48,13 +54,17 @@ def build_pitcher_props(player: Dict) -> List[Dict]:
 
 
 def build_batter_props(player: Dict) -> List[Dict]:
-    """Build prop cards for a batter from season-average stats."""
+    """Build prop cards for a batter from season-average stats.
+    Supports '<stat>_line' override keys for market lines.
+    """
     props: List[Dict] = []
     for label, key, std, min_avg in _BATTER_MARKETS:
         avg = float(player.get(key, 0) or 0)
         if avg < min_avg:
             continue
-        line     = max(0.5, round(avg * 2) / 2 - 0.5)
+        line_key = key[:-3] + "_line"  # "hits_pg" → "hits_line", "tb_pg" → "tb_line"
+        raw_line = player.get(line_key)
+        line     = float(raw_line) if raw_line else max(0.5, round(avg * 2) / 2 - 0.5)
         over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
         props.append({
