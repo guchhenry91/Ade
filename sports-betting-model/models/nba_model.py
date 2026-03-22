@@ -19,8 +19,8 @@ from data.nba_data import (
     get_player_game_log,
 )
 from utils.stats import (
-    nba_win_prob, shot_attempt_over_under, edge_pct, kelly_fraction,
-    confidence_label,
+    nba_win_prob, shot_attempt_over_under, threept_made_ou,
+    edge_pct, kelly_fraction, confidence_label,
 )
 from utils.odds import BetSignal
 
@@ -131,11 +131,27 @@ class NBAModel:
 
     # ── Player props (season average O/U) ───────────────────────────────────
 
+    # stat → (market_key, display_label, std_factor, use_3pm_model)
+    _STAT_META = {
+        "pts": ("PLAYER_POINTS_OU",  "Points",       0.28, False),
+        "reb": ("PLAYER_REBOUNDS_OU","Rebounds",      0.32, False),
+        "ast": ("PLAYER_ASSISTS_OU", "Assists",       0.35, False),
+        "3pm": ("PLAYER_3PM_OU",     "Threes Made",   0.55, True),
+    }
+
     def _player_prop_signal(self, player_name: str, stat_name: str,
                              avg: float, line: float,
                              market_odds: Optional[Dict[str, float]] = None
                              ) -> List[BetSignal]:
-        over_p, under_p = shot_attempt_over_under(avg, line, std_factor=0.28)
+        meta = self._STAT_META.get(stat_name,
+               (f"PLAYER_{stat_name.upper()}_OU", stat_name.upper(), 0.28, False))
+        market_key, display, std_factor, use_3pm = meta
+
+        if use_3pm:
+            over_p, under_p = threept_made_ou(avg, line)
+        else:
+            over_p, under_p = shot_attempt_over_under(avg, line,
+                                                       std_factor=std_factor)
         mo = market_odds or {}
         signals = []
         for label, prob, ok in [
@@ -148,8 +164,8 @@ class NBAModel:
             signals.append(BetSignal(
                 sport       = "Basketball",
                 league      = "NBA",
-                market      = f"PLAYER_{stat_name.upper()}_OU",
-                selection   = f"{player_name} – {stat_name} {label}",
+                market      = market_key,
+                selection   = f"{player_name} – {display} {label}",
                 model_prob  = prob,
                 market_odds = odds,
                 edge_pct    = ep,

@@ -3,11 +3,12 @@ Football (soccer) betting model.
 Covers: EPL, Champions League, La Liga, Ligue 1.
 
 Markets generated:
-  • MATCH_WINNER        – 1X2
-  • OVER_UNDER_GOALS    – total goals O/U line
-  • BOTH_TEAMS_SCORE    – GG / BTTS
-  • XG_COMPARISON       – value vs market total-goals line
-  • PLAYER_SHOTS        – player shots-on-target O/U
+  • MATCH_WINNER          – 1X2
+  • OVER_UNDER_GOALS      – total goals O/U line
+  • BOTH_TEAMS_SCORE      – GG / BTTS
+  • CORRECT_SCORE         – exact scoreline probabilities (top 10)
+  • XG_COMPARISON         – value vs market total-goals line
+  • PLAYER_SHOTS          – player shots-on-target O/U
   • PLAYER_ANYTIME_SCORER – anytime goal scorer probability
 """
 from __future__ import annotations
@@ -21,6 +22,7 @@ from data.football_data import (
 from utils.stats import (
     poisson_match_probs, poisson_over_under, scorer_probability,
     shot_attempt_over_under, edge_pct, kelly_fraction, confidence_label,
+    correct_score_grid,
 )
 from utils.odds import BetSignal
 
@@ -193,6 +195,45 @@ class FootballModel:
             notes       = f"xG: {home_xg:.2f}–{away_xg:.2f}",
         )
 
+    def correct_score_signals(self,
+                              home_team: str,
+                              away_team: str,
+                              top_n:     int = 10,
+                              market_odds_map: Optional[Dict[str, float]] = None
+                              ) -> List[BetSignal]:
+        """
+        Generate correct score signals for the most likely exact scorelines.
+
+        Returns the top *top_n* scorelines by model probability.
+        market_odds_map keys are strings like "1-0", "2-1", "0-0" etc.
+        """
+        home_xg, away_xg = self._match_xg(home_team, away_team)
+        grid = correct_score_grid(home_xg, away_xg, max_goals=6)
+
+        mo = market_odds_map or {}
+        signals = []
+        for h_goals, a_goals, prob in grid[:top_n]:
+            score_key = f"{h_goals}-{a_goals}"
+            result = ("Home Win" if h_goals > a_goals
+                      else "Draw" if h_goals == a_goals else "Away Win")
+            odds = mo.get(score_key)
+            ep   = edge_pct(prob, odds) if odds else None
+            kf   = kelly_fraction(prob, odds) if odds else None
+            signals.append(BetSignal(
+                sport       = "Soccer",
+                league      = self.league_key,
+                market      = "CORRECT_SCORE",
+                selection   = f"{home_team} {h_goals}–{a_goals} {away_team}",
+                model_prob  = round(prob, 4),
+                market_odds = odds,
+                edge_pct    = ep,
+                kelly_frac  = kf,
+                confidence  = confidence_label(prob),
+                notes       = f"{result}  xG: {home_xg:.2f}–{away_xg:.2f}",
+                extra       = {"score": score_key, "result": result},
+            ))
+        return signals
+
     def player_anytime_scorer_signals(self,
                                       match_name: str,
                                       team_name: str,
@@ -322,9 +363,10 @@ class FootballModel:
         Run all soccer markets for a single fixture.
         market_odds format:
           {
-            "winner": {"home": 2.1, "draw": 3.4, "away": 3.6},
-            "ou25":   {"over": 1.85, "under": 2.0},
-            "btts":   1.75,
+            "winner":       {"home": 2.1, "draw": 3.4, "away": 3.6},
+            "ou25":         {"over": 1.85, "under": 2.0},
+            "btts":         1.75,
+            "correct_score": {"1-0": 6.50, "0-0": 9.00, "2-1": 8.50, ...}
           }
         """
         mo = market_odds or {}
@@ -338,6 +380,9 @@ class FootballModel:
                                            market_odds=mo.get("ou25"))
         signals.append(self.btts_signal(home_team, away_team,
                                         market_odds=mo.get("btts")))
+        signals += self.correct_score_signals(home_team, away_team,
+                                              top_n=10,
+                                              market_odds_map=mo.get("correct_score"))
         signals += self.player_anytime_scorer_signals(
             f"{home_team} vs {away_team}", home_team, home_xg)
         signals += self.player_anytime_scorer_signals(

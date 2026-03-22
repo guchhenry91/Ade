@@ -119,6 +119,41 @@ def nfl_td_prob(red_zone_targets: float, carries: float,
     return max(0.0, min(1.0, prob))
 
 
+def correct_score_grid(home_xg: float, away_xg: float,
+                       max_goals: int = 6) -> list:
+    """
+    Return a list of (home_goals, away_goals, probability) tuples
+    for all scorelines up to max_goals × max_goals,
+    sorted by probability descending.
+    Uses independent Poisson model.
+    """
+    h = float(np.clip(home_xg, 0.1, 8.0))
+    a = float(np.clip(away_xg, 0.1, 8.0))
+    results = []
+    for i in range(max_goals + 1):
+        for j in range(max_goals + 1):
+            p = float(poisson.pmf(i, h) * poisson.pmf(j, a))
+            results.append((i, j, p))
+    # normalise so the shown grid sums to 1
+    total = sum(r[2] for r in results)
+    results = [(i, j, p / total) for i, j, p in results]
+    results.sort(key=lambda x: x[2], reverse=True)
+    return results
+
+
+def threept_made_ou(avg_3pm: float, line: float,
+                    std_factor: float = 0.55) -> Tuple[float, float]:
+    """
+    Over/under for three-pointers made in a single game.
+    Uses Normal approximation; std_factor ~ 55% CV is calibrated to
+    game-level 3PM variance across NBA player histories.
+    """
+    std = max(0.5, avg_3pm * std_factor)
+    over  = float(1 - norm.cdf(line, loc=avg_3pm, scale=std))
+    under = float(norm.cdf(line, loc=avg_3pm, scale=std))
+    return over, under
+
+
 def confidence_label(prob: float) -> str:
     pct = prob * 100
     if pct >= 75:

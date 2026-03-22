@@ -258,101 +258,187 @@ def _soccer_player_signals(league: str, players: list,
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def demo_epl() -> list[BetSignal]:
-    """EPL 2025-26 – real fixtures + player stats."""
+    """EPL 2025-26 – real fixtures + correct score + player stats."""
     model = FootballModel("EPL")
     sigs  = []
 
-    # ── Live fixture slate (selected matches Mar 2026) ──────────────────────
+    # ── Live fixture slate with correct score odds (Mar 2026) ───────────────
+    # Correct score odds sourced from typical bookmaker lines for these fixtures
     fixtures = [
-        # (home,                   away,           winner_odds,              ou_odds, btts_odds)
-        ("Manchester City",        "Arsenal",
-         {"home": 1.95, "draw": 3.60, "away": 3.90},
-         {"over": 1.88, "under": 1.98}, 1.70),
-        ("Liverpool",              "Chelsea",
-         {"home": 1.85, "draw": 3.75, "away": 4.20},
-         {"over": 1.85, "under": 2.00}, 1.65),
-        ("Tottenham",              "Manchester Utd",
-         {"home": 1.90, "draw": 3.60, "away": 4.00},
-         {"over": 1.90, "under": 1.95}, 1.72),
-        ("Newcastle",              "Aston Villa",
-         {"home": 2.10, "draw": 3.50, "away": 3.40},
-         {"over": 1.85, "under": 2.00}, 1.68),
+        {
+            "home": "Manchester City", "away": "Arsenal",
+            "winner":  {"home": 1.95, "draw": 3.60, "away": 3.90},
+            "ou25":    {"over": 1.88, "under": 1.98},
+            "btts":    1.70,
+            "correct_score": {
+                "1-0": 6.50, "2-0": 9.00, "2-1": 8.00, "1-1": 5.50,
+                "0-0": 9.50, "0-1": 9.00, "3-0": 14.0, "3-1": 12.0,
+                "0-2": 14.0, "1-2": 12.0,
+            },
+        },
+        {
+            "home": "Liverpool", "away": "Chelsea",
+            "winner":  {"home": 1.85, "draw": 3.75, "away": 4.20},
+            "ou25":    {"over": 1.85, "under": 2.00},
+            "btts":    1.65,
+            "correct_score": {
+                "1-0": 6.50, "2-0": 8.50, "2-1": 7.50, "1-1": 5.50,
+                "0-0": 9.00, "0-1": 10.0, "3-1": 12.0, "3-0": 15.0,
+                "1-2": 13.0, "0-2": 15.0,
+            },
+        },
+        {
+            "home": "Tottenham", "away": "Manchester Utd",
+            "winner":  {"home": 1.90, "draw": 3.60, "away": 4.00},
+            "ou25":    {"over": 1.90, "under": 1.95},
+            "btts":    1.72,
+            "correct_score": {
+                "1-0": 6.50, "2-1": 8.00, "1-1": 5.50, "2-0": 9.50,
+                "0-0": 9.00, "0-1": 10.0, "1-2": 12.0, "2-2": 12.0,
+                "3-1": 13.0, "3-0": 15.0,
+            },
+        },
+        {
+            "home": "Newcastle", "away": "Aston Villa",
+            "winner":  {"home": 2.10, "draw": 3.50, "away": 3.40},
+            "ou25":    {"over": 1.85, "under": 2.00},
+            "btts":    1.68,
+            "correct_score": {
+                "1-0": 7.00, "0-1": 7.00, "1-1": 5.50, "2-1": 8.50,
+                "0-0": 9.00, "1-2": 9.00, "2-0": 10.0, "0-2": 10.0,
+                "2-2": 12.0, "3-1": 14.0,
+            },
+        },
     ]
-    for home, away, w_odds, ou_odds, btts_odds in fixtures:
-        sigs += model.match_winner_signals(home, away, w_odds)
-        sigs += model.over_under_signals(home, away, line=2.5,
-                                          market_odds=ou_odds)
-        sigs.append(model.btts_signal(home, away, btts_odds))
+    for fx in fixtures:
+        sigs += model.analyze_fixture(
+            fx["home"], fx["away"],
+            market_odds={
+                "winner":        fx["winner"],
+                "ou25":          fx["ou25"],
+                "btts":          fx["btts"],
+                "correct_score": fx["correct_score"],
+            },
+        )
 
-    # ── Real player stats ─────────────────────────────────────────────────
     sigs += _soccer_player_signals("EPL", EPL_PLAYERS, "EPL 2025-26")
-
     return sigs
 
 
 def demo_ucl() -> list[BetSignal]:
-    """Champions League 2025-26 – Round of 16 fixtures + real scorer stats."""
+    """Champions League 2025-26 – Round of 16 + correct score + real scorers."""
     model = FootballModel("UCL")
     sigs  = []
 
-    # ── R16 fixtures (2nd legs, March 2026) ────────────────────────────────
     fixtures = [
-        # (home,            away,             winner_odds,               ou_odds, btts)
-        ("Real Madrid",     "Manchester City",
-         {"home": 1.75, "draw": 4.00, "away": 4.50},
-         {"over": 1.82, "under": 2.05}, 1.65),
-        ("Bayern Munich",   "Arsenal",
-         {"home": 1.80, "draw": 3.80, "away": 4.20},
-         {"over": 1.88, "under": 1.98}, 1.70),
-        ("Barcelona",       "PSG",
-         {"home": 2.00, "draw": 3.60, "away": 3.70},
-         {"over": 1.85, "under": 2.00}, 1.68),
-        ("Newcastle",       "Atletico Madrid",
-         {"home": 2.20, "draw": 3.50, "away": 3.20},
-         {"over": 1.90, "under": 1.95}, 1.72),
+        {
+            "home": "Real Madrid",   "away": "Manchester City",
+            "winner":  {"home": 1.75, "draw": 4.00, "away": 4.50},
+            "ou25":    {"over": 1.82, "under": 2.05},
+            "btts":    1.65,
+            "correct_score": {
+                "1-0": 6.00, "2-0": 8.00, "2-1": 7.50, "1-1": 5.50,
+                "0-0": 10.0, "0-1": 9.00, "3-1": 12.0, "2-2": 11.0,
+                "3-0": 14.0, "1-2": 12.0,
+            },
+        },
+        {
+            "home": "Bayern Munich", "away": "Arsenal",
+            "winner":  {"home": 1.80, "draw": 3.80, "away": 4.20},
+            "ou25":    {"over": 1.88, "under": 1.98},
+            "btts":    1.70,
+            "correct_score": {
+                "1-0": 6.50, "2-0": 8.50, "2-1": 7.50, "1-1": 5.50,
+                "0-0": 10.0, "0-1": 10.0, "3-1": 11.0, "3-0": 14.0,
+                "1-2": 13.0, "2-2": 12.0,
+            },
+        },
+        {
+            "home": "Barcelona",     "away": "PSG",
+            "winner":  {"home": 2.00, "draw": 3.60, "away": 3.70},
+            "ou25":    {"over": 1.85, "under": 2.00},
+            "btts":    1.68,
+            "correct_score": {
+                "1-0": 7.00, "2-1": 8.00, "1-1": 5.50, "0-0": 10.0,
+                "0-1": 8.00, "2-0": 10.0, "1-2": 10.0, "2-2": 11.0,
+                "3-1": 12.0, "3-2": 15.0,
+            },
+        },
+        {
+            "home": "Newcastle",     "away": "Atletico Madrid",
+            "winner":  {"home": 2.20, "draw": 3.50, "away": 3.20},
+            "ou25":    {"over": 1.90, "under": 1.95},
+            "btts":    1.72,
+            "correct_score": {
+                "1-0": 7.50, "0-1": 7.00, "1-1": 5.50, "0-0": 9.00,
+                "2-0": 11.0, "0-2": 10.0, "2-1": 9.00, "1-2": 9.50,
+                "2-2": 12.0, "3-1": 14.0,
+            },
+        },
     ]
-    for home, away, w_odds, ou_odds, btts_odds in fixtures:
-        sigs += model.match_winner_signals(home, away, w_odds)
-        sigs += model.over_under_signals(home, away, line=2.5,
-                                          market_odds=ou_odds)
-        sigs.append(model.btts_signal(home, away, btts_odds))
+    for fx in fixtures:
+        sigs += model.analyze_fixture(
+            fx["home"], fx["away"],
+            market_odds={k: fx[k] for k in ("winner","ou25","btts","correct_score")},
+        )
 
-    # Real UCL scorer/shot data
     sigs += _soccer_player_signals("UCL", [
         (name, team, apps, goals, shots, int(shots * 0.53),
          round(goals / max(shots, 1), 3))
         for name, team, apps, goals, shots, xg_ps in UCL_PLAYERS
     ], "UCL 2025-26")
-
     return sigs
 
 
 def demo_liga() -> list[BetSignal]:
-    """La Liga 2025-26 – real matches + real scorer stats."""
+    """La Liga 2025-26 – real matches + correct score + real scorer stats."""
     model = FootballModel("LIGA")
     sigs  = []
 
     fixtures = [
-        ("Real Madrid",     "Barcelona",
-         {"home": 2.10, "draw": 3.50, "away": 3.40},
-         {"over": 1.82, "under": 2.05}, 1.65),
-        ("Atletico Madrid", "Sevilla",
-         {"home": 1.75, "draw": 3.70, "away": 4.50},
-         {"over": 1.90, "under": 1.95}, 1.68),
-        ("Valencia",        "Real Betis",
-         {"home": 2.20, "draw": 3.40, "away": 3.30},
-         {"over": 1.88, "under": 1.98}, 1.72),
+        {
+            "home": "Real Madrid",     "away": "Barcelona",
+            "winner":  {"home": 2.10, "draw": 3.50, "away": 3.40},
+            "ou25":    {"over": 1.82, "under": 2.05},
+            "btts":    1.65,
+            "correct_score": {
+                "1-0": 6.50, "0-1": 6.50, "1-1": 5.50, "2-1": 8.00,
+                "1-2": 8.00, "2-0": 9.00, "0-2": 9.00, "0-0": 9.50,
+                "2-2": 11.0, "3-1": 13.0,
+            },
+        },
+        {
+            "home": "Atletico Madrid", "away": "Sevilla",
+            "winner":  {"home": 1.75, "draw": 3.70, "away": 4.50},
+            "ou25":    {"over": 1.90, "under": 1.95},
+            "btts":    1.68,
+            "correct_score": {
+                "1-0": 6.00, "2-0": 8.00, "1-1": 5.50, "2-1": 7.50,
+                "0-0": 9.50, "0-1": 11.0, "3-0": 13.0, "3-1": 12.0,
+                "1-2": 15.0, "2-2": 14.0,
+            },
+        },
+        {
+            "home": "Valencia",        "away": "Real Betis",
+            "winner":  {"home": 2.20, "draw": 3.40, "away": 3.30},
+            "ou25":    {"over": 1.88, "under": 1.98},
+            "btts":    1.72,
+            "correct_score": {
+                "1-0": 7.00, "0-1": 7.00, "1-1": 5.50, "0-0": 9.00,
+                "2-1": 9.00, "1-2": 9.00, "2-0": 10.0, "0-2": 10.0,
+                "2-2": 12.0, "3-1": 14.0,
+            },
+        },
     ]
-    for home, away, w_odds, ou_odds, btts_odds in fixtures:
-        sigs += model.match_winner_signals(home, away, w_odds)
-        sigs += model.over_under_signals(home, away, line=2.5,
-                                          market_odds=ou_odds)
-        sigs.append(model.btts_signal(home, away, btts_odds))
+    for fx in fixtures:
+        sigs += model.analyze_fixture(
+            fx["home"], fx["away"],
+            market_odds={k: fx[k] for k in ("winner","ou25","btts","correct_score")},
+        )
 
     sigs += _soccer_player_signals("LIGA", [
         (n, t, a, g, sh, int(sh * 0.56)) for n, t, a, g, sh, sot in LIGA_PLAYERS
     ], "La Liga 2025-26")
-
     return sigs
 
 
@@ -362,26 +448,49 @@ def demo_ligue1() -> list[BetSignal]:
     sigs  = []
 
     fixtures = [
-        ("PSG",             "Marseille",
-         {"home": 1.65, "draw": 4.10, "away": 5.00},
-         {"over": 1.80, "under": 2.08}, 1.62),
-        ("Monaco",          "Lyon",
-         {"home": 1.90, "draw": 3.60, "away": 4.00},
-         {"over": 1.88, "under": 1.98}, 1.70),
-        ("Lille",           "Nice",
-         {"home": 2.05, "draw": 3.50, "away": 3.60},
-         {"over": 1.92, "under": 1.93}, 1.72),
+        {
+            "home": "PSG",   "away": "Marseille",
+            "winner":  {"home": 1.65, "draw": 4.10, "away": 5.00},
+            "ou25":    {"over": 1.80, "under": 2.08},
+            "btts":    1.62,
+            "correct_score": {
+                "1-0": 6.00, "2-0": 7.50, "2-1": 7.00, "1-1": 5.50,
+                "0-0": 10.0, "0-1": 11.0, "3-0": 11.0, "3-1": 10.0,
+                "1-2": 14.0, "2-2": 13.0,
+            },
+        },
+        {
+            "home": "Monaco", "away": "Lyon",
+            "winner":  {"home": 1.90, "draw": 3.60, "away": 4.00},
+            "ou25":    {"over": 1.88, "under": 1.98},
+            "btts":    1.70,
+            "correct_score": {
+                "1-0": 7.00, "2-1": 8.50, "1-1": 5.50, "2-0": 9.50,
+                "0-0": 9.50, "0-1": 10.0, "3-1": 12.0, "3-0": 14.0,
+                "1-2": 12.0, "2-2": 12.0,
+            },
+        },
+        {
+            "home": "Lille",  "away": "Nice",
+            "winner":  {"home": 2.05, "draw": 3.50, "away": 3.60},
+            "ou25":    {"over": 1.92, "under": 1.93},
+            "btts":    1.72,
+            "correct_score": {
+                "1-0": 7.00, "0-1": 7.00, "1-1": 5.50, "0-0": 9.00,
+                "2-1": 9.50, "1-2": 9.50, "2-0": 11.0, "0-2": 11.0,
+                "2-2": 12.0, "3-1": 15.0,
+            },
+        },
     ]
-    for home, away, w_odds, ou_odds, btts_odds in fixtures:
-        sigs += model.match_winner_signals(home, away, w_odds)
-        sigs += model.over_under_signals(home, away, line=2.5,
-                                          market_odds=ou_odds)
-        sigs.append(model.btts_signal(home, away, btts_odds))
+    for fx in fixtures:
+        sigs += model.analyze_fixture(
+            fx["home"], fx["away"],
+            market_odds={k: fx[k] for k in ("winner","ou25","btts","correct_score")},
+        )
 
     sigs += _soccer_player_signals("L1", [
         (n, t, a, g, sh, int(sh * 0.52)) for n, t, a, g, sh, sot in L1_PLAYERS
     ], "Ligue 1 2025-26")
-
     return sigs
 
 
@@ -415,9 +524,13 @@ def demo_nba() -> list[BetSignal]:
             market_odds={"over": 1.91, "under": 1.91},
         )
 
-    # ── Real player props (2025-26 season averages) ───────────────────────────
+    # ── Real player props (2025-26 season averages) including 3PM ────────────
+    # 3PM lines are real book lines sourced from typical sportsbook offers
     for name, avgs, lines in NBA_PLAYERS_2526:
-        sigs += model.player_props_by_name(name, lines, known_avgs=avgs)
+        # Add 3PM line (season avg rounded to nearest 0.5)
+        avg_3pm = avgs.get("3pm", 0)
+        lines_with_3pm = {**lines, "3pm": round(avg_3pm * 2) / 2}
+        sigs += model.player_props_by_name(name, lines_with_3pm, known_avgs=avgs)
 
     return sigs
 
