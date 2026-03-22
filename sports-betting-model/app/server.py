@@ -101,12 +101,14 @@ def _build_nba_games(today_str: str) -> list:
                 else:
                     over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
                 pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
+                best = max(over_p, under_p)
                 props.append({
                     "stat": stat, "avg": avg, "line": line,
                     "over_prob":  round(over_p  * 100, 1),
                     "under_prob": round(under_p * 100, 1),
                     "pick": pick,
-                    "confidence": confidence_label(max(over_p, under_p)),
+                    "confidence": confidence_label(best),
+                    "stars": 5 if best >= 0.85 else 4 if best >= 0.75 else 3 if best >= 0.65 else 2 if best >= 0.55 else 1,
                 })
             if props:
                 out.append({**p, "name": p.get("name", ""), "pos": p.get("pos", ""),
@@ -176,13 +178,66 @@ def _build_nba_games(today_str: str) -> list:
                 print(f"[NBA] BDL fetch error: {_e}")
                 home_bdl, away_bdl = [], []
 
-            home_roster = _nba_props_from_avgs(home_bdl[:8]) if home_bdl else _nba_roster_from_leaders(leaders, home_id)
-            away_roster = _nba_props_from_avgs(away_bdl[:8]) if away_bdl else _nba_roster_from_leaders(leaders, away_id)
+            home_roster = _nba_props_from_avgs(home_bdl) if home_bdl else _nba_roster_from_leaders(leaders, home_id)
+            away_roster = _nba_props_from_avgs(away_bdl) if away_bdl else _nba_roster_from_leaders(leaders, away_id)
+
+            # Secondary fallback: PrizePicks projections for tonight's NBA slate
+            if not home_roster and not away_roster:
+                try:
+                    from data.prizepicks import get_nba_projections
+                    pp_projs = get_nba_projections()
+                    print(f"[NBA] PrizePicks projections: {len(pp_projs)}")
+                    # Build prop cards from PrizePicks lines grouped by team
+                    def _pp_roster(team_abbr: str) -> list:
+                        team_pp = [p for p in pp_projs if p.get("team", "").upper() == team_abbr.upper()]
+                        player_map: dict = {}
+                        for proj in team_pp:
+                            name = proj["name"]
+                            stat_raw = proj.get("stat", "")
+                            line = float(proj.get("line", 0) or 0)
+                            if line <= 0:
+                                continue
+                            _stat_norm = {
+                                "points": ("PTS", 0.28), "pts": ("PTS", 0.28),
+                                "rebounds": ("REB", 0.32), "reb": ("REB", 0.32),
+                                "assists": ("AST", 0.35), "ast": ("AST", 0.35),
+                                "3-point": ("3PM", None), "threes": ("3PM", None),
+                            }
+                            stat_key = "PTS"; std = 0.28
+                            for kw, (sk, sf) in _stat_norm.items():
+                                if kw in stat_raw.lower():
+                                    stat_key = sk; std = sf; break
+                            avg = line * 1.05
+                            if std is None:
+                                over_p, under_p = threept_made_ou(avg, line)
+                            else:
+                                over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
+                            pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
+                            best = max(over_p, under_p)
+                            prop = {
+                                "stat": stat_key, "avg": round(avg, 1), "line": line,
+                                "over_prob": round(over_p*100, 1), "under_prob": round(under_p*100, 1),
+                                "pick": pick, "confidence": confidence_label(best),
+                                "stars": 5 if best >= 0.85 else 4 if best >= 0.75 else 3 if best >= 0.65 else 2 if best >= 0.55 else 1,
+                            }
+                            if name not in player_map:
+                                player_map[name] = {"name": name, "team": proj.get("team",""),
+                                                    "pos": proj.get("pos",""), "pts": 0, "props": [],
+                                                    "source": "PrizePicks"}
+                            player_map[name]["props"].append(prop)
+                            if stat_key == "PTS":
+                                player_map[name]["pts"] = round(avg, 1)
+                        return list(player_map.values())
+                    home_roster = _pp_roster(home_abbr)
+                    away_roster = _pp_roster(away_abbr)
+                    print(f"[NBA] PrizePicks rosters: home={len(home_roster)} away={len(away_roster)}")
+                except Exception as _ppe:
+                    print(f"[NBA] PrizePicks error: {_ppe}")
 
             # Last resort: preset player data so props section is never empty
             if not home_roster and not away_roster:
-                print(f"[NBA] No player data from BDL or ESPN — using presets")
-                preset_roster = _nba_props_from_avgs(_NBA_PRESETS[:5])
+                print(f"[NBA] No player data from BDL, ESPN, or PrizePicks — using presets")
+                preset_roster = _nba_props_from_avgs(_NBA_PRESETS)
                 home_roster = preset_roster
                 away_roster = preset_roster
 
@@ -558,6 +613,141 @@ async def today_page(request: Request):
         "total":        len(games),
         "refresh_secs": 300,
         "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+    })
+
+
+def _build_mlb_props(today_str: str) -> tuple[list, int]:
+    """
+    Build MLB player prop cards for tonight's games.
+    Returns (all_props_flat, total_games).
+    Priority: PrizePicks → ESPN leaders + MLB Stats API.
+    """
+    from data.mlb_data   import get_games as mlb_get_games
+    from data.prizepicks import get_mlb_projections
+    from models.mlb_model import build_props_from_prizepicks, build_pitcher_props, build_batter_props
+    from utils.stats      import confidence_label, shot_attempt_over_under
+
+    all_props: list = []
+    try:
+        games = mlb_get_games(dates=today_str)
+        total_games = len(games)
+        print(f"[MLB] {total_games} games today")
+
+        # Try PrizePicks first — gives real lines for tonight
+        pp_projs = get_mlb_projections()
+        print(f"[MLB] PrizePicks: {len(pp_projs)} projections")
+        if pp_projs:
+            all_props = build_props_from_prizepicks(pp_projs)
+        else:
+            # Fall back: ESPN leaders + season-avg model
+            for g in games:
+                opponent_map = {
+                    g.get("home_abbr", ""): g.get("away_abbr", ""),
+                    g.get("away_abbr", ""): g.get("home_abbr", ""),
+                }
+                for ldr in g.get("leaders", []):
+                    name = ldr.get("name", "")
+                    stat = ldr.get("stat", "")
+                    val  = float(ldr.get("value", 0) or 0)
+                    pos  = ldr.get("position", "")
+                    if not name:
+                        continue
+                    is_pitcher = pos in ("SP", "RP", "P") or stat in ("strikeouts", "earnedRunAverage")
+                    if is_pitcher:
+                        pstats = {"so_pg": val if stat == "strikeouts" else 5.0,
+                                  "ip_pg": 5.5}
+                        props = build_pitcher_props(pstats)
+                    else:
+                        bstats = {"hits_pg": val if stat == "hits" else 0.9,
+                                  "tb_pg":   1.5, "runs_pg": 0.6}
+                        props = build_batter_props(bstats)
+                    if props:
+                        all_props.append({
+                            "name": name, "pos": pos,
+                            "team": ldr.get("team_id", ""),
+                            "props": props,
+                        })
+    except Exception:
+        traceback.print_exc()
+        total_games = 0
+
+    return all_props, total_games
+
+
+def _build_nhl_props(today_str: str) -> tuple[list, int]:
+    """
+    Build NHL player prop cards for tonight's games.
+    Priority: PrizePicks → ESPN leaders + NHL API.
+    """
+    from data.nhl_data    import get_games as nhl_get_games, get_team_roster_stats
+    from data.prizepicks  import get_nhl_projections
+    from models.nhl_model import build_skater_props, build_goalie_props, build_props_from_prizepicks
+    from utils.stats      import confidence_label
+
+    all_props: list = []
+    try:
+        games = nhl_get_games(dates=today_str)
+        total_games = len(games)
+        print(f"[NHL] {total_games} games today")
+
+        pp_projs = get_nhl_projections()
+        print(f"[NHL] PrizePicks: {len(pp_projs)} projections")
+        if pp_projs:
+            all_props = build_props_from_prizepicks(pp_projs)
+        else:
+            for g in games:
+                for abbr in [g.get("home_abbr",""), g.get("away_abbr","")]:
+                    if not abbr:
+                        continue
+                    try:
+                        players = get_team_roster_stats(abbr)
+                    except Exception:
+                        players = []
+                    for p in players[:10]:
+                        if p.get("is_goalie"):
+                            props = build_goalie_props(p)
+                        else:
+                            props = build_skater_props(p)
+                        if props:
+                            all_props.append({**p, "team": abbr, "props": props})
+    except Exception:
+        traceback.print_exc()
+        total_games = 0
+
+    return all_props, total_games
+
+
+# ─────────────────────────────────────────────
+#  MLB — live props dashboard
+# ─────────────────────────────────────────────
+
+@app.get("/mlb", response_class=HTMLResponse)
+async def mlb_page(request: Request):
+    today_str   = date.today().strftime("%Y%m%d")
+    today_label = date.today().strftime("%A, %B %d %Y")
+    all_props, total_games = _build_mlb_props(today_str)
+    return TEMPLATES.TemplateResponse(request, "mlb.html", {
+        "all_props":    all_props,
+        "total_players": len(all_props),
+        "total_games":  total_games,
+        "today":        today_label,
+    })
+
+
+# ─────────────────────────────────────────────
+#  NHL — live props dashboard
+# ─────────────────────────────────────────────
+
+@app.get("/nhl", response_class=HTMLResponse)
+async def nhl_page(request: Request):
+    today_str   = date.today().strftime("%Y%m%d")
+    today_label = date.today().strftime("%A, %B %d %Y")
+    all_props, total_games = _build_nhl_props(today_str)
+    return TEMPLATES.TemplateResponse(request, "nhl.html", {
+        "all_props":    all_props,
+        "total_players": len(all_props),
+        "total_games":  total_games,
+        "today":        today_label,
     })
 
 

@@ -3,97 +3,304 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>{% block title %}Sports Betting Model{% endblock %}</title>
+  <title>{% block title %}BetModel Pro{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Tailwind CDN (supports legacy templates that use utility classes) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: { DEFAULT: '#6366f1', dark: '#4f46e5' },
-            surface: '#1e1e2e',
-            card: '#2a2a3e',
-            border: '#3a3a5c',
-          }
-        }
-      }
-    }
+    tailwind.config = { darkMode: 'class', theme: { extend: { colors: {
+      brand: { DEFAULT: '#00d4ff', dark: '#00b8d9' },
+      surface: '#1a1a2e', card: '#1a1a2e', border: '#2a2a4e',
+    }}}}
   </script>
   <style>
-    body { background: #13131f; }
-    .card { background: #1e1e2e; border: 1px solid #2e2e4a; }
-    .badge-high   { background:#14532d; color:#86efac; }
-    .badge-medium { background:#713f12; color:#fde68a; }
-    .badge-low    { background:#1e1b4b; color:#a5b4fc; }
-    .badge-edge-pos { background:#14532d; color:#86efac; }
-    .badge-edge-neg { background:#7f1d1d; color:#fca5a5; }
-    .nav-link { transition: color .15s; }
-    .nav-link:hover { color: #818cf8; }
-    .nav-link.active { color: #818cf8; border-bottom: 2px solid #818cf8; }
-    input,select { background:#252540; border:1px solid #3a3a5c; color:#e2e8f0; }
-    input:focus,select:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,.25); }
-    .btn-primary { background:#6366f1; color:white; transition:background .15s; }
-    .btn-primary:hover { background:#4f46e5; }
-    .table-row:nth-child(even) { background: rgba(255,255,255,.025); }
-    .cs-cell { transition: all .15s; }
-    .cs-cell:hover { transform: scale(1.05); }
+    /* ── Design tokens ── */
+    :root {
+      --bg:       #0d0d0d;
+      --card:     #1a1a2e;
+      --card2:    #16213e;
+      --border:   #2a2a4e;
+      --accent:   #00d4ff;
+      --over:     #00ff88;
+      --under:    #ff4444;
+      --fair:     #888888;
+      --txt1:     #ffffff;
+      --txt2:     #aaaaaa;
+      --txt3:     #555577;
+      --star:     #f59e0b;
+      --radius:   12px;
+      --shadow:   0 4px 24px rgba(0,212,255,.08);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--txt1);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Nav ── */
+    .top-nav {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100;
+      padding: 0 16px;
+    }
+    .nav-inner {
+      max-width: 1280px; margin: 0 auto;
+      display: flex; align-items: center; gap: 4px;
+      height: 56px; overflow-x: auto;
+    }
+    .nav-brand {
+      font-weight: 800; font-size: 18px; color: var(--accent);
+      text-decoration: none; white-space: nowrap;
+      margin-right: 12px; letter-spacing: -.3px;
+    }
+    .nav-link {
+      display: flex; align-items: center; gap: 5px;
+      padding: 6px 12px; border-radius: 8px;
+      color: var(--txt2); text-decoration: none;
+      font-weight: 500; font-size: 13px;
+      white-space: nowrap; transition: all .15s;
+    }
+    .nav-link:hover { background: rgba(255,255,255,.06); color: var(--txt1); }
+    .nav-link.active { background: rgba(0,212,255,.12); color: var(--accent); }
+
+    /* ── Layout ── */
+    .page { max-width: 1280px; margin: 0 auto; padding: 24px 16px 64px; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .card:hover { box-shadow: 0 4px 32px rgba(0,212,255,.12); }
+
+    /* ── Prop cards ── */
+    .prop-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .prop-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(0,212,255,.15);
+      border-color: var(--accent);
+    }
+    .prop-card.over-card  { border-left: 3px solid var(--over); }
+    .prop-card.under-card { border-left: 3px solid var(--under); }
+    .prop-card.fair-card  { border-left: 3px solid var(--fair); }
+
+    /* ── Pick badges ── */
+    .pick-badge {
+      display: inline-flex; align-items: center;
+      font-weight: 700; font-size: 13px; letter-spacing: .05em;
+      padding: 3px 10px; border-radius: 6px;
+    }
+    .pick-over  { color: var(--over);  background: rgba(0,255,136,.1); }
+    .pick-under { color: var(--under); background: rgba(255,68,68,.1); }
+    .pick-fair  { color: var(--fair);  background: rgba(136,136,136,.1); }
+
+    /* ── Stars ── */
+    .stars { color: var(--star); letter-spacing: 1px; font-size: 13px; }
+    .star-empty { color: #333355; }
+
+    /* ── Progress bars ── */
+    .pbar-wrap { height: 8px; background: #1f1f3a; border-radius: 4px; overflow: hidden; }
+    .pbar-fill  { height: 100%; border-radius: 4px; transition: width .4s; }
+    .pbar-over  { background: linear-gradient(90deg, #00ff88, #00d4ff); }
+    .pbar-under { background: linear-gradient(90deg, #ff4444, #ff8800); }
+    .pbar-fair  { background: #444466; }
+
+    /* ── Stat rows ── */
+    .stat-row {
+      display: flex; justify-content: space-between;
+      padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,.04);
+      font-size: 12px;
+    }
+    .stat-label { color: var(--txt2); }
+    .stat-val   { color: var(--txt1); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .trend-up   { color: var(--over);  }
+    .trend-down { color: var(--under); }
+    .trend-flat { color: var(--txt2);  }
+
+    /* ── Filter bar ── */
+    .filter-bar {
+      display: flex; gap: 6px; flex-wrap: wrap;
+      padding: 12px 0;
+    }
+    .filter-btn {
+      padding: 6px 14px; border-radius: 20px; font-size: 12px;
+      font-weight: 600; cursor: pointer; border: 1px solid var(--border);
+      background: transparent; color: var(--txt2); transition: all .15s;
+    }
+    .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .filter-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+    /* ── Confidence badges ── */
+    .badge-high   { background:#063; color:#00ff88; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+    .badge-medium { background:#630; color:#ffa500; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+    .badge-low    { background:#222; color:#888;    padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+
+    /* ── Section header ── */
+    .section-hdr {
+      font-size: 22px; font-weight: 800; color: var(--txt1);
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 6px;
+    }
+    .section-sub { font-size: 13px; color: var(--txt2); margin-bottom: 16px; }
+
+    /* ── Game header ── */
+    .game-hdr {
+      background: var(--card2); border-radius: 10px 10px 0 0;
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .matchup { font-weight: 700; font-size: 15px; }
+    .game-meta { font-size: 11px; color: var(--txt2); }
+
+    /* ── Grid ── */
+    .props-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+    }
+
+    /* ── Divider ── */
+    .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 8px; font-size: 13px;
+      font-weight: 600; cursor: pointer; border: none;
+      text-decoration: none; transition: all .15s;
+    }
+    .btn-accent { background: var(--accent); color: #000; }
+    .btn-accent:hover { background: #00b8d9; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--txt2); }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Data quality badge ── */
+    .data-warn {
+      font-size: 10px; color: #ff8800;
+      background: rgba(255,136,0,.1); border: 1px solid rgba(255,136,0,.25);
+      border-radius: 4px; padding: 2px 6px;
+    }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center; font-size: 11px; color: var(--txt3);
+      padding: 24px 16px; border-top: 1px solid var(--border);
+    }
+
+    /* ── Mobile ── */
+    @media (max-width: 640px) {
+      .page { padding: 16px 12px 80px; }
+      .nav-brand { font-size: 15px; }
+      .props-grid { grid-template-columns: 1fr; }
+      .top-nav { padding: 0 8px; }
+      /* Bottom nav on mobile */
+      .bottom-nav {
+        display: flex; position: fixed; bottom: 0; left: 0; right: 0;
+        background: var(--card); border-top: 1px solid var(--border);
+        z-index: 100; justify-content: space-around; padding: 6px 0 8px;
+      }
+      .top-nav .nav-link { display: none; }
+      .top-nav .nav-brand { display: flex; }
+    }
+    @media (min-width: 641px) {
+      .bottom-nav { display: none; }
+    }
   </style>
   {% block head %}{% endblock %}
 </head>
-<body class="text-slate-200 min-h-screen">
+<body>
 
-<!-- NAV -->
-<nav class="card border-b border-border sticky top-0 z-50">
-  <div class="max-w-7xl mx-auto px-4 flex items-center gap-6 h-14">
-    <a href="/" class="text-brand font-bold text-lg tracking-tight flex items-center gap-2">
-      <span class="text-2xl">🎯</span> BetModel
+<!-- TOP NAV -->
+<nav class="top-nav">
+  <div class="nav-inner">
+    <a href="/" class="nav-brand">🎯 BetModel</a>
+    {% set cur = request.url.path %}
+    {% for href, icon, label in [
+        ('/',       '🏠', 'Home'),
+        ('/nba',    '🏀', 'NBA'),
+        ('/mlb',    '⚾', 'MLB'),
+        ('/nhl',    '🏒', 'NHL'),
+        ('/nfl',    '🏈', 'NFL'),
+        ('/soccer', '⚽', 'Soccer'),
+        ('/today',  '📅', "Today"),
+        ('/demo',   '⚡', 'Demo'),
+        ('/reports','📊', 'Reports'),
+    ] %}
+    <a href="{{ href }}" class="nav-link {% if cur == href %}active{% endif %}">
+      {{ icon }} {{ label }}
     </a>
-    <div class="flex gap-1 ml-4 text-sm font-medium text-slate-400">
-      {% set current = request.url.path %}
-      {% for href, label, icon in [
-          ('/', 'Dashboard', '🏠'),
-          ('/today', "Today's Games", '📅'),
-          ('/soccer', 'Soccer', '⚽'),
-          ('/nba', 'NBA', '🏀'),
-          ('/nfl', 'NFL', '🏈'),
-          ('/demo', 'Live Demo', '⚡'),
-          ('/reports', 'Reports', '📊'),
-      ] %}
-      <a href="{{ href }}"
-         class="nav-link px-3 py-4 {% if current == href %}active{% endif %}">
-        {{ icon }} {{ label }}
-      </a>
-      {% endfor %}
-    </div>
+    {% endfor %}
   </div>
 </nav>
 
 <!-- MAIN -->
-<main class="max-w-7xl mx-auto px-4 py-8">
+<main class="page">
   {% block content %}{% endblock %}
 </main>
 
-<footer class="text-center text-xs text-slate-600 py-6 mt-8 border-t border-border">
-  Sports Betting Model · Probabilities only · Not financial advice
-</footer>
+<!-- BOTTOM NAV (mobile) -->
+<div class="bottom-nav">
+  {% for href, icon, label in [
+      ('/',    '🏠','Home'),
+      ('/nba', '🏀','NBA'),
+      ('/mlb', '⚾','MLB'),
+      ('/nhl', '🏒','NHL'),
+      ('/nfl', '🏈','NFL'),
+  ] %}
+  <a href="{{ href }}" style="display:flex;flex-direction:column;align-items:center;gap:2px;color:{% if request.url.path==href %}var(--accent){% else %}var(--txt2){% endif %};text-decoration:none;font-size:10px;font-weight:600;">
+    <span style="font-size:18px;">{{ icon }}</span>{{ label }}
+  </a>
+  {% endfor %}
+</div>
+
+<footer>BetModel Pro · Model probabilities only · Not financial advice</footer>
 
 <script>
-  // auto-fill preset player stats
-  function fillPreset(data) {
-    const fields = ['pts','reb','ast','3pm','name','rush_yds','rec_yds','pass_yds','tds','rush_att','rec_tgt','games'];
-    fields.forEach(f => {
-      const el = document.getElementById('avg_'+f) || document.getElementById(f) || document.getElementById('player_name');
-      if (el && data[f] !== undefined) el.value = data[f];
+/* ── Filter button logic ── */
+function initFilters(groupClass) {
+  document.querySelectorAll(`.filter-btn[data-group="${groupClass}"]`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const group  = btn.dataset.group;
+      const filter = btn.dataset.filter;
+      document.querySelectorAll(`.filter-btn[data-group="${group}"]`).forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll(`.prop-card[data-group="${group}"]`).forEach(card => {
+        const show = filter === 'all' || card.dataset.stat === filter;
+        card.style.display = show ? '' : 'none';
+      });
     });
-    const pn = document.getElementById('player_name');
-    if (pn && data.name) pn.value = data.name;
-    // auto-set lines to ~season avg
-    if (data.pts)  { const l = document.getElementById('line_pts'); if(l) l.value = (Math.round(data.pts * 2)/2 - 0.5).toFixed(1); }
-    if (data.reb)  { const l = document.getElementById('line_reb'); if(l) l.value = (Math.round(data.reb * 2)/2 - 0.5).toFixed(1); }
-    if (data.ast)  { const l = document.getElementById('line_ast'); if(l) l.value = (Math.round(data.ast * 2)/2 - 0.5).toFixed(1); }
-    if (data['3pm']){ const l = document.getElementById('line_3pm'); if(l) l.value = (Math.round(data['3pm'] * 2)/2 - 0.5).toFixed(1); }
-  }
+  });
+}
+
+/* ── Sort logic ── */
+function sortProps(gridId, key) {
+  const grid  = document.getElementById(gridId);
+  if (!grid) return;
+  const cards = Array.from(grid.querySelectorAll('.prop-card'));
+  cards.sort((a, b) => {
+    const av = parseFloat(a.dataset[key] || 0);
+    const bv = parseFloat(b.dataset[key] || 0);
+    return bv - av;
+  });
+  cards.forEach(c => grid.appendChild(c));
+}
 </script>
 {% block scripts %}{% endblock %}
 </body>

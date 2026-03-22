@@ -1,243 +1,219 @@
 {% extends "base.html" %}
-{% block title %}NBA Picks – Live Betting Model{% endblock %}
+{% block title %}NBA Props – BetModel Pro{% endblock %}
+
 {% block head %}
 <style>
-  .prob-bar-home { background: #6366f1; }
-  .prob-bar-away { background: #a855f7; }
-  .winner-glow   { border-left: 3px solid #6366f1; }
-  .book-pill     { background: #1a1a30; border: 1px solid #2e2e52; }
-  .player-tbl th { color:#64748b; font-size:.65rem; text-transform:uppercase;
-                   letter-spacing:.05em; padding:4px 8px; border-bottom:1px solid #1e2035; }
-  .player-tbl td { font-size:.75rem; padding:5px 8px; border-bottom:1px solid #181828; }
-  .player-tbl tr:hover td { background:rgba(255,255,255,.03); }
-  .pick-over  { color:#4ade80; font-weight:700; }
-  .pick-under { color:#f87171; font-weight:700; }
-  .pick-fair  { color:#94a3b8; }
-  .team-label { font-size:.7rem; font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+  .prob-bar-home { background: linear-gradient(90deg,#6366f1,#818cf8); }
+  .prob-bar-away { background: linear-gradient(90deg,#a855f7,#c084fc); }
+  .winner-glow   { border-left: 3px solid var(--accent); padding-left: 10px; }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- Header -->
-<div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+<!-- Page header -->
+<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
   <div>
-    <h1 class="text-3xl font-bold text-white">🏀 NBA Picks</h1>
-    <p class="text-slate-400 mt-1">
+    <div class="section-hdr">🏀 NBA Player Props</div>
+    <div class="section-sub">
       {{ today }} ·
-      <span class="text-indigo-400 font-medium">{{ total }}</span>
-      game{{ 's' if total != 1 else '' }}
+      <strong style="color:var(--accent)">{{ total }}</strong> game{{ 's' if total != 1 else '' }}
       {% if not has_odds_key %}
-        · <span class="text-yellow-600 text-xs">Set <code>ODDS_API_KEY</code> for sportsbook odds</span>
+        · <span style="color:#ff8800;font-size:11px;">Set <code>ODDS_API_KEY</code> for sportsbook lines</span>
       {% endif %}
-    </p>
+    </div>
   </div>
-  <a href="/nba" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium">↻ Refresh</a>
+  <a href="/nba" class="btn btn-accent">↻ Refresh</a>
+</div>
+
+<!-- Filter bar -->
+<div class="filter-bar" id="nba-filter-bar">
+  {% for label, val in [('All','all'),('Points','pts'),('Rebounds','reb'),('Assists','ast'),('3-Pointers','3pm')] %}
+  <button class="filter-btn {% if loop.first %}active{% endif %}"
+          data-group="nba" data-filter="{{ val }}">{{ label }}</button>
+  {% endfor %}
+  <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+    <span style="font-size:11px;color:var(--txt2);">Sort:</span>
+    <button class="filter-btn" onclick="sortProps('nba-grid','conf')">★ Confidence</button>
+    <button class="filter-btn" onclick="sortProps('nba-grid','stars')">⭐ Stars</button>
+  </div>
 </div>
 
 {% if total == 0 %}
-<div class="card rounded-xl p-12 text-center">
-  <p class="text-4xl mb-3">😴</p>
-  <p class="text-white font-semibold text-lg">No NBA games today</p>
-  <p class="text-slate-400 mt-1 text-sm">Check back on a game day for live picks and player props.</p>
+<div class="card" style="padding:64px;text-align:center;">
+  <div style="font-size:48px;margin-bottom:12px;">😴</div>
+  <div style="font-size:18px;font-weight:700;color:var(--txt1);">No NBA games today</div>
+  <div style="color:var(--txt2);margin-top:6px;font-size:13px;">Check back on a game day for live picks and player props.</div>
 </div>
 {% else %}
 
 {% for game in games %}
 {% set gid = loop.index0|string %}
-<div class="card rounded-xl overflow-hidden mb-6">
 
-  <!-- Game header bar -->
-  <div class="px-5 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
-    <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-      {% if game.kickoff %}
-        <span>{{ game.kickoff[:10] }}</span>
-        {% if game.kickoff|length > 10 %}<span>{{ game.kickoff[11:16] }} UTC</span>{% endif %}
-      {% endif %}
-      {% if game.bookmaker %}
-        <span class="book-pill px-2 py-0.5 rounded text-slate-400">📚 {{ game.bookmaker }}</span>
-      {% endif %}
-      {% if game.book_total %}
-        <span class="book-pill px-2 py-0.5 rounded text-slate-300">O/U {{ game.book_total }}</span>
-      {% endif %}
+<!-- Game block -->
+<div class="card" style="margin-bottom:24px;overflow:hidden;">
+
+  <!-- Game header -->
+  <div class="game-hdr">
+    <div>
+      <div class="matchup">
+        {{ game.sport_icon }} {{ game.away_team }} @ {{ game.home_team }}
+      </div>
+      <div class="game-meta">
+        {% if game.kickoff %}{{ game.kickoff[:10] }}{% if game.kickoff|length > 10 %} · {{ game.kickoff[11:16] }} UTC{% endif %}{% endif %}
+        {% if game.book_total %} · O/U {{ game.book_total }}{% endif %}
+        {% if game.bookmaker %} · 📚 {{ game.bookmaker }}{% endif %}
+      </div>
     </div>
-    <span class="text-xs px-2 py-0.5 rounded-full
-      {% if 'FINAL' in (game.status or '') or game.status=='Final' %}bg-slate-700 text-slate-300
-      {% elif 'PROGRESS' in (game.status or '') %}bg-green-900 text-green-300
-      {% else %}bg-indigo-900 text-indigo-300{% endif %}">
-      {% if 'FINAL' in (game.status or '') or game.status=='Final' %}Final
-      {% elif 'PROGRESS' in (game.status or '') %}🔴 Live
-      {% else %}Upcoming{% endif %}
-    </span>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:11px;padding:4px 10px;border-radius:20px;font-weight:600;
+        {% if 'FINAL' in (game.status or '') or game.status=='Final' %}background:#1a2a1a;color:#666
+        {% elif 'PROGRESS' in (game.status or '') %}background:#1a3a1a;color:var(--over)
+        {% else %}background:#1a1a3a;color:var(--accent){% endif %}">
+        {% if 'FINAL' in (game.status or '') or game.status=='Final' %}✓ Final
+        {% elif 'PROGRESS' in (game.status or '') %}🔴 Live
+        {% else %}⏰ Upcoming{% endif %}
+      </span>
+      <!-- Win probability pills -->
+      <div style="display:flex;gap:6px;font-size:12px;font-weight:700;">
+        <span style="color:#818cf8;">{{ game.home_abbr }} {{ game.home_prob }}%</span>
+        <span style="color:var(--txt3);">vs</span>
+        <span style="color:#c084fc;">{{ game.away_abbr }} {{ game.away_prob }}%</span>
+      </div>
+    </div>
   </div>
 
-  <div class="p-5 grid grid-cols-1 xl:grid-cols-5 gap-6">
+  <!-- Props grid for this game -->
+  <div style="padding:16px;">
 
-    <!-- Win probability + picks -->
-    <div class="xl:col-span-2 space-y-4">
-
-      <!-- Home -->
-      <div class="{% if game.predicted_winner == game.home_team %}winner-glow pl-3{% endif %}">
-        <div class="flex items-center justify-between mb-1.5">
-          <div class="flex items-center gap-2">
-            {% if game.predicted_winner == game.home_team %}<span class="text-yellow-400 text-lg">★</span>{% endif %}
-            <span class="font-semibold {% if game.predicted_winner == game.home_team %}text-white{% else %}text-slate-400{% endif %}">
-              {{ game.home_team }}
-            </span>
-            <span class="text-xs text-slate-600">(Home)</span>
-          </div>
-          <div class="flex items-center gap-2">
-            {% if game.home_score is not none %}<span class="text-xl font-bold text-white">{{ game.home_score }}</span>{% endif %}
-            {% if game.book_home_ml %}
-              <span class="book-pill text-xs px-1.5 py-0.5 rounded {% if game.book_home_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
-                {{ game.book_home_ml }}
-              </span>
-            {% endif %}
-            <span class="text-sm font-bold {% if game.predicted_winner == game.home_team %}text-indigo-300{% else %}text-slate-500{% endif %}">
-              {{ game.home_prob }}%
-            </span>
-          </div>
-        </div>
-        <div class="w-full bg-slate-800 rounded-full h-2">
-          <div class="prob-bar-home h-2 rounded-full" style="width:{{ game.home_prob }}%"></div>
-        </div>
-      </div>
-
-      <!-- Away -->
-      <div class="{% if game.predicted_winner == game.away_team %}winner-glow pl-3{% endif %}">
-        <div class="flex items-center justify-between mb-1.5">
-          <div class="flex items-center gap-2">
-            {% if game.predicted_winner == game.away_team %}<span class="text-yellow-400 text-lg">★</span>{% endif %}
-            <span class="font-semibold {% if game.predicted_winner == game.away_team %}text-white{% else %}text-slate-400{% endif %}">
-              {{ game.away_team }}
-            </span>
-            <span class="text-xs text-slate-600">(Away)</span>
-          </div>
-          <div class="flex items-center gap-2">
-            {% if game.away_score is not none %}<span class="text-xl font-bold text-white">{{ game.away_score }}</span>{% endif %}
-            {% if game.book_away_ml %}
-              <span class="book-pill text-xs px-1.5 py-0.5 rounded {% if game.book_away_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
-                {{ game.book_away_ml }}
-              </span>
-            {% endif %}
-            <span class="text-sm font-bold {% if game.predicted_winner == game.away_team %}text-indigo-300{% else %}text-slate-500{% endif %}">
-              {{ game.away_prob }}%
-            </span>
-          </div>
-        </div>
-        <div class="w-full bg-slate-800 rounded-full h-2">
-          <div class="prob-bar-away h-2 rounded-full" style="width:{{ game.away_prob }}%"></div>
-        </div>
-      </div>
-
-      <!-- Summary -->
-      <div class="bg-slate-900/60 rounded-lg px-4 py-3 space-y-1 text-sm">
-        <div class="flex items-center justify-between">
-          <span class="text-slate-400">🏆 Winner pick</span>
-          <span class="text-white font-semibold">{{ game.predicted_winner }}
-            <span class="text-slate-500 font-normal">({{ game.win_prob }}%)</span>
-          </span>
-        </div>
-        {% if game.spread %}
-        <div class="flex items-center justify-between">
-          <span class="text-slate-400">📊 Spread</span>
-          <span class="text-slate-300">{{ game.spread }}</span>
-        </div>
-        {% endif %}
-        {% if game.book_total %}
-        <div class="flex items-center justify-between">
-          <span class="text-slate-400">🎯 Total</span>
-          <span class="text-slate-300">{{ game.book_total }}</span>
-        </div>
-        {% endif %}
-        <div class="flex items-center justify-between">
-          <span class="text-slate-400">📈 Confidence</span>
-          <span class="text-xs px-2 py-0.5 rounded-full font-medium
-            {% if game.confidence=='HIGH' %}badge-high{% elif game.confidence=='MEDIUM' %}badge-medium{% else %}badge-low{% endif %}">
-            {{ game.confidence }}
-          </span>
-        </div>
-      </div>
+  {% for team_label, roster, abbr in [
+      (game.home_team, game.home_roster, game.home_abbr),
+      (game.away_team, game.away_roster, game.away_abbr),
+  ] %}
+  {% if roster %}
+  <div style="margin-bottom:16px;">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+                color:var(--accent);margin-bottom:10px;">
+      {{ team_label }}
+      <span style="color:var(--txt3);font-weight:400;text-transform:none;letter-spacing:0;">
+        — {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}
+      </span>
     </div>
 
-    <!-- Player props -->
-    <div class="xl:col-span-3 space-y-4">
-      {% for team_label, roster, color in [
-          (game.home_team, game.home_roster, 'text-indigo-300'),
-          (game.away_team, game.away_roster, 'text-purple-300'),
-      ] %}
-      {% if roster %}
-      <div>
-        <div class="flex items-center justify-between px-1 mb-1">
-          <span class="team-label {{ color }}">{{ team_label }}</span>
-          <span class="text-xs text-slate-600">Model O/U props · {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}</span>
+    <div class="props-grid" id="nba-grid-{{ gid }}-{{ loop.index0 }}">
+    {% for p in roster %}
+      {% set pr = p.props[0] if p.props else none %}
+      {% if pr %}
+      {% set stars_count = pr.get('stars', ((pr.over_prob if pr.pick=='OVER' else pr.under_prob) / 20)|int) %}
+      <div class="prop-card {% if pr.pick=='OVER' %}over-card{% elif pr.pick=='UNDER' %}under-card{% else %}fair-card{% endif %}"
+           data-group="nba"
+           data-stat="{% if pr.stat=='PTS' %}pts{% elif pr.stat=='REB' %}reb{% elif pr.stat=='AST' %}ast{% elif pr.stat=='3PM' %}3pm{% else %}other{% endif %}"
+           data-conf="{{ pr.over_prob if pr.pick=='OVER' else pr.under_prob }}"
+           data-stars="{{ stars_count }}">
+
+        <!-- Player name & matchup -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+          <div>
+            <div style="font-weight:700;font-size:14px;color:var(--txt1);">{{ p.name }}</div>
+            <div style="font-size:11px;color:var(--txt2);">
+              {{ abbr }} · {{ pr.stat }}
+              {% if p.get('data_quality') == 'LIMITED' %}
+                <span class="data-warn">Limited data</span>
+              {% endif %}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="pick-badge {% if pr.pick=='OVER' %}pick-over{% elif pr.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}">
+              {{ pr.pick }}
+            </div>
+            <div style="font-size:12px;color:var(--txt2);margin-top:2px;">Line: <strong style="color:var(--txt1);">{{ pr.line }}</strong></div>
+          </div>
         </div>
-        <div class="overflow-x-auto rounded" style="background:#0e0e1e;">
-          <table class="player-tbl w-full">
-            <thead><tr>
-              <th class="text-left">Player</th>
-              <th class="text-center">Stat</th>
-              <th class="text-center">Avg</th>
-              <th class="text-center">Line</th>
-              <th class="text-center">Over%</th>
-              <th class="text-center">Pick</th>
-            </tr></thead>
-            <tbody>
-            {% for p in roster %}
-              {% set pr = p.props[0] if p.props else none %}
-              <tr>
-                <td class="text-slate-200 font-medium">
-                  {{ p.name }}
-                  {% if p.pts %}<span class="text-slate-600 text-xs ml-1">{{ p.pts }}pts</span>{% endif %}
-                </td>
-                {% if pr %}
-                <td class="text-slate-500 text-center text-xs">{{ pr.stat }}</td>
-                <td class="text-slate-300 text-center font-mono">{{ pr.avg }}</td>
-                <td class="text-slate-500 text-center font-mono">{{ pr.line }}</td>
-                <td class="text-center">
-                  <span class="{% if pr.over_prob > 55 %}text-green-400{% elif pr.over_prob < 45 %}text-red-400{% else %}text-slate-500{% endif %} font-medium">
-                    {{ pr.over_prob }}%
-                  </span>
-                </td>
-                <td class="text-center">
-                  <span class="{% if pr.pick=='OVER' %}pick-over{% elif pr.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}">
-                    {{ pr.pick }}
-                  </span>
-                </td>
-                {% else %}
-                <td colspan="5" class="text-slate-700 text-center">—</td>
-                {% endif %}
-              </tr>
-              {# secondary props as sub-rows #}
-              {% for pr2 in p.props[1:] %}
-              <tr style="background:rgba(0,0,0,.18);">
-                <td class="text-slate-700 text-right text-xs pr-2">↳</td>
-                <td class="text-slate-500 text-center text-xs">{{ pr2.stat }}</td>
-                <td class="text-slate-300 text-center font-mono text-xs">{{ pr2.avg }}</td>
-                <td class="text-slate-500 text-center font-mono text-xs">{{ pr2.line }}</td>
-                <td class="text-center text-xs">
-                  <span class="{% if pr2.over_prob > 55 %}text-green-400{% elif pr2.over_prob < 45 %}text-red-400{% else %}text-slate-500{% endif %}">
-                    {{ pr2.over_prob }}%
-                  </span>
-                </td>
-                <td class="text-center">
-                  <span class="{% if pr2.pick=='OVER' %}pick-over{% elif pr2.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %} text-xs">
-                    {{ pr2.pick }}
-                  </span>
-                </td>
-              </tr>
-              {% endfor %}
-            {% endfor %}
-            </tbody>
-          </table>
+
+        <!-- Stars and confidence % -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div class="stars">
+            {% set cp = (pr.over_prob if pr.pick != 'UNDER' else pr.under_prob) %}
+            {% set st = (cp / 20)|int %}
+            {% for i in range(5) %}<span {% if i >= st %}class="star-empty"{% endif %}>★</span>{% endfor %}
+          </div>
+          <div style="font-size:13px;font-weight:700;
+            {% if pr.pick=='OVER' %}color:var(--over){% elif pr.pick=='UNDER' %}color:var(--under){% else %}color:var(--txt2){% endif %}">
+            {{ pr.over_prob if pr.pick != 'UNDER' else pr.under_prob }}% Confidence
+          </div>
         </div>
+
+        <!-- Progress bar -->
+        {% set bar_pct = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
+        <div class="pbar-wrap" style="margin-bottom:12px;">
+          <div class="pbar-fill {% if pr.pick=='OVER' %}pbar-over{% elif pr.pick=='UNDER' %}pbar-under{% else %}pbar-fair{% endif %}"
+               style="width:{{ bar_pct }}%"></div>
+        </div>
+
+        <!-- Stats rows -->
+        <div>
+          <div class="stat-row">
+            <span class="stat-label">Season Avg</span>
+            <span class="stat-val">{{ pr.avg }}</span>
+          </div>
+          {% if p.get('last5_avg') %}
+          <div class="stat-row">
+            <span class="stat-label">Last 5 Avg</span>
+            <span class="stat-val {% if p.last5_avg > pr.avg %}trend-up{% elif p.last5_avg < pr.avg %}trend-down{% else %}trend-flat{% endif %}">
+              {{ p.last5_avg }}
+              {% if p.last5_avg > pr.avg %}↑{% elif p.last5_avg < pr.avg %}↓{% else %}→{% endif %}
+            </span>
+          </div>
+          {% endif %}
+          {% if p.get('last10_avg') %}
+          <div class="stat-row">
+            <span class="stat-label">Last 10 Avg</span>
+            <span class="stat-val">{{ p.last10_avg }}</span>
+          </div>
+          {% endif %}
+          <div class="stat-row">
+            <span class="stat-label">Over Prob</span>
+            <span class="stat-val" style="color:var(--over);">{{ pr.over_prob }}%</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Under Prob</span>
+            <span class="stat-val" style="color:var(--under);">{{ pr.under_prob }}%</span>
+          </div>
+        </div>
+
+        <!-- Secondary props -->
+        {% if p.props|length > 1 %}
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+          <div style="font-size:10px;color:var(--txt3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Also</div>
+          {% for pr2 in p.props[1:] %}
+          <div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;">
+            <span style="color:var(--txt2);">{{ pr2.stat }} · Line {{ pr2.line }}</span>
+            <span class="{% if pr2.pick=='OVER' %}pick-over{% elif pr2.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}"
+                  style="font-size:11px;font-weight:700;">
+              {{ pr2.pick }} {{ pr2.over_prob if pr2.pick!='UNDER' else pr2.under_prob }}%
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Confidence badge -->
+        <div style="margin-top:10px;display:flex;justify-content:flex-end;">
+          <span class="badge-{{ pr.confidence|lower }}">{{ pr.confidence }}</span>
+        </div>
+
       </div>
       {% endif %}
-      {% endfor %}
-
-      {% if not game.home_roster and not game.away_roster %}
-      <p class="text-xs text-slate-600 italic mt-2">No player data yet — check back closer to tip-off.</p>
-      {% endif %}
+    {% endfor %}
     </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+
+  {% if not game.home_roster and not game.away_roster %}
+  <div style="padding:24px;text-align:center;color:var(--txt3);font-size:13px;">
+    No player prop data available for this game yet — check back closer to tip-off.
+  </div>
+  {% endif %}
 
   </div>
 </div>
@@ -247,12 +223,6 @@
 
 {% block scripts %}
 <script>
-function toggleNBA(tid) {
-  const rows = document.querySelectorAll('.extra-' + tid);
-  const btn  = document.getElementById('btn-nba-' + tid);
-  const hidden = rows.length > 0 && rows[0].classList.contains('hidden');
-  rows.forEach(r => r.classList.toggle('hidden', !hidden));
-  if (btn) btn.textContent = hidden ? '▲ Show fewer' : '▼ Show all players';
-}
+document.addEventListener('DOMContentLoaded', () => { initFilters('nba'); });
 </script>
 {% endblock %}

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}NHL Props – BetModel Pro{% endblock %}
+
+{% block content %}
+<!-- Page header -->
+<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
+  <div>
+    <div class="section-hdr">🏒 NHL Player Props</div>
+    <div class="section-sub">
+      {{ today }} ·
+      <strong style="color:var(--accent)">{{ total_players }}</strong> prop{{ 's' if total_players != 1 else '' }}
+      across <strong style="color:var(--accent)">{{ total_games }}</strong> game{{ 's' if total_games != 1 else '' }}
+    </div>
+  </div>
+  <a href="/nhl" class="btn btn-accent">↻ Refresh</a>
+</div>
+
+<!-- Filter bar -->
+<div class="filter-bar">
+  {% for label, val in [('All','all'),('Points','points'),('Goals','goals'),('Assists','assists'),('Shots','shots'),('Saves','saves')] %}
+  <button class="filter-btn {% if loop.first %}active{% endif %}"
+          data-group="nhl" data-filter="{{ val }}">{{ label }}</button>
+  {% endfor %}
+</div>
+
+{% if total_players == 0 %}
+<div class="card" style="padding:64px;text-align:center;">
+  <div style="font-size:48px;margin-bottom:12px;">🏒</div>
+  <div style="font-size:18px;font-weight:700;color:var(--txt1);">
+    {% if total_games == 0 %}No NHL games today{% else %}No prop data available yet{% endif %}
+  </div>
+  <div style="color:var(--txt2);margin-top:6px;font-size:13px;">
+    Check back closer to puck drop for player props.
+  </div>
+</div>
+{% else %}
+
+<div class="props-grid" id="nhl-grid">
+{% for p in all_props %}
+{% set pr = p.props[0] if p.props else p %}
+{% set pick = pr.get('pick', p.get('pick', 'FAIR')) %}
+{% set conf_pct = (pr.get('over_prob', p.get('over_prob', 50)) if pick != 'UNDER' else pr.get('under_prob', p.get('under_prob', 50))) %}
+{% set stars_n = (conf_pct / 20)|int %}
+{% set stat_key = (pr.get('stat', p.get('stat','')) or '')|lower|replace(' ','-') %}
+
+<div class="prop-card {% if pick=='OVER' %}over-card{% elif pick=='UNDER' %}under-card{% else %}fair-card{% endif %}"
+     data-group="nhl" data-stat="{{ stat_key }}"
+     data-conf="{{ conf_pct }}" data-stars="{{ stars_n }}">
+
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+    <div>
+      <div style="font-weight:700;font-size:14px;">
+        {{ p.get('name', pr.get('name','')) }}
+        {% if p.get('pos') %}<span style="font-size:10px;color:var(--txt3);margin-left:4px;">{{ p.pos }}</span>{% endif %}
+        {% if p.get('is_goalie') %}<span style="font-size:10px;color:#f59e0b;margin-left:4px;">G</span>{% endif %}
+      </div>
+      <div style="font-size:11px;color:var(--txt2);">
+        🏒 {{ p.get('team','') }}
+        {% if p.get('opponent') %} vs {{ p.opponent }}{% endif %}
+        {% if p.get('source') == 'PrizePicks' %}<span style="color:#f59e0b;font-size:10px;margin-left:4px;">PrizePicks</span>{% endif %}
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <div class="pick-badge {% if pick=='OVER' %}pick-over{% elif pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}">
+        {{ pick }}
+      </div>
+      <div style="font-size:11px;color:var(--txt2);margin-top:2px;">
+        {{ pr.get('stat', p.get('stat','')) }} · {{ pr.get('line', p.get('line','')) }}
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <div class="stars">
+      {% for i in range(5) %}<span {% if i >= stars_n %}class="star-empty"{% endif %}>★</span>{% endfor %}
+    </div>
+    <span style="font-size:13px;font-weight:700;
+      {% if pick=='OVER' %}color:var(--over){% elif pick=='UNDER' %}color:var(--under){% else %}color:var(--txt2){% endif %}">
+      {{ conf_pct }}%
+    </span>
+  </div>
+
+  <div class="pbar-wrap" style="margin-bottom:12px;">
+    <div class="pbar-fill {% if pick=='OVER' %}pbar-over{% elif pick=='UNDER' %}pbar-under{% else %}pbar-fair{% endif %}"
+         style="width:{{ conf_pct }}%"></div>
+  </div>
+
+  <div>
+    {% set avg = pr.get('avg', p.get('avg', 0)) %}
+    {% if avg %}
+    <div class="stat-row">
+      <span class="stat-label">Season Avg/G</span>
+      <span class="stat-val">{{ avg }}</span>
+    </div>
+    {% endif %}
+    {% if p.get('sv_pct') %}
+    <div class="stat-row">
+      <span class="stat-label">Save %</span>
+      <span class="stat-val">{{ "%.3f"|format(p.sv_pct) }}</span>
+    </div>
+    {% endif %}
+    {% if p.get('gaa') %}
+    <div class="stat-row">
+      <span class="stat-label">GAA</span>
+      <span class="stat-val">{{ p.gaa }}</span>
+    </div>
+    {% endif %}
+    <div class="stat-row">
+      <span class="stat-label">Over Prob</span>
+      <span class="stat-val" style="color:var(--over);">{{ pr.get('over_prob', p.get('over_prob','')) }}%</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Under Prob</span>
+      <span class="stat-val" style="color:var(--under);">{{ pr.get('under_prob', p.get('under_prob','')) }}%</span>
+    </div>
+  </div>
+
+  <div style="margin-top:10px;display:flex;justify-content:flex-end;">
+    <span class="badge-{{ (pr.get('confidence', p.get('confidence','LOW')) or 'LOW')|lower }}">
+      {{ pr.get('confidence', p.get('confidence','LOW')) }}
+    </span>
+  </div>
+</div>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => { initFilters('nhl'); });
+</script>
+{% endblock %}
