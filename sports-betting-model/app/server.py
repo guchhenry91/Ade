@@ -78,47 +78,95 @@ def _ml_to_prob(ml) -> float:
 # ── Game-data builders (reused by today + sport pages) ───────────────────────
 
 def _build_nba_games(today_str: str) -> list:
-    from data.nba_data  import get_games as nba_get_games, get_team_players_with_averages
-    from data.odds_api  import build_odds_lookup, find_game_odds, decimal_to_american
-    from utils.stats    import confidence_label, shot_attempt_over_under, threept_made_ou
+    from data.nba_data   import get_games as nba_get_games, get_team_players_with_averages
+    from data.odds_api   import build_odds_lookup, find_game_odds, decimal_to_american
+    from data.prizepicks import get_nba_projections
+    from utils.stats     import confidence_label, shot_attempt_over_under, threept_made_ou
+
+    # ── PrizePicks line lookup (built once per request) ───────────────────────
+    # PrizePicks gives us accurate market LINES.  We use BDL for real per-game
+    # AVERAGES.  The two sources are combined: BDL avg + PrizePicks line.
+    # NEVER use PrizePicks to estimate a player's average (the old `avg=line*1.05`
+    # bug always produced 56.8% because the z-score was a constant).
+    _PP_STAT_KEY = {
+        "points":    "pts",
+        "rebounds":  "reb",
+        "assists":   "ast",
+        "3-point":   "3pm",
+        "threes":    "3pm",
+        "three":     "3pm",
+        "made":      "3pm",
+    }
+    # Composite / multi-stat markets to skip — they are NOT per-game single stats
+    _PP_SKIP_FRAGMENTS = ("pra", "pts+", "reb+", "ast+", "+reb", "+ast",
+                          "points+", "fantasy", "score", "combo")
+
+    pp_lines: dict[tuple, float] = {}
+    try:
+        for proj in get_nba_projections():
+            stat_raw = (proj.get("stat") or "").lower()
+            if any(frag in stat_raw for frag in _PP_SKIP_FRAGMENTS) or "+" in stat_raw:
+                continue
+            sk = next((v for k, v in _PP_STAT_KEY.items() if k in stat_raw), None)
+            if not sk:
+                continue
+            name_key = (proj.get("name") or "").lower().strip()
+            line_val  = float(proj.get("line") or 0)
+            if line_val > 0:
+                pp_lines[(name_key, sk)] = line_val
+        print(f"[NBA] PrizePicks line lookup: {len(pp_lines)} entries")
+    except Exception as _ppe:
+        print(f"[NBA] PrizePicks line fetch failed: {_ppe}")
+
+    # NBA per-game stat caps — values above these are composite/fantasy scores, not real
+    _STAT_CAPS = {"pts": 50.0, "reb": 25.0, "ast": 20.0, "fg3m": 10.0}
+
+    def _make_prop(stat_label: str, avg: float, std, player_name: str, stat_key: str):
+        """Build one prop dict.  Uses BDL avg + PrizePicks line (if available)."""
+        if avg < 0.5:
+            return None
+        pp_line = pp_lines.get((player_name.lower().strip(), stat_key))
+        line    = pp_line if (pp_line and pp_line > 0) else max(0.5, round(avg * 2) / 2 - 0.5)
+        if std is None:
+            over_p, under_p = threept_made_ou(avg, line)
+        else:
+            over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
+        pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
+        best = max(over_p, under_p)
+        return {
+            "stat": stat_label, "avg": avg, "line": line,
+            "over_prob":  round(over_p  * 100, 1),
+            "under_prob": round(under_p * 100, 1),
+            "pick": pick,
+            "confidence": confidence_label(best),
+            "stars": 5 if best >= 0.85 else 4 if best >= 0.75 else 3 if best >= 0.65 else 2 if best >= 0.55 else 1,
+        }
 
     def _nba_props_from_avgs(players: list) -> list:
-        """Build props list from a list of player dicts with pts/reb/ast/fg3m averages."""
+        """Build props from player dicts with real BDL per-game averages."""
         out = []
         for p in players:
+            name  = p.get("name", "")
             props = []
-            for stat, avg, std in [
-                ("PTS", float(p.get("pts", 0)),  0.28),
-                ("3PM", float(p.get("fg3m", 0) or p.get("3pm", 0)), None),
-                ("REB", float(p.get("reb", 0)),  0.32),
-                ("AST", float(p.get("ast", 0)),  0.35),
+            for stat_label, avg_key, sk, std in [
+                ("PTS", "pts",  "pts",  0.28),
+                ("3PM", "fg3m", "3pm",  None),
+                ("REB", "reb",  "reb",  0.32),
+                ("AST", "ast",  "ast",  0.35),
             ]:
-                if avg < 0.5:
-                    continue
-                line = max(0.5, round(avg * 2) / 2 - 0.5)
-                if std is None:
-                    over_p, under_p = threept_made_ou(avg, line)
-                else:
-                    over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
-                pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
-                best = max(over_p, under_p)
-                props.append({
-                    "stat": stat, "avg": avg, "line": line,
-                    "over_prob":  round(over_p  * 100, 1),
-                    "under_prob": round(under_p * 100, 1),
-                    "pick": pick,
-                    "confidence": confidence_label(best),
-                    "stars": 5 if best >= 0.85 else 4 if best >= 0.75 else 3 if best >= 0.65 else 2 if best >= 0.55 else 1,
-                })
+                avg_val = float(p.get(avg_key) or p.get(sk) or 0)
+                prop = _make_prop(stat_label, avg_val, std, name, sk)
+                if prop:
+                    props.append(prop)
             if props:
-                out.append({**p, "name": p.get("name", ""), "pos": p.get("pos", ""),
+                out.append({**p, "name": name, "pos": p.get("pos", ""),
                             "pts": p.get("pts", 0), "props": props})
         return out
 
     def _nba_roster_from_leaders(leaders: list, team_id: str) -> list:
-        """Build roster from ESPN competition leaders.
-        First tries to match by team_id; if that yields nothing, uses all leaders
-        (ESPN often puts league-wide leaders rather than per-team leaders).
+        """Fallback: build roster from ESPN competition leaders.
+        Caps stat values at realistic NBA per-game maximums to reject
+        any fantasy-composite values ESPN may embed in the 'value' field.
         """
         def _build(filtered: list) -> list:
             player_map: dict = {}
@@ -128,24 +176,23 @@ def _build_nba_games(today_str: str) -> list:
                     continue
                 stat = ldr.get("stat", "")
                 val  = float(ldr.get("value", 0))
+                sk   = {"points": "pts", "rebounds": "reb",
+                        "assists": "ast",
+                        "threePointFieldGoalsMade": "fg3m"}.get(stat)
+                if not sk:
+                    continue
+                if val > _STAT_CAPS.get(sk, 50.0):
+                    print(f"[NBA] ESPN leader {name}/{sk}={val} exceeds cap — skipping (likely fantasy composite)")
+                    continue
                 if name not in player_map:
                     player_map[name] = {"name": name, "pos": "",
-                                        "pts": 0.0, "reb": 0.0,
-                                        "ast": 0.0, "fg3m": 0.0}
-                sk = {"points": "pts", "rebounds": "reb",
-                      "assists": "ast",
-                      "threePointFieldGoalsMade": "fg3m"}.get(stat)
-                if sk:
-                    player_map[name][sk] = val
+                                        "pts": 0.0, "reb": 0.0, "ast": 0.0, "fg3m": 0.0}
+                player_map[name][sk] = val
             return _nba_props_from_avgs(list(player_map.values()))
 
-        # Try team-filtered first
         team_ldrs = [l for l in leaders if not l.get("team_id") or l.get("team_id") == team_id]
-        result = _build(team_ldrs)
-        if result:
-            return result
-        # Fall back: use all competition leaders (no team filter)
-        return _build(leaders)
+        result    = _build(team_ldrs)
+        return result if result else _build(leaders)
 
     games = []
     try:
@@ -164,84 +211,31 @@ def _build_nba_games(today_str: str) -> list:
             predicted_winner = home_team if h_prob >= a_prob else away_team
             win_prob = h_prob if h_prob >= a_prob else a_prob
 
-            book = find_game_odds(nba_book_lookup, home_team, away_team) or {}
-
+            book    = find_game_odds(nba_book_lookup, home_team, away_team) or {}
             leaders = g.get("leaders", [])
-            print(f"[NBA] {home_team} vs {away_team} — ESPN leaders: {len(leaders)} entries")
+            print(f"[NBA] {home_team} vs {away_team} — ESPN leaders: {len(leaders)}")
 
-            # Primary: BDL full team roster with season averages
+            # Primary: BDL full team roster — real per-game season averages
             try:
                 home_bdl = get_team_players_with_averages(home_abbr)
                 away_bdl = get_team_players_with_averages(away_abbr)
                 print(f"[NBA] BDL home={len(home_bdl)} away={len(away_bdl)}")
             except Exception as _e:
-                print(f"[NBA] BDL fetch error: {_e}")
+                print(f"[NBA] BDL error: {_e}")
                 home_bdl, away_bdl = [], []
 
             home_roster = _nba_props_from_avgs(home_bdl) if home_bdl else _nba_roster_from_leaders(leaders, home_id)
             away_roster = _nba_props_from_avgs(away_bdl) if away_bdl else _nba_roster_from_leaders(leaders, away_id)
 
-            # Secondary fallback: PrizePicks projections for tonight's NBA slate
+            # Last resort: presets — split evenly so no player appears for both teams
             if not home_roster and not away_roster:
-                try:
-                    from data.prizepicks import get_nba_projections
-                    pp_projs = get_nba_projections()
-                    print(f"[NBA] PrizePicks projections: {len(pp_projs)}")
-                    # Build prop cards from PrizePicks lines grouped by team
-                    def _pp_roster(team_abbr: str) -> list:
-                        team_pp = [p for p in pp_projs if p.get("team", "").upper() == team_abbr.upper()]
-                        player_map: dict = {}
-                        for proj in team_pp:
-                            name = proj["name"]
-                            stat_raw = proj.get("stat", "")
-                            line = float(proj.get("line", 0) or 0)
-                            if line <= 0:
-                                continue
-                            _stat_norm = {
-                                "points": ("PTS", 0.28), "pts": ("PTS", 0.28),
-                                "rebounds": ("REB", 0.32), "reb": ("REB", 0.32),
-                                "assists": ("AST", 0.35), "ast": ("AST", 0.35),
-                                "3-point": ("3PM", None), "threes": ("3PM", None),
-                            }
-                            stat_key = "PTS"; std = 0.28
-                            for kw, (sk, sf) in _stat_norm.items():
-                                if kw in stat_raw.lower():
-                                    stat_key = sk; std = sf; break
-                            avg = line * 1.05
-                            if std is None:
-                                over_p, under_p = threept_made_ou(avg, line)
-                            else:
-                                over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
-                            pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
-                            best = max(over_p, under_p)
-                            prop = {
-                                "stat": stat_key, "avg": round(avg, 1), "line": line,
-                                "over_prob": round(over_p*100, 1), "under_prob": round(under_p*100, 1),
-                                "pick": pick, "confidence": confidence_label(best),
-                                "stars": 5 if best >= 0.85 else 4 if best >= 0.75 else 3 if best >= 0.65 else 2 if best >= 0.55 else 1,
-                            }
-                            if name not in player_map:
-                                player_map[name] = {"name": name, "team": proj.get("team",""),
-                                                    "pos": proj.get("pos",""), "pts": 0, "props": [],
-                                                    "source": "PrizePicks"}
-                            player_map[name]["props"].append(prop)
-                            if stat_key == "PTS":
-                                player_map[name]["pts"] = round(avg, 1)
-                        return list(player_map.values())
-                    home_roster = _pp_roster(home_abbr)
-                    away_roster = _pp_roster(away_abbr)
-                    print(f"[NBA] PrizePicks rosters: home={len(home_roster)} away={len(away_roster)}")
-                except Exception as _ppe:
-                    print(f"[NBA] PrizePicks error: {_ppe}")
+                print(f"[NBA] No player data — using split presets")
+                all_presets = _nba_props_from_avgs(_NBA_PRESETS)
+                mid          = max(1, len(all_presets) // 2)
+                home_roster  = all_presets[:mid]
+                away_roster  = all_presets[mid:]
 
-            # Last resort: preset player data so props section is never empty
-            if not home_roster and not away_roster:
-                print(f"[NBA] No player data from BDL, ESPN, or PrizePicks — using presets")
-                preset_roster = _nba_props_from_avgs(_NBA_PRESETS)
-                home_roster = preset_roster
-                away_roster = preset_roster
-
-            print(f"[NBA] Final rosters: home={len(home_roster)} away={len(away_roster)}")
+            print(f"[NBA] Final: home={len(home_roster)} away={len(away_roster)}")
 
             games.append({
                 "sport": "Basketball", "league": "NBA", "sport_icon": "🏀",
@@ -464,12 +458,6 @@ def _build_soccer_games(today_str: str) -> list:
                             "goal_prob":  round(s.model_prob * 100, 1),
                             "confidence": s.confidence,
                         })
-                    if not out and not team_pl:
-                        for s in sigs:
-                            out.append({
-                                "name": s.selection, "shots_pg": "—", "xg_shot": "—",
-                                "goal_prob": round(s.model_prob * 100, 1), "confidence": s.confidence,
-                            })
                     return out
 
                 games.append({

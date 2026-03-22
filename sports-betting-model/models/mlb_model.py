@@ -104,9 +104,8 @@ def build_props_from_prizepicks(pp_projections: List[Dict]) -> List[Dict]:
                 std_factor = sf
                 break
 
-        # Use the line as both the market line and a rough avg estimate
-        # (PrizePicks sets lines near the true expected value)
-        avg_est = line * 1.05  # assume slight upward bias
+        # Use the line as the avg estimate (market-efficient: line ≈ median)
+        avg_est = line
         over_p, under_p = shot_attempt_over_under(avg_est, line, std_factor=std_factor)
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
 
