@@ -377,7 +377,7 @@ def _build_soccer_games(today_str: str) -> list:
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return TEMPLATES.TemplateResponse("index.html", {"request": request})
+    return TEMPLATES.TemplateResponse(request, "index.html")
 
 
 # ─────────────────────────────────────────────
@@ -389,10 +389,9 @@ async def soccer_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
     games       = _build_soccer_games(today_str)
-    return TEMPLATES.TemplateResponse("soccer.html", {
-        "request": request, "games": games,
-        "today": today_label, "total": len(games),
-        "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+    return TEMPLATES.TemplateResponse(request, "soccer.html", {
+        "games": games, "today": today_label,
+        "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
     })
 
 
@@ -405,10 +404,9 @@ async def nba_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
     games       = _build_nba_games(today_str)
-    return TEMPLATES.TemplateResponse("nba.html", {
-        "request": request, "games": games,
-        "today": today_label, "total": len(games),
-        "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+    return TEMPLATES.TemplateResponse(request, "nba.html", {
+        "games": games, "today": today_label,
+        "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
     })
 
 
@@ -420,10 +418,9 @@ async def nba_page(request: Request):
 async def nfl_page(request: Request):
     today_label = date.today().strftime("%A, %B %d %Y")
     games       = _build_nfl_games()
-    return TEMPLATES.TemplateResponse("nfl.html", {
-        "request": request, "games": games,
-        "today": today_label, "total": len(games),
-        "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+    return TEMPLATES.TemplateResponse(request, "nfl.html", {
+        "games": games, "today": today_label,
+        "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
     })
 
 
@@ -439,9 +436,7 @@ async def reports_page(request: Request):
     for f in files:
         content = f.read_text()
         reports.append({"date": f.stem, "content": content, "name": f.name})
-    return TEMPLATES.TemplateResponse("reports.html", {
-        "request": request, "reports": reports,
-    })
+    return TEMPLATES.TemplateResponse(request, "reports.html", {"reports": reports})
 
 
 # ─────────────────────────────────────────────
@@ -467,8 +462,8 @@ async def demo_page(request: Request):
         traceback.print_exc()
         rows  = []
         value = []
-    return TEMPLATES.TemplateResponse("demo.html", {
-        "request": request, "rows": rows, "value": value, "total": len(rows),
+    return TEMPLATES.TemplateResponse(request, "demo.html", {
+        "rows": rows, "value": value, "total": len(rows),
     })
 
 
@@ -485,8 +480,7 @@ async def today_page(request: Request):
         + _build_nfl_games()
         + _build_soccer_games(today_str)
     )
-    return TEMPLATES.TemplateResponse("today.html", {
-        "request":      request,
+    return TEMPLATES.TemplateResponse(request, "today.html", {
         "games":        games,
         "today":        today_label,
         "total":        len(games),
