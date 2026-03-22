@@ -405,6 +405,87 @@ async def demo_page(request: Request):
 #  JSON API endpoints (for JS fetch)
 # ─────────────────────────────────────────────
 
+@app.get("/today", response_class=HTMLResponse)
+async def today_page(request: Request):
+    from data.nba_data import get_games as nba_get_games, get_team_net_rating
+    from data.football_data import get_fixtures
+    from utils.stats import poisson_match_probs, nba_win_prob, confidence_label
+
+    today_str = date.today().strftime("%Y%m%d")
+    today_label = date.today().strftime("%A, %B %d %Y")
+    games = []
+
+    # ── NBA ──────────────────────────────────────────────────────────────────
+    try:
+        for g in nba_get_games(dates=today_str):
+            home_team = g.get("home_team") or "TBD"
+            away_team = g.get("away_team") or "TBD"
+            home_nr = get_team_net_rating(g["home_id"]) if g.get("home_id") else 0.0
+            away_nr = get_team_net_rating(g["away_id"]) if g.get("away_id") else 0.0
+            h_prob = nba_win_prob(home_nr, away_nr, home_advantage=3.5)
+            a_prob = 1 - h_prob
+            if h_prob >= a_prob:
+                predicted_winner, win_prob = home_team, h_prob
+            else:
+                predicted_winner, win_prob = away_team, a_prob
+            games.append({
+                "sport": "Basketball", "league": "NBA", "sport_icon": "🏀",
+                "home_team": home_team, "away_team": away_team,
+                "kickoff": g.get("date", ""), "status": g.get("status", ""),
+                "home_score": g.get("home_score"), "away_score": g.get("away_score"),
+                "home_prob": round(h_prob * 100, 1),
+                "away_prob": round(a_prob * 100, 1),
+                "draw_prob": None,
+                "predicted_winner": predicted_winner,
+                "win_prob": round(win_prob * 100, 1),
+                "confidence": confidence_label(win_prob),
+            })
+    except Exception:
+        traceback.print_exc()
+
+    # ── Soccer ────────────────────────────────────────────────────────────────
+    soccer_leagues = [
+        ("EPL", "Premier League"), ("UCL", "Champions League"),
+        ("LIGA", "La Liga"), ("L1", "Ligue 1"),
+    ]
+    for league_key, league_name in soccer_leagues:
+        try:
+            fixtures = get_fixtures(league_key, dates=today_str)
+            model = FootballModel(league_key)
+            for fix in fixtures:
+                home_team = fix.get("home_team") or "TBD"
+                away_team = fix.get("away_team") or "TBD"
+                home_xg, away_xg = model._match_xg(home_team, away_team)
+                h_prob, d_prob, a_prob = poisson_match_probs(home_xg, away_xg)
+                if h_prob >= d_prob and h_prob >= a_prob:
+                    predicted_winner, win_prob = home_team, h_prob
+                elif d_prob >= a_prob:
+                    predicted_winner, win_prob = "Draw", d_prob
+                else:
+                    predicted_winner, win_prob = away_team, a_prob
+                games.append({
+                    "sport": "Soccer", "league": league_name, "sport_icon": "⚽",
+                    "home_team": home_team, "away_team": away_team,
+                    "kickoff": fix.get("date", ""), "status": fix.get("status", ""),
+                    "home_score": fix.get("home_score"), "away_score": fix.get("away_score"),
+                    "home_prob": round(h_prob * 100, 1),
+                    "away_prob": round(a_prob * 100, 1),
+                    "draw_prob": round(d_prob * 100, 1),
+                    "predicted_winner": predicted_winner,
+                    "win_prob": round(win_prob * 100, 1),
+                    "confidence": confidence_label(win_prob),
+                })
+        except Exception:
+            traceback.print_exc()
+
+    return TEMPLATES.TemplateResponse("today.html", {
+        "request": request,
+        "games": games,
+        "today": today_label,
+        "total": len(games),
+    })
+
+
 @app.get("/api/correct-score")
 async def api_correct_score(home_xg: float = 1.5, away_xg: float = 1.2):
     grid = correct_score_grid(home_xg, away_xg, max_goals=5)
