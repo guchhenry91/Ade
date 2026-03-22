@@ -3,9 +3,70 @@
 
 {% block head %}
 <style>
-  .prob-bar-home { background: linear-gradient(90deg,#6366f1,#818cf8); }
-  .prob-bar-away { background: linear-gradient(90deg,#a855f7,#c084fc); }
-  .winner-glow   { border-left: 3px solid var(--accent); padding-left: 10px; }
+/* ── Player card (one per player, all stats inside) ── */
+.player-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 14px;
+  transition: box-shadow .15s;
+}
+.player-card:hover { box-shadow: 0 4px 28px rgba(0,212,255,.13); }
+
+.player-hdr {
+  background: var(--card2);
+  padding: 10px 14px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.player-name { font-weight: 700; font-size: 14px; color: var(--txt1); }
+.player-meta { font-size: 11px; color: var(--txt2); margin-top: 2px; }
+
+/* ── Stat section inside the card ── */
+.stat-section {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.stat-section:last-child { border-bottom: none; }
+
+.stat-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+}
+.stat-name { font-size: 12px; font-weight: 700; color: var(--txt2);
+             text-transform: uppercase; letter-spacing: .06em; }
+.stat-line { font-size: 11px; color: var(--txt3); }
+
+.stat-pick-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+}
+.stat-pct { font-size: 18px; font-weight: 800; }
+.pct-over  { color: var(--over); }
+.pct-under { color: var(--under); }
+.pct-fair  { color: var(--txt2); }
+
+.stat-avgs {
+  display: flex; gap: 14px; font-size: 11px; color: var(--txt2);
+  margin-top: 5px; flex-wrap: wrap;
+}
+.avg-item strong { color: var(--txt1); }
+.trend-up   { color: var(--over) !important; }
+.trend-down { color: var(--under) !important; }
+.trend-flat { color: var(--txt2) !important; }
+
+.hit-rate { font-size: 10px; color: var(--txt3); margin-top: 3px; }
+
+/* ── Team label ── */
+.team-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--accent);
+  padding: 8px 14px 4px;
+}
+
+/* ── Win prob pills in game header ── */
+.wp-home { color: #818cf8; font-weight: 700; font-size: 12px; }
+.wp-away { color: #c084fc; font-weight: 700; font-size: 12px; }
 </style>
 {% endblock %}
 
@@ -33,8 +94,7 @@
   {% endfor %}
   <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
     <span style="font-size:11px;color:var(--txt2);">Sort:</span>
-    <button class="filter-btn" onclick="sortProps('nba-grid','conf')">★ Confidence</button>
-    <button class="filter-btn" onclick="sortProps('nba-grid','stars')">⭐ Stars</button>
+    <button class="filter-btn" onclick="sortByConf()">★ Confidence</button>
   </div>
 </div>
 
@@ -50,14 +110,12 @@
 {% set gid = loop.index0|string %}
 
 <!-- Game block -->
-<div class="card" style="margin-bottom:24px;overflow:hidden;">
+<div class="card" style="margin-bottom:28px;overflow:hidden;">
 
   <!-- Game header -->
   <div class="game-hdr">
     <div>
-      <div class="matchup">
-        {{ game.sport_icon }} {{ game.away_team }} @ {{ game.home_team }}
-      </div>
+      <div class="matchup">{{ game.sport_icon }} {{ game.away_team }} @ {{ game.home_team }}</div>
       <div class="game-meta">
         {% if game.kickoff %}{{ game.kickoff[:10] }}{% if game.kickoff|length > 10 %} · {{ game.kickoff[11:16] }} UTC{% endif %}{% endif %}
         {% if game.book_total %} · O/U {{ game.book_total }}{% endif %}
@@ -73,145 +131,123 @@
         {% elif 'PROGRESS' in (game.status or '') %}🔴 Live
         {% else %}⏰ Upcoming{% endif %}
       </span>
-      <!-- Win probability pills -->
-      <div style="display:flex;gap:6px;font-size:12px;font-weight:700;">
-        <span style="color:#818cf8;">{{ game.home_abbr }} {{ game.home_prob }}%</span>
+      <div style="display:flex;gap:6px;">
+        <span class="wp-home">{{ game.home_abbr }} {{ game.home_prob }}%</span>
         <span style="color:var(--txt3);">vs</span>
-        <span style="color:#c084fc;">{{ game.away_abbr }} {{ game.away_prob }}%</span>
+        <span class="wp-away">{{ game.away_abbr }} {{ game.away_prob }}%</span>
       </div>
     </div>
   </div>
 
-  <!-- Props grid for this game -->
-  <div style="padding:16px;">
-
+  <!-- Players -->
+  <div style="padding:12px 0;">
   {% for team_label, roster, abbr in [
       (game.home_team, game.home_roster, game.home_abbr),
       (game.away_team, game.away_roster, game.away_abbr),
   ] %}
   {% if roster %}
-  <div style="margin-bottom:16px;">
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
-                color:var(--accent);margin-bottom:10px;">
-      {{ team_label }}
-      <span style="color:var(--txt3);font-weight:400;text-transform:none;letter-spacing:0;">
-        — {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}
-      </span>
-    </div>
+  <div class="team-label">{{ team_label }} · {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}</div>
+  <div style="padding:0 12px;" id="nba-grid-{{ gid }}-{{ loop.index0 }}">
 
-    <div class="props-grid" id="nba-grid-{{ gid }}-{{ loop.index0 }}">
     {% for p in roster %}
-      {% set pr = p.props[0] if p.props else none %}
-      {% if pr %}
-      {% set stars_count = pr.get('stars', ((pr.over_prob if pr.pick=='OVER' else pr.under_prob) / 20)|int) %}
-      <div class="prop-card {% if pr.pick=='OVER' %}over-card{% elif pr.pick=='UNDER' %}under-card{% else %}fair-card{% endif %}"
-           data-group="nba"
-           data-stat="{% if pr.stat=='PTS' %}pts{% elif pr.stat=='REB' %}reb{% elif pr.stat=='AST' %}ast{% elif pr.stat=='3PM' %}3pm{% else %}other{% endif %}"
-           data-conf="{{ pr.over_prob if pr.pick=='OVER' else pr.under_prob }}"
-           data-stars="{{ stars_count }}">
+    {# Find highest-confidence prop for sort key and filter matching #}
+    {% set best_conf = namespace(val=0, stat='') %}
+    {% for pr in p.props %}
+      {% set c = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
+      {% if c > best_conf.val %}{% set best_conf.val = c %}{% set best_conf.stat = pr.stat|lower %}{% endif %}
+    {% endfor %}
 
-        <!-- Player name & matchup -->
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-          <div>
-            <div style="font-weight:700;font-size:14px;color:var(--txt1);">{{ p.name }}</div>
-            <div style="font-size:11px;color:var(--txt2);">
-              {{ abbr }} · {{ pr.stat }}
-              {% if p.get('data_quality') == 'LIMITED' %}
-                <span class="data-warn">Limited data</span>
-              {% endif %}
-            </div>
-          </div>
-          <div style="text-align:right;">
-            <div class="pick-badge {% if pr.pick=='OVER' %}pick-over{% elif pr.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}">
-              {{ pr.pick }}
-            </div>
-            <div style="font-size:12px;color:var(--txt2);margin-top:2px;">Line: <strong style="color:var(--txt1);">{{ pr.line }}</strong></div>
-          </div>
-        </div>
+    <div class="player-card"
+         data-group="nba"
+         data-stats="{% for pr in p.props %}{{ pr.stat|lower }} {% endfor %}"
+         data-conf="{{ best_conf.val }}">
 
-        <!-- Stars and confidence % -->
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-          <div class="stars">
-            {% set cp = (pr.over_prob if pr.pick != 'UNDER' else pr.under_prob) %}
-            {% set st = (cp / 20)|int %}
-            {% for i in range(5) %}<span {% if i >= st %}class="star-empty"{% endif %}>★</span>{% endfor %}
-          </div>
-          <div style="font-size:13px;font-weight:700;
-            {% if pr.pick=='OVER' %}color:var(--over){% elif pr.pick=='UNDER' %}color:var(--under){% else %}color:var(--txt2){% endif %}">
-            {{ pr.over_prob if pr.pick != 'UNDER' else pr.under_prob }}% Confidence
-          </div>
-        </div>
-
-        <!-- Progress bar -->
-        {% set bar_pct = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
-        <div class="pbar-wrap" style="margin-bottom:12px;">
-          <div class="pbar-fill {% if pr.pick=='OVER' %}pbar-over{% elif pr.pick=='UNDER' %}pbar-under{% else %}pbar-fair{% endif %}"
-               style="width:{{ bar_pct }}%"></div>
-        </div>
-
-        <!-- Stats rows -->
+      <!-- Player header -->
+      <div class="player-hdr">
         <div>
-          <div class="stat-row">
-            <span class="stat-label">Season Avg</span>
-            <span class="stat-val">{{ pr.avg }}</span>
+          <div class="player-name">
+            {{ p.name }}
+            {% if p.get('pos') %}<span style="font-size:10px;color:var(--txt3);margin-left:4px;">{{ p.pos }}</span>{% endif %}
           </div>
-          {% if p.get('last5_avg') %}
-          <div class="stat-row">
-            <span class="stat-label">Last 5 Avg</span>
-            <span class="stat-val {% if p.last5_avg > pr.avg %}trend-up{% elif p.last5_avg < pr.avg %}trend-down{% else %}trend-flat{% endif %}">
-              {{ p.last5_avg }}
-              {% if p.last5_avg > pr.avg %}↑{% elif p.last5_avg < pr.avg %}↓{% else %}→{% endif %}
-            </span>
-          </div>
-          {% endif %}
-          {% if p.get('last10_avg') %}
-          <div class="stat-row">
-            <span class="stat-label">Last 10 Avg</span>
-            <span class="stat-val">{{ p.last10_avg }}</span>
-          </div>
-          {% endif %}
-          <div class="stat-row">
-            <span class="stat-label">Over Prob</span>
-            <span class="stat-val" style="color:var(--over);">{{ pr.over_prob }}%</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Under Prob</span>
-            <span class="stat-val" style="color:var(--under);">{{ pr.under_prob }}%</span>
+          <div class="player-meta">
+            {{ abbr }}
+            {% if p.get('data_quality') == 'LIMITED' %}
+              <span class="data-warn">Limited data</span>
+            {% endif %}
           </div>
         </div>
-
-        <!-- Secondary props -->
-        {% if p.props|length > 1 %}
-        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-          <div style="font-size:10px;color:var(--txt3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Also</div>
-          {% for pr2 in p.props[1:] %}
-          <div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;">
-            <span style="color:var(--txt2);">{{ pr2.stat }} · Line {{ pr2.line }}</span>
-            <span class="{% if pr2.pick=='OVER' %}pick-over{% elif pr2.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}"
-                  style="font-size:11px;font-weight:700;">
-              {{ pr2.pick }} {{ pr2.over_prob if pr2.pick!='UNDER' else pr2.under_prob }}%
-            </span>
+        <!-- Best pick badge -->
+        {% if p.props %}
+        {% set pr0 = p.props[0] %}
+        <div style="text-align:right;">
+          <div class="pick-badge {% if pr0.pick=='OVER' %}pick-over{% elif pr0.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}">
+            {{ pr0.stat }} {{ pr0.pick }}
           </div>
-          {% endfor %}
+          <div style="font-size:10px;color:var(--txt3);margin-top:2px;">
+            {% set stars_n = (best_conf.val / 20)|int %}
+            {% for i in range(5) %}<span {% if i >= stars_n %}class="star-empty"{% endif %} style="font-size:11px;">★</span>{% endfor %}
+          </div>
         </div>
         {% endif %}
+      </div>
 
-        <!-- Confidence badge -->
-        <div style="margin-top:10px;display:flex;justify-content:flex-end;">
-          <span class="badge-{{ pr.confidence|lower }}">{{ pr.confidence }}</span>
+      <!-- Stat rows -->
+      {% for pr in p.props %}
+      {% set conf_pct = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
+      {% set pick = pr.pick %}
+      <div class="stat-section" data-stat="{{ pr.stat|lower }}">
+
+        <div class="stat-top">
+          <div>
+            <span class="stat-name">{{ pr.stat }}</span>
+            <span class="stat-line"> · Line {{ pr.line }}</span>
+          </div>
+          <div class="pick-badge {% if pick=='OVER' %}pick-over{% elif pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}"
+               style="font-size:11px;padding:2px 8px;">
+            {{ pick }}
+          </div>
         </div>
 
+        <div class="stat-pick-row">
+          <span class="stat-pct {% if pick=='OVER' %}pct-over{% elif pick=='UNDER' %}pct-under{% else %}pct-fair{% endif %}">
+            {{ conf_pct }}%
+          </span>
+          <div class="pbar-wrap" style="flex:1;height:6px;">
+            <div class="pbar-fill {% if pick=='OVER' %}pbar-over{% elif pick=='UNDER' %}pbar-under{% else %}pbar-fair{% endif %}"
+                 style="width:{{ conf_pct }}%"></div>
+          </div>
+          <span class="badge-{{ pr.confidence|lower }}" style="font-size:10px;">{{ pr.confidence }}</span>
+        </div>
+
+        <div class="stat-avgs">
+          <span class="avg-item">Season <strong>{{ pr.avg }}</strong></span>
+          {% if pr.last5_avg is not none %}
+          <span class="avg-item {% if pr.trend == '↑' %}trend-up{% elif pr.trend == '↓' %}trend-down{% else %}trend-flat{% endif %}">
+            L5 <strong>{{ pr.last5_avg }}</strong> {{ pr.trend }}
+          </span>
+          {% endif %}
+          {% if pr.last10_avg is not none %}
+          <span class="avg-item">L10 <strong>{{ pr.last10_avg }}</strong></span>
+          {% endif %}
+        </div>
+
+        {% if pr.hit_over_last5 is not none %}
+        <div class="hit-rate">Hit OVER in {{ pr.hit_over_last5 }} of last 5 games</div>
+        {% endif %}
+
       </div>
-      {% endif %}
-    {% endfor %}
+      {% endfor %}
+
     </div>
+    {% endfor %}
+
   </div>
   {% endif %}
   {% endfor %}
 
   {% if not game.home_roster and not game.away_roster %}
   <div style="padding:24px;text-align:center;color:var(--txt3);font-size:13px;">
-    No player prop data available for this game yet — check back closer to tip-off.
+    No player prop data available yet — check back closer to tip-off.
   </div>
   {% endif %}
 
@@ -223,6 +259,40 @@
 
 {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', () => { initFilters('nba'); });
+document.addEventListener('DOMContentLoaded', () => {
+  // Filter by stat type
+  document.querySelectorAll('.filter-btn[data-group="nba"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn[data-group="nba"]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const filter = btn.dataset.filter;
+      document.querySelectorAll('.player-card[data-group="nba"]').forEach(card => {
+        if (filter === 'all') {
+          card.style.display = '';
+          card.querySelectorAll('.stat-section').forEach(s => s.style.display = '');
+        } else {
+          // Show card if it has this stat; hide non-matching stat-sections
+          const stats = (card.dataset.stats || '').split(' ').filter(Boolean);
+          if (stats.includes(filter)) {
+            card.style.display = '';
+            card.querySelectorAll('.stat-section').forEach(s => {
+              s.style.display = (s.dataset.stat === filter) ? '' : 'none';
+            });
+          } else {
+            card.style.display = 'none';
+          }
+        }
+      });
+    });
+  });
+});
+
+function sortByConf() {
+  document.querySelectorAll('[id^="nba-grid-"]').forEach(grid => {
+    const cards = Array.from(grid.querySelectorAll('.player-card'));
+    cards.sort((a, b) => parseFloat(b.dataset.conf || 0) - parseFloat(a.dataset.conf || 0));
+    cards.forEach(c => grid.appendChild(c));
+  });
+}
 </script>
 {% endblock %}

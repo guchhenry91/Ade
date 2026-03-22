@@ -59,10 +59,29 @@ def get_fixtures(league_key: str, dates: Optional[str] = None) -> List[Dict]:
 
     matches = []
     for event in data.get("events", []):
-        comp = event.get("competitions", [{}])[0]
+        comp  = event.get("competitions", [{}])[0]
         teams = {t["homeAway"]: t for t in comp.get("competitors", [])}
-        home = teams.get("home", {})
-        away = teams.get("away", {})
+        home  = teams.get("home", {})
+        away  = teams.get("away", {})
+
+        # Extract competition leaders (top scorers / assisters per team) as player fallback
+        leaders: list = []
+        _want = {"goals", "assists", "shots", "shotsOnTarget"}
+        for cat in comp.get("leaders", []):
+            cat_name = cat.get("name", "")
+            if cat_name not in _want:
+                continue
+            for entry in cat.get("leaders", [])[:5]:
+                ath = entry.get("athlete", {})
+                team_obj = ath.get("team", {})
+                team_id = str(team_obj.get("id", "") if isinstance(team_obj, dict) else "")
+                leaders.append({
+                    "name":     ath.get("displayName", ""),
+                    "team_id":  team_id,
+                    "stat":     cat_name,
+                    "value":    float(entry.get("value", 0) or 0),
+                })
+
         matches.append({
             "id":         event.get("id"),
             "name":       event.get("name", ""),
@@ -72,9 +91,10 @@ def get_fixtures(league_key: str, dates: Optional[str] = None) -> List[Dict]:
             "away_team":  away.get("team", {}).get("displayName", ""),
             "home_score": home.get("score", None),
             "away_score": away.get("score", None),
-            "home_id":    home.get("team", {}).get("id"),
-            "away_id":    away.get("team", {}).get("id"),
+            "home_id":    str(home.get("team", {}).get("id", "")),
+            "away_id":    str(away.get("team", {}).get("id", "")),
             "venue":      comp.get("venue", {}).get("fullName", ""),
+            "leaders":    leaders,
         })
     return matches
 

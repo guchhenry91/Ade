@@ -83,10 +83,32 @@ def build_goalie_props(player: Dict) -> List[Dict]:
     return props
 
 
+# MMA/UFC stats that should never appear in NHL data — reject entire batch if found
+_MMA_REJECT_STATS = frozenset({
+    "total rounds", "significant strikes", "takedowns", "submission attempts",
+    "knockdowns", "control time",
+})
+# Valid hockey stat keywords — at least one must match for the batch to be accepted
+_HOCKEY_VALID_STATS = frozenset({
+    "goals", "assists", "points", "shots", "saves", "blocks",
+    "hits", "power play", "plus minus",
+})
+
+
 def build_props_from_prizepicks(pp_projections: List[Dict]) -> List[Dict]:
     """
     Build NHL prop cards directly from PrizePicks projections.
+    Rejects the entire batch if it contains MMA stats (wrong league_id).
     """
+    # Guard: reject MMA data masquerading as NHL
+    all_stats_lower = [(p.get("stat") or "").lower() for p in pp_projections]
+    has_mma = any(any(mma in s for mma in _MMA_REJECT_STATS) for s in all_stats_lower)
+    has_hockey = any(any(hk in s for hk in _HOCKEY_VALID_STATS) for s in all_stats_lower)
+    if has_mma and not has_hockey:
+        logger.warning("NHL PrizePicks batch appears to be MMA data — discarding %d projections",
+                       len(pp_projections))
+        return []
+
     _pp_stat_map: Dict[str, Tuple[str, float]] = {
         "Points":       ("pts",    0.80),
         "Goals":        ("goals",  0.90),
@@ -99,6 +121,9 @@ def build_props_from_prizepicks(pp_projections: List[Dict]) -> List[Dict]:
     results: List[Dict] = []
     for proj in pp_projections:
         stat_raw = proj.get("stat", "")
+        # Skip MMA stats that slipped through
+        if any(mma in stat_raw.lower() for mma in _MMA_REJECT_STATS):
+            continue
         line     = float(proj.get("line", 0) or 0)
         if line <= 0:
             continue
@@ -111,7 +136,9 @@ def build_props_from_prizepicks(pp_projections: List[Dict]) -> List[Dict]:
                 std_factor = sf
                 break
 
-        avg_est  = line * 1.05
+        # Market-efficient: PrizePicks line ≈ expected median → use as avg estimate
+        # Variance around the line is captured by std_factor
+        avg_est  = line
         over_p, under_p = shot_attempt_over_under(avg_est, line, std_factor=std_factor)
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
 

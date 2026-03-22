@@ -18,11 +18,12 @@ PP_HEADERS = {
 }
 
 # PrizePicks league IDs (best-effort — may drift with PP changes)
+# NOTE: league_id=12 is UFC/MMA, NOT NHL.  NHL hockey is 14.
 _LEAGUE_IDS: dict[str, int] = {
     "NBA": 7,
     "NFL": 9,
     "MLB": 2,
-    "NHL": 12,
+    "NHL": 14,
 }
 
 
