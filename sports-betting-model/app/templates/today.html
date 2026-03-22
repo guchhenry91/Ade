@@ -22,24 +22,24 @@
 {% endblock %}
 
 {# ─── Jinja2 macro: render one team's player table ─── #}
-{% macro player_table(roster, team_label, color_class, tid) %}
+{% macro player_table(roster, team_label, color_class, tid, sport) %}
 {% if roster %}
 <div class="mb-4">
   <div class="team-header rounded-t px-3 py-1.5 flex items-center justify-between">
     <span class="text-xs font-semibold {{ color_class }}">{{ team_label }}</span>
     <span class="text-xs text-slate-600">
       {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}
-      {%- if game.sport in ('Basketball','Football') %} · Model O/U{% else %} · Goal probability{% endif %}
+      {%- if sport in ('Basketball','Football') %} · Model O/U{% else %} · Goal probability{% endif %}
     </span>
   </div>
   <div class="overflow-x-auto rounded-b" style="background:#0e0e1e;">
 
-    {% if game.sport in ('Basketball','Football') %}
+    {% if sport in ('Basketball','Football') %}
     <table class="player-tbl w-full">
       <thead><tr>
         <th class="text-left">Player</th>
         <th>POS</th>
-        {% if game.sport == 'Basketball' %}<th>PTS</th><th>3PM</th><th>REB</th><th>AST</th>{% endif %}
+        {% if sport == 'Basketball' %}<th>PTS</th><th>3PM</th><th>REB</th><th>AST</th>{% endif %}
         <th>Stat</th><th>Avg/G</th><th>Line</th><th>Over%</th><th>Pick</th>
       </tr></thead>
       <tbody id="{{ tid }}">
@@ -49,7 +49,7 @@
         <tr class="{% if loop.index0 >= 8 %}player-extra-{{ tid }} hidden{% endif %}">
           <td class="text-slate-200 font-medium whitespace-nowrap">{{ p.name }}</td>
           <td class="text-slate-500 text-center">{{ p.pos or '—' }}</td>
-          {% if game.sport == 'Basketball' %}
+          {% if sport == 'Basketball' %}
           <td class="text-white   text-center font-semibold">{{ p.pts  if p.pts  else '—' }}</td>
           <td class="text-slate-300 text-center">{{ p.fg3m if p.fg3m else '—' }}</td>
           <td class="text-slate-300 text-center">{{ p.reb  if p.reb  else '—' }}</td>
@@ -77,7 +77,7 @@
         {% if p.props and p.props|length > 1 %}
         {% for pr2 in p.props[1:] %}
         <tr class="sub-row {% if loop.index0 >= 8 %}player-extra-{{ tid }} hidden{% endif %}">
-          <td colspan="{% if game.sport=='Basketball' %}6{% else %}2{% endif %}"
+          <td colspan="{% if sport=='Basketball' %}6{% else %}2{% endif %}"
               class="text-slate-600 text-right pr-2">↳</td>
           <td class="text-slate-400 text-center text-xs">{{ pr2.stat }}</td>
           <td class="text-slate-300 text-center">{{ pr2.avg }}</td>
@@ -312,8 +312,8 @@
 
       <!-- ═══════ PLAYER TABLES ════════════════════════════════════════════ -->
       <div class="xl:col-span-3">
-        {{ player_table(game.home_roster, game.home_team, 'text-indigo-300', 'h-'~gid) }}
-        {{ player_table(game.away_roster, game.away_team, 'text-purple-300', 'a-'~gid) }}
+        {{ player_table(game.home_roster, game.home_team, 'text-indigo-300', 'h-'~gid, game.sport) }}
+        {{ player_table(game.away_roster, game.away_team, 'text-purple-300', 'a-'~gid, game.sport) }}
 
         {% if not game.home_roster and not game.away_roster %}
         <p class="text-xs text-slate-600 italic mt-2">
