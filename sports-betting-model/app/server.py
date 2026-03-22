@@ -31,7 +31,8 @@ from markets.report        import save_markdown_report
 from utils.stats           import correct_score_grid
 
 BASE_DIR   = Path(__file__).parent
-TEMPLATES  = Jinja2Templates(directory=str(BASE_DIR / "templates"), cache_size=0)
+TEMPLATES  = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+TEMPLATES.env.cache = None  # disable LRU cache (Python 3.14 compatibility)
 
 app = FastAPI(title="Sports Betting Model", version="1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
