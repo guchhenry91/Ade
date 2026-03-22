@@ -30,6 +30,25 @@ def get_games(dates: Optional[str] = None) -> List[Dict]:
         home  = teams.get("home", {})
         away  = teams.get("away", {})
         odds  = comp.get("odds", [{}])[0] if comp.get("odds") else {}
+
+        # Extract season leaders included in the scoreboard payload
+        leaders: List[Dict] = []
+        _want = {"points", "threePointFieldGoalsMade", "rebounds", "assists"}
+        for cat in comp.get("leaders", []):
+            cat_name = cat.get("name", "")
+            if cat_name not in _want:
+                continue
+            for entry in cat.get("leaders", [])[:2]:
+                ath = entry.get("athlete", {})
+                leaders.append({
+                    "name":     ath.get("displayName", ""),
+                    "team_id":  str(ath.get("team", {}).get("id", "")),
+                    "stat":     cat_name,
+                    "display":  cat.get("displayName", cat_name),
+                    "value":    float(entry.get("value", 0) or 0),
+                    "display_value": entry.get("displayValue", ""),
+                })
+
         games.append({
             "id":              event.get("id"),
             "name":            event.get("name"),
@@ -44,6 +63,7 @@ def get_games(dates: Optional[str] = None) -> List[Dict]:
             "spread":          odds.get("spread"),
             "over_under":      odds.get("overUnder"),
             "home_ml":         odds.get("moneyLineOdds"),
+            "leaders":         leaders,
         })
     return games
 

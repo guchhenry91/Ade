@@ -409,36 +409,78 @@ async def demo_page(request: Request):
 async def today_page(request: Request):
     from data.nba_data import get_games as nba_get_games, get_team_net_rating
     from data.football_data import get_fixtures
-    from utils.stats import poisson_match_probs, nba_win_prob, confidence_label
+    from utils.stats import (
+        poisson_match_probs, nba_win_prob, confidence_label,
+        shot_attempt_over_under, threept_made_ou,
+    )
 
-    today_str = date.today().strftime("%Y%m%d")
+    today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    games = []
+    games       = []
 
     # ── NBA ──────────────────────────────────────────────────────────────────
     try:
         for g in nba_get_games(dates=today_str):
-            home_team = g.get("home_team") or "TBD"
-            away_team = g.get("away_team") or "TBD"
-            home_nr = get_team_net_rating(g["home_id"]) if g.get("home_id") else 0.0
-            away_nr = get_team_net_rating(g["away_id"]) if g.get("away_id") else 0.0
-            h_prob = nba_win_prob(home_nr, away_nr, home_advantage=3.5)
-            a_prob = 1 - h_prob
+            home_team  = g.get("home_team") or "TBD"
+            away_team  = g.get("away_team") or "TBD"
+            home_id    = str(g.get("home_id", ""))
+            away_id    = str(g.get("away_id", ""))
+            home_nr    = get_team_net_rating(g["home_id"]) if g.get("home_id") else 0.0
+            away_nr    = get_team_net_rating(g["away_id"]) if g.get("away_id") else 0.0
+            h_prob     = nba_win_prob(home_nr, away_nr, home_advantage=3.5)
+            a_prob     = 1 - h_prob
             if h_prob >= a_prob:
                 predicted_winner, win_prob = home_team, h_prob
             else:
                 predicted_winner, win_prob = away_team, a_prob
+
+            # ── Player projections from ESPN scoreboard leaders ───────────
+            def _nba_player_proj(leader: dict) -> dict:
+                avg  = leader["value"]
+                stat = leader["stat"]
+                if stat == "threePointFieldGoalsMade":
+                    line     = max(0.5, round(avg * 2) / 2 - 0.5)
+                    over_p, _ = threept_made_ou(avg, line)
+                    label     = "3PM"
+                else:
+                    line      = max(0.5, round(avg * 2) / 2 - 0.5)
+                    std       = 0.28 if stat == "points" else 0.32
+                    over_p, _ = shot_attempt_over_under(avg, line, std_factor=std)
+                    label     = {"points": "PTS", "rebounds": "REB", "assists": "AST"}.get(stat, stat)
+                return {
+                    "name":       leader["name"],
+                    "stat_label": label,
+                    "avg":        round(avg, 1),
+                    "line":       line,
+                    "over_prob":  round(over_p * 100, 1),
+                    "confidence": confidence_label(over_p),
+                    "display_avg": leader["display_value"],
+                }
+
+            home_players, away_players = [], []
+            seen_home, seen_away = set(), set()
+            for ldr in g.get("leaders", []):
+                proj = _nba_player_proj(ldr)
+                name = proj["name"]
+                if ldr["team_id"] == home_id and name not in seen_home:
+                    home_players.append(proj); seen_home.add(name)
+                elif ldr["team_id"] == away_id and name not in seen_away:
+                    away_players.append(proj); seen_away.add(name)
+
             games.append({
                 "sport": "Basketball", "league": "NBA", "sport_icon": "🏀",
                 "home_team": home_team, "away_team": away_team,
                 "kickoff": g.get("date", ""), "status": g.get("status", ""),
                 "home_score": g.get("home_score"), "away_score": g.get("away_score"),
+                "spread": g.get("spread"), "over_under": g.get("over_under"),
                 "home_prob": round(h_prob * 100, 1),
                 "away_prob": round(a_prob * 100, 1),
                 "draw_prob": None,
                 "predicted_winner": predicted_winner,
                 "win_prob": round(win_prob * 100, 1),
                 "confidence": confidence_label(win_prob),
+                "home_players": home_players[:4],
+                "away_players": away_players[:4],
             })
     except Exception:
         traceback.print_exc()
@@ -451,7 +493,7 @@ async def today_page(request: Request):
     for league_key, league_name in soccer_leagues:
         try:
             fixtures = get_fixtures(league_key, dates=today_str)
-            model = FootballModel(league_key)
+            model    = FootballModel(league_key)
             for fix in fixtures:
                 home_team = fix.get("home_team") or "TBD"
                 away_team = fix.get("away_team") or "TBD"
@@ -463,26 +505,58 @@ async def today_page(request: Request):
                     predicted_winner, win_prob = "Draw", d_prob
                 else:
                     predicted_winner, win_prob = away_team, a_prob
+
+                # ── Player goal scorer probabilities ─────────────────────
+                def _soccer_players(team_name: str, team_xg: float) -> list:
+                    sigs = model.player_anytime_scorer_signals(
+                        f"{home_team} vs {away_team}", team_name, team_xg)
+                    out  = []
+                    for s in sigs[:5]:
+                        shots_info = ""
+                        if "Shots/game:" in s.notes:
+                            shots_info = s.notes.split("Shots/game:")[1].strip().split()[0]
+                        xg_info = ""
+                        if "xG/shot:" in s.notes:
+                            xg_info = s.notes.split("xG/shot:")[1].strip().split()[0]
+                        out.append({
+                            "name":       s.selection,
+                            "stat_label": "Goal",
+                            "shots_pg":   shots_info,
+                            "xg_shot":    xg_info,
+                            "goal_prob":  round(s.model_prob * 100, 1),
+                            "confidence": s.confidence,
+                        })
+                    return out
+
+                home_players = _soccer_players(home_team, home_xg)
+                away_players = _soccer_players(away_team, away_xg)
+
                 games.append({
                     "sport": "Soccer", "league": league_name, "sport_icon": "⚽",
                     "home_team": home_team, "away_team": away_team,
                     "kickoff": fix.get("date", ""), "status": fix.get("status", ""),
                     "home_score": fix.get("home_score"), "away_score": fix.get("away_score"),
+                    "spread": None, "over_under": None,
                     "home_prob": round(h_prob * 100, 1),
                     "away_prob": round(a_prob * 100, 1),
                     "draw_prob": round(d_prob * 100, 1),
+                    "home_xg":   round(home_xg, 2),
+                    "away_xg":   round(away_xg, 2),
                     "predicted_winner": predicted_winner,
                     "win_prob": round(win_prob * 100, 1),
                     "confidence": confidence_label(win_prob),
+                    "home_players": home_players,
+                    "away_players": away_players,
                 })
         except Exception:
             traceback.print_exc()
 
     return TEMPLATES.TemplateResponse("today.html", {
         "request": request,
-        "games": games,
-        "today": today_label,
-        "total": len(games),
+        "games":   games,
+        "today":   today_label,
+        "total":   len(games),
+        "refresh_secs": 300,
     })
 
 
