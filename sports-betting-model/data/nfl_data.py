@@ -24,12 +24,34 @@ def get_games(week: Optional[int] = None, season: int = 2024) -> List[Dict]:
         return []
 
     games = []
+    _nfl_want = {
+        "passingYards", "rushingYards", "receivingYards",
+        "passingTouchdowns", "rushingTouchdowns", "receivingTouchdowns",
+        "receptions",
+    }
     for event in data.get("events", []):
         comp  = event.get("competitions", [{}])[0]
         teams = {t["homeAway"]: t for t in comp.get("competitors", [])}
         home  = teams.get("home", {})
         away  = teams.get("away", {})
         odds  = comp.get("odds", [{}])[0] if comp.get("odds") else {}
+
+        leaders: List[Dict] = []
+        for cat in comp.get("leaders", []):
+            cat_name = cat.get("name", "")
+            if cat_name not in _nfl_want:
+                continue
+            for entry in cat.get("leaders", [])[:3]:
+                ath = entry.get("athlete", {})
+                leaders.append({
+                    "name":          ath.get("displayName", ""),
+                    "team_id":       str(ath.get("team", {}).get("id", "")),
+                    "position":      ath.get("position", {}).get("abbreviation", ""),
+                    "stat":          cat_name,
+                    "value":         float(entry.get("value", 0) or 0),
+                    "display_value": entry.get("displayValue", ""),
+                })
+
         games.append({
             "id":         event.get("id"),
             "name":       event.get("name"),
@@ -38,12 +60,16 @@ def get_games(week: Optional[int] = None, season: int = 2024) -> List[Dict]:
             "status":     event.get("status", {}).get("type", {}).get("name"),
             "home_team":  home.get("team", {}).get("displayName"),
             "away_team":  away.get("team", {}).get("displayName"),
+            "home_abbr":  home.get("team", {}).get("abbreviation", ""),
+            "away_abbr":  away.get("team", {}).get("abbreviation", ""),
             "home_score": home.get("score"),
             "away_score": away.get("score"),
             "home_id":    home.get("team", {}).get("id"),
             "away_id":    away.get("team", {}).get("id"),
             "spread":     odds.get("spread"),
             "over_under": odds.get("overUnder"),
+            "home_ml":    odds.get("moneyLineOdds"),
+            "leaders":    leaders,
         })
     return games
 

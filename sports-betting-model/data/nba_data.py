@@ -38,7 +38,7 @@ def get_games(dates: Optional[str] = None) -> List[Dict]:
             cat_name = cat.get("name", "")
             if cat_name not in _want:
                 continue
-            for entry in cat.get("leaders", [])[:2]:
+            for entry in cat.get("leaders", [])[:5]:
                 ath = entry.get("athlete", {})
                 leaders.append({
                     "name":     ath.get("displayName", ""),

@@ -240,14 +240,19 @@ class FootballModel:
                                       team_xg: float,
                                       player_shots_per_game: Optional[float] = None,
                                       player_xg_per_shot:    Optional[float] = None,
-                                      market_odds_map: Optional[Dict[str, float]] = None
+                                      market_odds_map: Optional[Dict[str, float]] = None,
+                                      players_override: Optional[List[Dict]] = None,
                                       ) -> List[BetSignal]:
         """
         Generate anytime scorer signals for players with known shot stats.
-        Pulls from api-football player cache where available.
+        players_override: if supplied, skip _load_players() and use this list directly.
+        Otherwise pulls from api-football player cache.
         """
-        players = self._load_players()
-        team_players = [p for p in players if p.get("team") == team_name]
+        if players_override is not None:
+            team_players = players_override
+        else:
+            players = self._load_players()
+            team_players = [p for p in players if p.get("team") == team_name]
         if not team_players:
             logger.debug("No player data for %s – using aggregate estimate", team_name)
 

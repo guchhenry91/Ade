@@ -4,12 +4,25 @@ Primary source : ESPN public API (no key).
 Supplementary  : api-football.com (key in API_FOOTBALL_KEY env var).
 """
 from __future__ import annotations
+import re
 import logging
 from typing import Any, Dict, List, Optional
 
 from data.fetcher import espn_fetch, api_football_fetch
 
 logger = logging.getLogger(__name__)
+
+# In-process cache for team maps (avoids repeated api-football calls per request)
+_teams_cache: Dict[str, Dict[str, int]] = {}
+
+
+def _norm(name: str) -> str:
+    """Normalize team name for fuzzy matching."""
+    n = name.lower().strip()
+    for suffix in [" fc", " cf", " sc", " ac", " afc", " f.c.", " c.f.", " s.c."]:
+        if n.endswith(suffix):
+            n = n[: -len(suffix)].strip()
+    return re.sub(r"[^a-z0-9 ]", "", n)
 
 # ESPN slug → league metadata
 SOCCER_LEAGUES = {
@@ -159,6 +172,100 @@ def get_player_stats(league_key: str, season: int = 2024,
             "xg":              goals.get("xg") or None,
         })
     return players
+
+
+# ── Per-team player stats (api-football) ─────────────────────────────────────
+
+def get_api_football_teams(league_key: str, season: int = 2024) -> Dict[str, int]:
+    """
+    Returns {normalized_team_name: api_football_team_id} for a league.
+    Cached in-process to avoid repeated calls within a single request.
+    """
+    cache_key = f"{league_key}_{season}"
+    if cache_key in _teams_cache:
+        return _teams_cache[cache_key]
+
+    league_id = API_FOOTBALL_IDS.get(league_key.upper())
+    if not league_id:
+        return {}
+
+    data = api_football_fetch("teams", {"league": league_id, "season": season})
+    if not data:
+        return {}
+
+    result: Dict[str, int] = {}
+    for entry in data.get("response", []):
+        team = entry.get("team", {})
+        name = team.get("name", "")
+        tid  = team.get("id")
+        if name and tid:
+            result[_norm(name)] = int(tid)
+
+    _teams_cache[cache_key] = result
+    return result
+
+
+def get_team_players(league_key: str, team_name: str, season: int = 2024) -> List[Dict]:
+    """
+    Fetch ALL players for a specific team from api-football using the
+    team-based endpoint (much more efficient than loading the full league).
+    Returns [] if API_FOOTBALL_KEY is not set or no match is found.
+    """
+    teams_map = get_api_football_teams(league_key, season)
+
+    # Exact normalized match first, then substring fallback
+    norm_query = _norm(team_name)
+    team_id = teams_map.get(norm_query)
+    if not team_id:
+        for t_norm, tid in teams_map.items():
+            if norm_query in t_norm or t_norm in norm_query:
+                team_id = tid
+                break
+
+    if not team_id:
+        logger.debug("No api-football team match for '%s' in %s", team_name, league_key)
+        return []
+
+    players: List[Dict] = []
+    page = 1
+    while True:
+        data = api_football_fetch("players", {
+            "team":   team_id,
+            "season": season,
+            "page":   page,
+        })
+        if not data:
+            break
+
+        for entry in data.get("response", []):
+            p    = entry.get("player", {})
+            sts  = entry.get("statistics", [{}])[0]
+            shots = sts.get("shots", {})
+            goals = sts.get("goals", {})
+            games = sts.get("games", {})
+            apps  = games.get("appearences", 0) or 0
+            if apps < 1:
+                continue
+            players.append({
+                "id":              p.get("id"),
+                "name":            p.get("name"),
+                "position":        games.get("position", ""),
+                "team":            sts.get("team", {}).get("name"),
+                "appearances":     apps,
+                "minutes":         games.get("minutes", 0) or 0,
+                "goals":           goals.get("total", 0) or 0,
+                "assists":         goals.get("assists", 0) or 0,
+                "shots_total":     shots.get("total", 0) or 0,
+                "shots_on_target": shots.get("on", 0) or 0,
+                "xg":              goals.get("xg") or None,
+            })
+
+        paging = data.get("paging", {})
+        if page >= paging.get("total", 1):
+            break
+        page += 1
+
+    return sorted(players, key=lambda x: x["shots_total"], reverse=True)
 
 
 # ── Team form / head-to-head helper ─────────────────────────────────────────

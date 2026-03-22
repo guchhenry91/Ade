@@ -414,86 +414,111 @@ async def demo_page(request: Request):
 
 @app.get("/today", response_class=HTMLResponse)
 async def today_page(request: Request):
-    from data.nba_data import (
-        get_games as nba_get_games, get_team_net_rating,
-        get_team_players_with_averages,
-    )
-    from data.football_data import get_fixtures
-    from data.odds_api import build_odds_lookup, find_game_odds, decimal_to_american
-    from utils.stats import (
-        poisson_match_probs, nba_win_prob, confidence_label,
+    from data.nba_data  import get_games as nba_get_games
+    from data.nfl_data  import get_games as nfl_get_games
+    from data.football_data import get_fixtures, get_team_players as get_soccer_players
+    from data.odds_api  import build_odds_lookup, find_game_odds, decimal_to_american
+    from utils.stats    import (
+        poisson_match_probs, confidence_label,
         shot_attempt_over_under, threept_made_ou,
     )
     import os
 
-    today_str   = date.today().strftime("%Y%m%d")
-    today_label = date.today().strftime("%A, %B %d %Y")
-    games       = []
+    today_str    = date.today().strftime("%Y%m%d")
+    today_label  = date.today().strftime("%A, %B %d %Y")
+    games        = []
     has_odds_key = bool(os.getenv("ODDS_API_KEY"))
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    def _ml_to_prob(ml) -> float:
+        """American-odds string/number → implied win probability."""
+        try:
+            v = float(str(ml).replace("+", "").replace("EVEN", "100").strip())
+            return 100 / (v + 100) if v > 0 else abs(v) / (abs(v) + 100)
+        except (TypeError, ValueError):
+            return 0.5
+
+    def _make_nba_props(avg_pts, avg_fg3m, avg_reb, avg_ast):
+        """Return list of model O/U prop dicts for an NBA player."""
+        props = []
+        for stat, avg, std in [
+            ("PTS",  avg_pts,  0.28),
+            ("3PM",  avg_fg3m, None),
+            ("REB",  avg_reb,  0.32),
+            ("AST",  avg_ast,  0.35),
+        ]:
+            if avg < 0.5:
+                continue
+            line = max(0.5, round(avg * 2) / 2 - 0.5)
+            if std is None:
+                over_p, under_p = threept_made_ou(avg, line)
+            else:
+                over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
+            pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
+            props.append({
+                "stat": stat, "avg": avg, "line": line,
+                "over_prob":  round(over_p  * 100, 1),
+                "under_prob": round(under_p * 100, 1),
+                "pick": pick,
+                "confidence": confidence_label(max(over_p, under_p)),
+            })
+        return props
 
     # ─────────────────── NBA ────────────────────────────────────────────────
     try:
-        nba_book_lookup = build_odds_lookup("NBA")   # {} if no key
+        nba_book_lookup = build_odds_lookup("NBA")
 
         for g in nba_get_games(dates=today_str):
             home_team = g.get("home_team") or "TBD"
             away_team = g.get("away_team") or "TBD"
-            home_abbr = g.get("home_abbr", "")
-            away_abbr = g.get("away_abbr", "")
+            home_id   = str(g.get("home_id", ""))
+            away_id   = str(g.get("away_id", ""))
 
-            home_nr  = get_team_net_rating(g["home_id"]) if g.get("home_id") else 0.0
-            away_nr  = get_team_net_rating(g["away_id"]) if g.get("away_id") else 0.0
-            h_prob   = nba_win_prob(home_nr, away_nr, home_advantage=3.5)
-            a_prob   = 1 - h_prob
+            # Win probability from ESPN moneyline (no extra API calls!)
+            h_prob = _ml_to_prob(g.get("home_ml")) if g.get("home_ml") else 0.55
+            a_prob = 1 - h_prob
             predicted_winner = home_team if h_prob >= a_prob else away_team
             win_prob = h_prob if h_prob >= a_prob else a_prob
 
-            # Sportsbook odds (Odds API)
+            # Sportsbook odds (Odds API — optional)
             book = find_game_odds(nba_book_lookup, home_team, away_team) or {}
 
-            # ── All players via Ball Don't Lie ────────────────────────────
-            def _enrich_roster(abbr: str) -> list:
-                players = get_team_players_with_averages(abbr, season=2024)
+            # ── Players from ESPN scoreboard leaders (no BDL needed) ──────
+            def _nba_roster(team_id: str) -> list:
+                player_map: dict = {}
+                for ldr in g.get("leaders", []):
+                    if str(ldr.get("team_id")) != team_id:
+                        continue
+                    name = ldr["name"]
+                    stat = ldr["stat"]
+                    val  = float(ldr["value"])
+                    if name not in player_map:
+                        player_map[name] = {"name": name, "pos": "",
+                                            "pts": 0.0, "reb": 0.0,
+                                            "ast": 0.0, "fg3m": 0.0}
+                    sk = {"points": "pts", "rebounds": "reb",
+                          "assists": "ast",
+                          "threePointFieldGoalsMade": "fg3m"}.get(stat)
+                    if sk:
+                        player_map[name][sk] = val
                 out = []
-                for p in players:
-                    row = {"name": p["name"], "pos": p["position"],
-                           "min": p["min"], "gp": p["gp"],
-                           "pts": p["pts"], "reb": p["reb"],
-                           "ast": p["ast"], "fg3m": p["fg3m"],
-                           "props": []}
-                    # Generate model O/U for each stat
-                    for stat, avg, std in [
-                        ("PTS",  p["pts"],  0.28),
-                        ("3PM",  p["fg3m"], None),   # None → use threept model
-                        ("REB",  p["reb"],  0.32),
-                        ("AST",  p["ast"],  0.35),
-                    ]:
-                        if avg < 0.5:
-                            continue
-                        line = max(0.5, round(avg * 2) / 2 - 0.5)
-                        if std is None:
-                            over_p, under_p = threept_made_ou(avg, line)
-                        else:
-                            over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
-                        pick = ("OVER" if over_p > 0.55 else
-                                "UNDER" if over_p < 0.45 else "FAIR")
-                        row["props"].append({
-                            "stat": stat, "avg": avg, "line": line,
-                            "over_prob":  round(over_p  * 100, 1),
-                            "under_prob": round(under_p * 100, 1),
-                            "pick": pick,
-                            "confidence": confidence_label(max(over_p, under_p)),
-                        })
-                    out.append(row)
+                for p in player_map.values():
+                    out.append({
+                        **p,
+                        "props": _make_nba_props(
+                            p["pts"], p["fg3m"], p["reb"], p["ast"]),
+                    })
                 return out
 
-            home_roster = _enrich_roster(home_abbr)
-            away_roster = _enrich_roster(away_abbr)
+            home_roster = _nba_roster(home_id)
+            away_roster = _nba_roster(away_id)
 
             games.append({
                 "sport": "Basketball", "league": "NBA", "sport_icon": "🏀",
                 "home_team": home_team, "away_team": away_team,
-                "home_abbr": home_abbr, "away_abbr": away_abbr,
+                "home_abbr": g.get("home_abbr", ""),
+                "away_abbr": g.get("away_abbr", ""),
                 "kickoff": g.get("date", ""), "status": g.get("status", ""),
                 "home_score": g.get("home_score"), "away_score": g.get("away_score"),
                 "spread": g.get("spread"), "over_under": g.get("over_under"),
@@ -503,13 +528,104 @@ async def today_page(request: Request):
                 "predicted_winner": predicted_winner,
                 "win_prob":   round(win_prob * 100, 1),
                 "confidence": confidence_label(win_prob),
-                # sportsbook
-                "bookmaker":      book.get("bookmaker", ""),
-                "book_home_ml":   decimal_to_american(book["home_ml"]) if book.get("home_ml") else None,
-                "book_away_ml":   decimal_to_american(book["away_ml"]) if book.get("away_ml") else None,
+                "bookmaker":        book.get("bookmaker", ""),
+                "book_home_ml":     decimal_to_american(book["home_ml"]) if book.get("home_ml") else None,
+                "book_away_ml":     decimal_to_american(book["away_ml"]) if book.get("away_ml") else None,
                 "book_home_spread": book.get("home_spread"),
-                "book_total":     book.get("total_line"),
-                # rosters
+                "book_total":       book.get("total_line"),
+                "home_roster": home_roster,
+                "away_roster": away_roster,
+            })
+    except Exception:
+        traceback.print_exc()
+
+    # ─────────────────── NFL ────────────────────────────────────────────────
+    try:
+        nfl_book_lookup = build_odds_lookup("NFL")
+        _NFL_GAMES = 17
+
+        for g in nfl_get_games():
+            home_team = g.get("home_team") or "TBD"
+            away_team = g.get("away_team") or "TBD"
+            home_id   = str(g.get("home_id", ""))
+            away_id   = str(g.get("away_id", ""))
+
+            h_prob = _ml_to_prob(g.get("home_ml")) if g.get("home_ml") else 0.55
+            a_prob = 1 - h_prob
+            predicted_winner = home_team if h_prob >= a_prob else away_team
+            win_prob = h_prob if h_prob >= a_prob else a_prob
+
+            book = find_game_odds(nfl_book_lookup, home_team, away_team) or {}
+
+            def _nfl_roster(team_id: str) -> list:
+                player_map: dict = {}
+                _stat_map = {
+                    "passingYards":        ("Pass Yds",  0.40),
+                    "rushingYards":        ("Rush Yds",  0.55),
+                    "receivingYards":      ("Rec Yds",   0.60),
+                    "passingTouchdowns":   ("Pass TDs",  0.70),
+                    "rushingTouchdowns":   ("Rush TDs",  0.80),
+                    "receivingTouchdowns": ("Rec TDs",   0.80),
+                    "receptions":         ("Receptions", 0.40),
+                }
+                for ldr in g.get("leaders", []):
+                    if str(ldr.get("team_id")) != team_id:
+                        continue
+                    name = ldr["name"]
+                    stat = ldr["stat"]
+                    val  = float(ldr.get("value", 0))
+                    pos  = ldr.get("position", "")
+                    if name not in player_map:
+                        player_map[name] = {"name": name, "pos": pos, "season_stats": {}}
+                    player_map[name]["season_stats"][stat] = val
+                    player_map[name]["pos"] = player_map[name]["pos"] or pos
+
+                out = []
+                for p in player_map.values():
+                    props = []
+                    for stat_key, (label, std) in _stat_map.items():
+                        season_total = p["season_stats"].get(stat_key, 0)
+                        if season_total < 10:
+                            continue
+                        avg  = season_total / _NFL_GAMES
+                        line = max(0.5, round(avg * 2) / 2 - 0.5)
+                        over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
+                        pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
+                        props.append({
+                            "stat": label, "avg": round(avg, 1), "line": line,
+                            "over_prob":  round(over_p  * 100, 1),
+                            "under_prob": round(under_p * 100, 1),
+                            "pick": pick,
+                            "confidence": confidence_label(max(over_p, under_p)),
+                        })
+                    if props:
+                        out.append({"name": p["name"], "pos": p["pos"], "props": props})
+                return out
+
+            home_roster = _nfl_roster(home_id)
+            away_roster = _nfl_roster(away_id)
+            if not home_roster and not away_roster:
+                continue   # skip games with no player data (off-season etc.)
+
+            games.append({
+                "sport": "Football", "league": "NFL", "sport_icon": "🏈",
+                "home_team": home_team, "away_team": away_team,
+                "home_abbr": g.get("home_abbr", ""),
+                "away_abbr": g.get("away_abbr", ""),
+                "kickoff": g.get("date", ""), "status": g.get("status", ""),
+                "home_score": g.get("home_score"), "away_score": g.get("away_score"),
+                "spread": g.get("spread"), "over_under": g.get("over_under"),
+                "home_prob": round(h_prob * 100, 1),
+                "away_prob": round(a_prob * 100, 1),
+                "draw_prob": None,
+                "predicted_winner": predicted_winner,
+                "win_prob":   round(win_prob * 100, 1),
+                "confidence": confidence_label(win_prob),
+                "bookmaker":        book.get("bookmaker", ""),
+                "book_home_ml":     decimal_to_american(book["home_ml"]) if book.get("home_ml") else None,
+                "book_away_ml":     decimal_to_american(book["away_ml"]) if book.get("away_ml") else None,
+                "book_home_spread": book.get("home_spread"),
+                "book_total":       book.get("total_line"),
                 "home_roster": home_roster,
                 "away_roster": away_roster,
             })
@@ -528,6 +644,7 @@ async def today_page(request: Request):
             book_lookup = build_odds_lookup(league_key)
             fixtures    = get_fixtures(league_key, dates=today_str)
             model       = FootballModel(league_key)
+
             for fix in fixtures:
                 home_team = fix.get("home_team") or "TBD"
                 away_team = fix.get("away_team") or "TBD"
@@ -542,15 +659,20 @@ async def today_page(request: Request):
 
                 book = find_game_odds(book_lookup, home_team, away_team) or {}
 
-                # ALL player scorer signals (not just top 5)
-                def _soccer_players(team_name: str, team_xg: float) -> list:
+                def _soccer_roster(team_name: str, team_xg: float) -> list:
+                    # Fetch real players for this team (api-football per-team endpoint)
+                    team_pl = get_soccer_players(league_key, team_name, season=2024)
                     sigs = model.player_anytime_scorer_signals(
-                        f"{home_team} vs {away_team}", team_name, team_xg)
+                        f"{home_team} vs {away_team}", team_name, team_xg,
+                        players_override=team_pl if team_pl else None,
+                    )
                     out = []
                     for s in sigs:
-                        notes  = s.notes
-                        shots  = ""
-                        xg_sh  = ""
+                        if "Lead Striker (estimate)" in s.selection:
+                            continue
+                        notes = s.notes or ""
+                        shots = ""
+                        xg_sh = ""
                         if "Shots/game:" in notes:
                             shots = notes.split("Shots/game:")[1].strip().split()[0]
                         if "xG/shot:" in notes:
@@ -562,10 +684,20 @@ async def today_page(request: Request):
                             "goal_prob":  round(s.model_prob * 100, 1),
                             "confidence": s.confidence,
                         })
+                    # If api-football returned no players, show the estimate
+                    if not out and not team_pl:
+                        for s in sigs:
+                            out.append({
+                                "name":      s.selection,
+                                "shots_pg":  "—",
+                                "xg_shot":   "—",
+                                "goal_prob": round(s.model_prob * 100, 1),
+                                "confidence": s.confidence,
+                            })
                     return out
 
-                home_players = _soccer_players(home_team, home_xg)
-                away_players = _soccer_players(away_team, away_xg)
+                home_roster = _soccer_roster(home_team, home_xg)
+                away_roster = _soccer_roster(away_team, away_xg)
 
                 games.append({
                     "sport": "Soccer", "league": league_name, "sport_icon": "⚽",
@@ -581,15 +713,13 @@ async def today_page(request: Request):
                     "predicted_winner": predicted_winner,
                     "win_prob":   round(win_prob * 100, 1),
                     "confidence": confidence_label(win_prob),
-                    # sportsbook
                     "bookmaker":    book.get("bookmaker", ""),
                     "book_home_ml": decimal_to_american(book["home_ml"]) if book.get("home_ml") else None,
                     "book_away_ml": decimal_to_american(book["away_ml"]) if book.get("away_ml") else None,
                     "book_draw_ml": decimal_to_american(book.get("draw_ml")) if book.get("draw_ml") else None,
                     "book_total":   book.get("total_line"),
-                    # players
-                    "home_roster": home_players,
-                    "away_roster": away_players,
+                    "home_roster": home_roster,
+                    "away_roster": away_roster,
                 })
         except Exception:
             traceback.print_exc()
