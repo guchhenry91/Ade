@@ -6,6 +6,13 @@ import sys, os
 # Ensure the model root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+# Load .env for local development (no-op on Render where env vars are set natively)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
