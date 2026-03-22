@@ -56,6 +56,8 @@ def get_games(dates: Optional[str] = None) -> List[Dict]:
             "status":          event.get("status", {}).get("type", {}).get("name"),
             "home_team":       home.get("team", {}).get("displayName"),
             "away_team":       away.get("team", {}).get("displayName"),
+            "home_abbr":       home.get("team", {}).get("abbreviation", ""),
+            "away_abbr":       away.get("team", {}).get("abbreviation", ""),
             "home_score":      home.get("score"),
             "away_score":      away.get("score"),
             "home_id":         home.get("team", {}).get("id"),
@@ -134,6 +136,80 @@ def get_player_game_log(player_id: int, season: int = 2024,
     if not data:
         return []
     return data.get("data", [])
+
+
+# ── All players for a team (Ball Don't Lie) ──────────────────────────────────
+
+def get_bdl_team_map() -> Dict[str, int]:
+    """Return {abbreviation: bdl_team_id} for all 30 NBA teams."""
+    data = bdl_fetch("teams", {"per_page": 40})
+    if not data:
+        return {}
+    return {t.get("abbreviation", ""): t.get("id") for t in data.get("data", [])}
+
+
+def get_team_players_with_averages(team_abbr: str, season: int = 2024) -> List[Dict]:
+    """
+    Fetch every active player on *team_abbr* with their season per-game averages
+    from Ball Don't Lie.  Returns list sorted by minutes played desc.
+    Players with 0 pts and < 5 min are skipped (DNP / two-ways).
+    """
+    team_map = get_bdl_team_map()
+    team_id  = team_map.get(team_abbr.upper() if team_abbr else "")
+    if not team_id:
+        logger.debug("BDL team_id not found for abbr %s", team_abbr)
+        return []
+
+    players_data = bdl_fetch("players", {"team_ids[]": team_id, "per_page": 100})
+    if not players_data:
+        return []
+    players   = players_data.get("data", [])
+    player_ids = [p["id"] for p in players]
+    if not player_ids:
+        return []
+
+    # Fetch all season averages in one request
+    id_qs     = "&".join(f"player_ids[]={pid}" for pid in player_ids)
+    avgs_data = bdl_fetch(f"season_averages?season={season}&{id_qs}")
+    avgs_map  = {}
+    if avgs_data:
+        for a in avgs_data.get("data", []):
+            avgs_map[a.get("player_id")] = a
+
+    def _min(avg: dict) -> float:
+        """Parse 'MM:SS' or numeric minutes string → float."""
+        raw = avg.get("min") or "0"
+        if isinstance(raw, str) and ":" in raw:
+            parts = raw.split(":")
+            return float(parts[0]) + float(parts[1]) / 60
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+
+    result = []
+    for p in players:
+        pid  = p["id"]
+        avg  = avgs_map.get(pid, {})
+        pts  = float(avg.get("pts", 0) or 0)
+        mins = _min(avg)
+        if pts < 1.0 and mins < 5.0:   # skip non-contributors
+            continue
+        result.append({
+            "player_id": pid,
+            "name":      f"{p.get('first_name','').strip()} {p.get('last_name','').strip()}".strip(),
+            "position":  p.get("position", ""),
+            "pts":       round(pts, 1),
+            "reb":       round(float(avg.get("reb", 0) or 0), 1),
+            "ast":       round(float(avg.get("ast", 0) or 0), 1),
+            "fg3m":      round(float(avg.get("fg3m", 0) or 0), 1),
+            "stl":       round(float(avg.get("stl", 0) or 0), 1),
+            "blk":       round(float(avg.get("blk", 0) or 0), 1),
+            "min":       round(mins, 1),
+            "gp":        int(avg.get("games_played", 0) or 0),
+        })
+
+    return sorted(result, key=lambda x: x["min"], reverse=True)
 
 
 # ── Net-rating helper ────────────────────────────────────────────────────────

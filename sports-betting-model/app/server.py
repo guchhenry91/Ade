@@ -407,69 +407,86 @@ async def demo_page(request: Request):
 
 @app.get("/today", response_class=HTMLResponse)
 async def today_page(request: Request):
-    from data.nba_data import get_games as nba_get_games, get_team_net_rating
+    from data.nba_data import (
+        get_games as nba_get_games, get_team_net_rating,
+        get_team_players_with_averages,
+    )
     from data.football_data import get_fixtures
+    from data.odds_api import build_odds_lookup, find_game_odds, decimal_to_american
     from utils.stats import (
         poisson_match_probs, nba_win_prob, confidence_label,
         shot_attempt_over_under, threept_made_ou,
     )
+    import os
 
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
     games       = []
+    has_odds_key = bool(os.getenv("ODDS_API_KEY"))
 
-    # ── NBA ──────────────────────────────────────────────────────────────────
+    # ─────────────────── NBA ────────────────────────────────────────────────
     try:
+        nba_book_lookup = build_odds_lookup("NBA")   # {} if no key
+
         for g in nba_get_games(dates=today_str):
-            home_team  = g.get("home_team") or "TBD"
-            away_team  = g.get("away_team") or "TBD"
-            home_id    = str(g.get("home_id", ""))
-            away_id    = str(g.get("away_id", ""))
-            home_nr    = get_team_net_rating(g["home_id"]) if g.get("home_id") else 0.0
-            away_nr    = get_team_net_rating(g["away_id"]) if g.get("away_id") else 0.0
-            h_prob     = nba_win_prob(home_nr, away_nr, home_advantage=3.5)
-            a_prob     = 1 - h_prob
-            if h_prob >= a_prob:
-                predicted_winner, win_prob = home_team, h_prob
-            else:
-                predicted_winner, win_prob = away_team, a_prob
+            home_team = g.get("home_team") or "TBD"
+            away_team = g.get("away_team") or "TBD"
+            home_abbr = g.get("home_abbr", "")
+            away_abbr = g.get("away_abbr", "")
 
-            # ── Player projections from ESPN scoreboard leaders ───────────
-            def _nba_player_proj(leader: dict) -> dict:
-                avg  = leader["value"]
-                stat = leader["stat"]
-                if stat == "threePointFieldGoalsMade":
-                    line     = max(0.5, round(avg * 2) / 2 - 0.5)
-                    over_p, _ = threept_made_ou(avg, line)
-                    label     = "3PM"
-                else:
-                    line      = max(0.5, round(avg * 2) / 2 - 0.5)
-                    std       = 0.28 if stat == "points" else 0.32
-                    over_p, _ = shot_attempt_over_under(avg, line, std_factor=std)
-                    label     = {"points": "PTS", "rebounds": "REB", "assists": "AST"}.get(stat, stat)
-                return {
-                    "name":       leader["name"],
-                    "stat_label": label,
-                    "avg":        round(avg, 1),
-                    "line":       line,
-                    "over_prob":  round(over_p * 100, 1),
-                    "confidence": confidence_label(over_p),
-                    "display_avg": leader["display_value"],
-                }
+            home_nr  = get_team_net_rating(g["home_id"]) if g.get("home_id") else 0.0
+            away_nr  = get_team_net_rating(g["away_id"]) if g.get("away_id") else 0.0
+            h_prob   = nba_win_prob(home_nr, away_nr, home_advantage=3.5)
+            a_prob   = 1 - h_prob
+            predicted_winner = home_team if h_prob >= a_prob else away_team
+            win_prob = h_prob if h_prob >= a_prob else a_prob
 
-            home_players, away_players = [], []
-            seen_home, seen_away = set(), set()
-            for ldr in g.get("leaders", []):
-                proj = _nba_player_proj(ldr)
-                name = proj["name"]
-                if ldr["team_id"] == home_id and name not in seen_home:
-                    home_players.append(proj); seen_home.add(name)
-                elif ldr["team_id"] == away_id and name not in seen_away:
-                    away_players.append(proj); seen_away.add(name)
+            # Sportsbook odds (Odds API)
+            book = find_game_odds(nba_book_lookup, home_team, away_team) or {}
+
+            # ── All players via Ball Don't Lie ────────────────────────────
+            def _enrich_roster(abbr: str) -> list:
+                players = get_team_players_with_averages(abbr, season=2024)
+                out = []
+                for p in players:
+                    row = {"name": p["name"], "pos": p["position"],
+                           "min": p["min"], "gp": p["gp"],
+                           "pts": p["pts"], "reb": p["reb"],
+                           "ast": p["ast"], "fg3m": p["fg3m"],
+                           "props": []}
+                    # Generate model O/U for each stat
+                    for stat, avg, std in [
+                        ("PTS",  p["pts"],  0.28),
+                        ("3PM",  p["fg3m"], None),   # None → use threept model
+                        ("REB",  p["reb"],  0.32),
+                        ("AST",  p["ast"],  0.35),
+                    ]:
+                        if avg < 0.5:
+                            continue
+                        line = max(0.5, round(avg * 2) / 2 - 0.5)
+                        if std is None:
+                            over_p, under_p = threept_made_ou(avg, line)
+                        else:
+                            over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
+                        pick = ("OVER" if over_p > 0.55 else
+                                "UNDER" if over_p < 0.45 else "FAIR")
+                        row["props"].append({
+                            "stat": stat, "avg": avg, "line": line,
+                            "over_prob":  round(over_p  * 100, 1),
+                            "under_prob": round(under_p * 100, 1),
+                            "pick": pick,
+                            "confidence": confidence_label(max(over_p, under_p)),
+                        })
+                    out.append(row)
+                return out
+
+            home_roster = _enrich_roster(home_abbr)
+            away_roster = _enrich_roster(away_abbr)
 
             games.append({
                 "sport": "Basketball", "league": "NBA", "sport_icon": "🏀",
                 "home_team": home_team, "away_team": away_team,
+                "home_abbr": home_abbr, "away_abbr": away_abbr,
                 "kickoff": g.get("date", ""), "status": g.get("status", ""),
                 "home_score": g.get("home_score"), "away_score": g.get("away_score"),
                 "spread": g.get("spread"), "over_under": g.get("over_under"),
@@ -477,23 +494,33 @@ async def today_page(request: Request):
                 "away_prob": round(a_prob * 100, 1),
                 "draw_prob": None,
                 "predicted_winner": predicted_winner,
-                "win_prob": round(win_prob * 100, 1),
+                "win_prob":   round(win_prob * 100, 1),
                 "confidence": confidence_label(win_prob),
-                "home_players": home_players[:4],
-                "away_players": away_players[:4],
+                # sportsbook
+                "bookmaker":      book.get("bookmaker", ""),
+                "book_home_ml":   decimal_to_american(book["home_ml"]) if book.get("home_ml") else None,
+                "book_away_ml":   decimal_to_american(book["away_ml"]) if book.get("away_ml") else None,
+                "book_home_spread": book.get("home_spread"),
+                "book_total":     book.get("total_line"),
+                # rosters
+                "home_roster": home_roster,
+                "away_roster": away_roster,
             })
     except Exception:
         traceback.print_exc()
 
-    # ── Soccer ────────────────────────────────────────────────────────────────
+    # ─────────────────── Soccer ─────────────────────────────────────────────
     soccer_leagues = [
-        ("EPL", "Premier League"), ("UCL", "Champions League"),
-        ("LIGA", "La Liga"), ("L1", "Ligue 1"),
+        ("EPL",  "Premier League"),
+        ("UCL",  "Champions League"),
+        ("LIGA", "La Liga"),
+        ("L1",   "Ligue 1"),
     ]
     for league_key, league_name in soccer_leagues:
         try:
-            fixtures = get_fixtures(league_key, dates=today_str)
-            model    = FootballModel(league_key)
+            book_lookup = build_odds_lookup(league_key)
+            fixtures    = get_fixtures(league_key, dates=today_str)
+            model       = FootballModel(league_key)
             for fix in fixtures:
                 home_team = fix.get("home_team") or "TBD"
                 away_team = fix.get("away_team") or "TBD"
@@ -506,23 +533,25 @@ async def today_page(request: Request):
                 else:
                     predicted_winner, win_prob = away_team, a_prob
 
-                # ── Player goal scorer probabilities ─────────────────────
+                book = find_game_odds(book_lookup, home_team, away_team) or {}
+
+                # ALL player scorer signals (not just top 5)
                 def _soccer_players(team_name: str, team_xg: float) -> list:
                     sigs = model.player_anytime_scorer_signals(
                         f"{home_team} vs {away_team}", team_name, team_xg)
-                    out  = []
-                    for s in sigs[:5]:
-                        shots_info = ""
-                        if "Shots/game:" in s.notes:
-                            shots_info = s.notes.split("Shots/game:")[1].strip().split()[0]
-                        xg_info = ""
-                        if "xG/shot:" in s.notes:
-                            xg_info = s.notes.split("xG/shot:")[1].strip().split()[0]
+                    out = []
+                    for s in sigs:
+                        notes  = s.notes
+                        shots  = ""
+                        xg_sh  = ""
+                        if "Shots/game:" in notes:
+                            shots = notes.split("Shots/game:")[1].strip().split()[0]
+                        if "xG/shot:" in notes:
+                            xg_sh = notes.split("xG/shot:")[1].strip().split()[0]
                         out.append({
                             "name":       s.selection,
-                            "stat_label": "Goal",
-                            "shots_pg":   shots_info,
-                            "xg_shot":    xg_info,
+                            "shots_pg":   shots,
+                            "xg_shot":    xg_sh,
                             "goal_prob":  round(s.model_prob * 100, 1),
                             "confidence": s.confidence,
                         })
@@ -543,20 +572,28 @@ async def today_page(request: Request):
                     "home_xg":   round(home_xg, 2),
                     "away_xg":   round(away_xg, 2),
                     "predicted_winner": predicted_winner,
-                    "win_prob": round(win_prob * 100, 1),
+                    "win_prob":   round(win_prob * 100, 1),
                     "confidence": confidence_label(win_prob),
-                    "home_players": home_players,
-                    "away_players": away_players,
+                    # sportsbook
+                    "bookmaker":    book.get("bookmaker", ""),
+                    "book_home_ml": decimal_to_american(book["home_ml"]) if book.get("home_ml") else None,
+                    "book_away_ml": decimal_to_american(book["away_ml"]) if book.get("away_ml") else None,
+                    "book_draw_ml": decimal_to_american(book.get("draw_ml")) if book.get("draw_ml") else None,
+                    "book_total":   book.get("total_line"),
+                    # players
+                    "home_roster": home_players,
+                    "away_roster": away_players,
                 })
         except Exception:
             traceback.print_exc()
 
     return TEMPLATES.TemplateResponse("today.html", {
-        "request": request,
-        "games":   games,
-        "today":   today_label,
-        "total":   len(games),
+        "request":      request,
+        "games":        games,
+        "today":        today_label,
+        "total":        len(games),
         "refresh_secs": 300,
+        "has_odds_key": has_odds_key,
     })
 
 
