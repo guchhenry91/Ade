@@ -217,6 +217,7 @@
                 <th class="text-center">xG/Shot</th>
                 <th class="text-center">Goal%</th>
                 <th class="text-center">Confidence</th>
+                <th class="text-center">Parlay</th>
               </tr></thead>
               <tbody>
               {% for p in roster %}
@@ -234,6 +235,23 @@
                     {% if p.confidence=='HIGH' %}badge-high{% elif p.confidence=='MEDIUM' %}badge-medium{% else %}badge-low{% endif %}">
                     {{ p.confidence }}
                   </span>
+                </td>
+                <td class="text-center">
+                  <button class="parlay-add-btn"
+                          style="padding:3px 7px;font-size:10px;"
+                          data-player="{{ p.name }}"
+                          data-team="{{ team_label }}"
+                          data-sport="Soccer"
+                          data-game="{{ game.home_team }} vs {{ game.away_team }}"
+                          data-stat="Anytime Scorer"
+                          data-line="0.5"
+                          data-pick="OVER"
+                          data-confidence="{{ p.goal_prob }}"
+                          data-stars="{{ 5 if p.goal_prob > 35 else (4 if p.goal_prob > 25 else (3 if p.goal_prob > 15 else 2)) }}"
+                          data-trend=""
+                          data-last5=""
+                          data-avg="{{ p.shots_pg or '' }}"
+                          onclick="parlayState.toggleLeg(this)">+ Add</button>
                 </td>
               </tr>
               {% endfor %}

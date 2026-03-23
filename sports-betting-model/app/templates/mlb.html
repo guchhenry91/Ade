@@ -124,7 +124,21 @@
     </div>
   </div>
 
-  <div style="margin-top:10px;display:flex;justify-content:flex-end;">
+  <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;">
+    <button class="parlay-add-btn"
+            data-player="{{ p.get('name', pr.get('name','')) }}"
+            data-team="{{ p.get('team','') }}"
+            data-sport="MLB"
+            data-game="{{ p.get('team','') }} vs {{ p.get('opponent','') }}"
+            data-stat="{{ pr.get('stat', p.get('stat','')) }}"
+            data-line="{{ pr.get('line', p.get('line','')) }}"
+            data-pick="{{ pick }}"
+            data-confidence="{{ conf_pct }}"
+            data-stars="{{ stars_n }}"
+            data-trend=""
+            data-last5=""
+            data-avg="{{ pr.get('avg', p.get('avg','')) }}"
+            onclick="parlayState.toggleLeg(this)">+ Add to Parlay</button>
     <span class="badge-{{ (pr.get('confidence', p.get('confidence','LOW')) or 'LOW')|lower }}">
       {{ pr.get('confidence', p.get('confidence','LOW')) }}
     </span>

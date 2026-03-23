@@ -275,6 +275,24 @@
         <div class="hit-rate">Hit OVER in {{ pr.hit_over_last5 }} of last 5 games</div>
         {% endif %}
 
+        <!-- Add to Parlay -->
+        <div style="margin-top:7px;display:flex;justify-content:flex-end;">
+          <button class="parlay-add-btn"
+                  data-player="{{ p.name }}"
+                  data-team="{{ abbr }}"
+                  data-sport="NBA"
+                  data-game="{{ game.away_team }} @ {{ game.home_team }}"
+                  data-stat="{{ pr.stat }}"
+                  data-line="{{ pr.line }}"
+                  data-pick="{{ pr.pick }}"
+                  data-confidence="{{ conf_pct }}"
+                  data-stars="{{ pr.stars }}"
+                  data-trend="{{ pr.trend or '' }}"
+                  data-last5="{{ pr.last5_avg if pr.last5_avg is not none else '' }}"
+                  data-avg="{{ pr.avg or '' }}"
+                  onclick="parlayState.toggleLeg(this)">+ Add to Parlay</button>
+        </div>
+
       </div>
       {% endfor %}
 

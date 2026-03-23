@@ -1097,6 +1097,73 @@ _NFL_PRESETS = [
 #  /api/sanity  — data quality checks
 # ─────────────────────────────────────────────
 
+@app.post("/api/parlay/analyze")
+async def parlay_analyze(request: Request):
+    """AI-powered parlay analysis via Claude. Requires ANTHROPIC_API_KEY env var."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return JSONResponse(
+            {"error": "ANTHROPIC_API_KEY is not configured on this server."},
+            status_code=503,
+        )
+
+    try:
+        import anthropic as _anthropic
+    except ImportError:
+        return JSONResponse(
+            {"error": "anthropic SDK not installed. Add 'anthropic' to requirements.txt."},
+            status_code=500,
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body."}, status_code=400)
+
+    legs          = body.get("legs", [])
+    combined_prob = body.get("combined_prob", 0)
+    grade         = body.get("grade", "")
+    edge          = body.get("edge", 0)
+
+    if len(legs) < 2:
+        return JSONResponse({"error": "Need at least 2 legs to analyze."}, status_code=400)
+
+    legs_text = "\n".join(
+        f"- {l.get('player','?')} ({l.get('sport','?')}) "
+        f"{l.get('stat','?')} {l.get('pick','OVER')} {l.get('line','?')} "
+        f"| Confidence: {round(l.get('confidence', 0.5) * 100)}%"
+        + (f" | Trend: {l['trend']}" if l.get("trend") else "")
+        + (f" | L5 avg: {l['last5']}"  if l.get("last5") else "")
+        for l in legs
+    )
+
+    prompt = (
+        f"Analyze this sports betting parlay:\n{legs_text}\n"
+        f"Combined probability: {combined_prob}%\n"
+        f"Model edge: {edge:+.1f}%\n"
+        f"Parlay grade: {grade}\n\n"
+        "Provide:\n"
+        "1. Brief analysis of each leg (1 sentence each)\n"
+        "2. Strongest leg and why\n"
+        "3. Weakest leg and whether to keep or replace\n"
+        "4. Overall parlay assessment\n"
+        "5. One alternative leg suggestion if edge is weak\n\n"
+        "Keep response under 150 words. Be direct and specific."
+    )
+
+    try:
+        client  = _anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model      = "claude-haiku-4-5-20251001",
+            max_tokens = 350,
+            messages   = [{"role": "user", "content": prompt}],
+        )
+        analysis = message.content[0].text
+        return JSONResponse({"analysis": analysis})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 @app.get("/api/sanity")
 async def sanity_check():
     """

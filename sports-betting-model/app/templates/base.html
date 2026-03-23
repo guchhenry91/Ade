@@ -9,6 +9,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>"/>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/parlay.css">
   <!-- Tailwind CDN (supports legacy templates that use utility classes) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -390,5 +391,55 @@ function sortProps(gridId, key) {
 }
 </script>
 {% block scripts %}{% endblock %}
+
+<!-- ════════════════════════════════════════════════════
+     PARLAY BUILDER PANEL
+════════════════════════════════════════════════════ -->
+<div id="parlay-panel">
+  <!-- Header -->
+  <div class="parlay-hdr">
+    <div>
+      <div class="parlay-hdr-title">🎯 Parlay Builder</div>
+      <div class="parlay-hdr-sub">Build your parlay</div>
+    </div>
+    <button class="parlay-close-btn" onclick="parlayState.closePanel()" aria-label="Close">✕</button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="parlay-tabs">
+    <button class="parlay-tab active" data-tab="builder">🏗 Builder</button>
+    <button class="parlay-tab" data-tab="saved">💾 Saved</button>
+  </div>
+
+  <!-- Body -->
+  <div class="parlay-body">
+
+    <!-- Builder tab -->
+    <div class="parlay-tab-content active" data-tab="builder">
+      <!-- Legs list -->
+      <div id="parlay-legs"></div>
+      <!-- Summary (hidden until ≥2 legs) -->
+      <div id="parlay-summary" class="parlay-summary" style="display:none;"></div>
+      <!-- Action buttons (hidden until ≥2 legs) -->
+      <div id="parlay-actions">
+        <button class="parlay-btn parlay-btn-primary" onclick="parlayState.analyzeParlay()">🤖 Analyze Parlay</button>
+        <button class="parlay-btn parlay-btn-ghost"   id="parlay-copy-btn" onclick="parlayState.copyParlay()">📋 Copy Parlay</button>
+        <button class="parlay-btn parlay-btn-ghost"   id="parlay-save-btn" onclick="parlayState.saveParlay()">💾 Save Parlay</button>
+        <button class="parlay-btn parlay-btn-danger"  onclick="parlayState.clearAll()">🗑️ Clear All</button>
+      </div>
+    </div>
+
+    <!-- Saved parlays tab -->
+    <div class="parlay-tab-content" data-tab="saved">
+      <div id="parlay-saved-list"></div>
+    </div>
+
+  </div><!-- /parlay-body -->
+</div><!-- /parlay-panel -->
+
+<!-- Floating badge (shown when panel closed + has legs) -->
+<button id="parlay-badge" onclick="parlayState.openPanel()" aria-label="Open Parlay Builder"></button>
+
+<script src="/static/parlay.js"></script>
 </body>
 </html>
