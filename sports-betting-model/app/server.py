@@ -206,9 +206,11 @@ def _build_nba_games(today_str: str) -> list:
 
     _PP_URL = "https://api.prizepicks.com/projections"
     _PP_HDRS = {
-        "User-Agent": "Mozilla/5.0 (compatible; BetModel/1.0)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept":     "application/json",
         "Referer":    "https://app.prizepicks.com/",
+        "Origin":     "https://app.prizepicks.com",
     }
     try:
         from data.fetcher import fetch as _http_fetch
@@ -219,11 +221,45 @@ def _build_nba_games(today_str: str) -> list:
             headers=_PP_HDRS,
             use_cache=False,   # always fetch fresh — PP lines change throughout the day
         )
+
+        # ── Verbose structure diagnostics ─────────────────────────────────────
+        if raw_pp is None:
+            print("[NBA] PrizePicks returned None (possible 403/429 or network error)")
+        else:
+            _pp_data     = raw_pp.get("data", [])
+            _pp_included = raw_pp.get("included", [])
+            print(f"[NBA] PP response keys: {list(raw_pp.keys())}")
+            print(f"[NBA] PP data count: {len(_pp_data)}")
+            print(f"[NBA] PP included count: {len(_pp_included)}")
+
+            # Log first projection structure
+            if _pp_data:
+                _fp = _pp_data[0]
+                print(f"[NBA] First proj type: {_fp.get('type')}")
+                print(f"[NBA] First proj attr keys: {list(_fp.get('attributes', {}).keys())}")
+                print(f"[NBA] First proj rel keys:  {list(_fp.get('relationships', {}).keys())}")
+
+            # Log included types
+            _inc_types = set(i.get("type") for i in _pp_included)
+            print(f"[NBA] Included types: {_inc_types}")
+
+            # Log first included item of each type for structure inspection
+            _seen_types: set = set()
+            for _ii in _pp_included:
+                _it = _ii.get("type")
+                if _it not in _seen_types:
+                    _seen_types.add(_it)
+                    print(f"[NBA] Sample included [{_it}]: "
+                          f"attrs={list(_ii.get('attributes', {}).keys())}")
+
         if raw_pp:
-            # Build player_id → {name, team, pos} from the "included" sideloaded array.
-            # PrizePicks puts player details in "included" (not in projection attributes).
+            _pp_data     = raw_pp.get("data", [])
+            _pp_included = raw_pp.get("included", [])
+
+            # ── Build player lookup from "included" sideload ──────────────────
+            # Structure C: included array with type="new_player"/"player"
             _pmap: dict = {}
-            for item in raw_pp.get("included", []):
+            for item in _pp_included:
                 if item.get("type") in ("new_player", "player"):
                     pid   = str(item.get("id", ""))
                     attrs = item.get("attributes", {})
@@ -232,23 +268,26 @@ def _build_nba_games(today_str: str) -> list:
                              or (attrs.get("first_name","") + " "
                                  + attrs.get("last_name","")).strip()).strip()
                     team  = (attrs.get("team")
+                             or attrs.get("team_abbr")
                              or attrs.get("team_abbreviation", "")).upper().strip()
                     if name and pid:
                         _pmap[pid] = {"name": name, "team": team,
                                       "pos":  attrs.get("position", "")}
 
-            print(f"[NBA] PP included players: {len(_pmap)}")
+            print(f"[NBA] PP included players (Structure C): {len(_pmap)}")
 
-            for proj in raw_pp.get("data", []):
+            _parse_errors = 0
+            for proj in _pp_data:
                 if "projection" not in (proj.get("type") or "").lower():
                     continue
                 attrs  = proj.get("attributes", {})
-                status = attrs.get("status", "pre_game")
-                # Accept both pre-game and active projections
-                if status not in ("pre_game", "scheduled", "pre-game",
-                                  "active", "", None):
+
+                # ── Status filter: accept all non-cancelled projections ────────
+                status = (attrs.get("status") or "").lower()
+                if status in ("cancelled", "canceled", "suspended", "voided"):
                     continue
 
+                # ── Stat type filter ──────────────────────────────────────────
                 stat_raw = (attrs.get("stat_type")
                             or attrs.get("stat_display_name")
                             or attrs.get("name") or "").lower()
@@ -258,14 +297,43 @@ def _build_nba_games(today_str: str) -> list:
                 if not sk:
                     continue
 
-                # Resolve player info via relationship → included sideload
-                rel        = proj.get("relationships", {})
-                player_rel = rel.get("new_player", rel.get("player", {}))
-                pid        = str(player_rel.get("data", {}).get("id", ""))
-                pinfo      = _pmap.get(pid, {})
-                name_raw   = pinfo.get("name", "")
-                team_abbr  = pinfo.get("team", "")
+                # ── Multi-structure player name + team resolution ─────────────
+                name_raw  = ""
+                team_abbr = ""
+
+                # Structure A: player info directly in projection attributes
+                if not name_raw:
+                    name_raw  = (attrs.get("name") or attrs.get("player_name")
+                                 or attrs.get("display_name") or "").strip()
+                    team_abbr = (attrs.get("team") or attrs.get("team_abbr")
+                                 or attrs.get("team_abbreviation") or "").strip().upper()
+
+                # Structure B: nested player object inside attributes
+                if not name_raw:
+                    _po = attrs.get("player", {})
+                    if isinstance(_po, dict) and _po:
+                        name_raw  = (_po.get("name") or _po.get("display_name") or "").strip()
+                        team_abbr = (_po.get("team") or _po.get("team_abbr") or "").strip().upper()
+
+                # Structure C: resolve via relationships → included sideload
+                if not name_raw:
+                    rel = proj.get("relationships", {})
+                    for _rk in ("new_player", "player", "projection_player"):
+                        _rd  = rel.get(_rk, {}).get("data", {})
+                        _pid = str(_rd.get("id", "")) if isinstance(_rd, dict) else ""
+                        if _pid and _pid in _pmap:
+                            _pi   = _pmap[_pid]
+                            name_raw  = _pi.get("name", "")
+                            team_abbr = _pi.get("team", "")
+                            break
+
                 if not name_raw or not team_abbr:
+                    _parse_errors += 1
+                    if _parse_errors <= 5:
+                        print(f"[NBA] Parse fail #{_parse_errors} — "
+                              f"attr_keys={list(attrs.keys())}, "
+                              f"rel_keys={list(proj.get('relationships',{}).keys())}, "
+                              f"stat={stat_raw}")
                     continue
 
                 line_val = float(attrs.get("line_score") or attrs.get("line") or 0)
@@ -278,14 +346,19 @@ def _build_nba_games(today_str: str) -> list:
                 if name_key not in pp_by_team[team_abbr]:
                     pp_by_team[team_abbr][name_key] = {
                         "name": name_raw,
-                        "pos":  pinfo.get("pos", ""),
+                        "pos":  _pmap.get(
+                                    str(proj.get("relationships",{})
+                                           .get("new_player",{})
+                                           .get("data",{}).get("id","")),
+                                    {}).get("pos", ""),
                     }
 
             pp_teams = sorted(pp_by_team.keys())
+            print(f"[NBA] PP parse errors: {_parse_errors}")
             print(f"[NBA] PP teams ({len(pp_teams)}): {pp_teams}")
             print(f"[NBA] PP lines: {len(pp_lines)} entries")
-        else:
-            print("[NBA] PrizePicks returned empty response")
+            if not pp_teams:
+                print("[NBA] CRITICAL: No teams parsed from PP — check structure logs above")
     except Exception as _ppe:
         print(f"[NBA] PrizePicks fetch failed: {_ppe}")
         traceback.print_exc()
@@ -1270,62 +1343,128 @@ async def debug_nba():
 
 @app.get("/api/debug/prizepicks-nba")
 async def debug_prizepicks_nba():
-    """Diagnostic: show raw PrizePicks NBA props — teams, player names, lines."""
+    """Diagnostic: show raw PrizePicks NBA props + leagues list for NBA league_id."""
     from data.fetcher import fetch as _http_fetch
-    _PP_URL = "https://api.prizepicks.com/projections"
     _PP_HDRS = {
-        "User-Agent": "Mozilla/5.0 (compatible; BetModel/1.0)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept":     "application/json",
         "Referer":    "https://app.prizepicks.com/",
+        "Origin":     "https://app.prizepicks.com",
     }
+
+    # ── Check PP leagues to confirm NBA league_id ─────────────────────────────
+    leagues_raw = _http_fetch("https://api.prizepicks.com/leagues",
+                              headers=_PP_HDRS, use_cache=False)
+    nba_leagues: list = []
+    if leagues_raw:
+        for lg in leagues_raw.get("data", []):
+            lg_name = (lg.get("attributes", {}).get("name") or "").upper()
+            if "NBA" in lg_name or "BASKETBALL" in lg_name:
+                nba_leagues.append({
+                    "id":   lg.get("id"),
+                    "name": lg.get("attributes", {}).get("name"),
+                })
+
+    # ── Fetch projections ─────────────────────────────────────────────────────
     raw = _http_fetch(
-        _PP_URL,
+        "https://api.prizepicks.com/projections",
         params={"league_id": 7, "per_page": 500, "single_stat": "true",
                 "game_mode": "pickem"},
         headers=_PP_HDRS,
         use_cache=False,
     )
     if not raw:
-        return {"error": "PrizePicks returned empty/None"}
+        return {
+            "error": "PrizePicks /projections returned empty/None (possible 403/429)",
+            "nba_leagues_found": nba_leagues,
+        }
 
-    # Build player map from included sideloads
+    _pp_data     = raw.get("data", [])
+    _pp_included = raw.get("included", [])
+    inc_types    = list({i.get("type") for i in _pp_included})
+
+    # ── Structure diagnostics ─────────────────────────────────────────────────
+    first_proj_attrs: dict = {}
+    first_proj_rels: dict  = {}
+    if _pp_data:
+        first_proj_attrs = _pp_data[0].get("attributes", {})
+        first_proj_rels  = {k: v for k, v in _pp_data[0].get("relationships", {}).items()}
+
+    sample_included: dict = {}
+    for _ii in _pp_included:
+        _it = _ii.get("type")
+        if _it not in sample_included:
+            sample_included[_it] = {
+                "attr_keys": list(_ii.get("attributes", {}).keys()),
+                "sample":    {k: v for k, v in list(_ii.get("attributes", {}).items())[:6]},
+            }
+
+    # ── Build player map + collect sample props ───────────────────────────────
     pmap: dict = {}
-    for item in raw.get("included", []):
+    for item in _pp_included:
         if item.get("type") in ("new_player", "player"):
             pid   = str(item.get("id", ""))
             attrs = item.get("attributes", {})
-            name  = (attrs.get("display_name") or attrs.get("name") or "").strip()
-            team  = (attrs.get("team") or attrs.get("team_abbreviation") or "").upper()
+            name  = (attrs.get("display_name") or attrs.get("name")
+                     or (attrs.get("first_name","") + " " + attrs.get("last_name","")).strip()
+                     or "").strip()
+            team  = (attrs.get("team") or attrs.get("team_abbr")
+                     or attrs.get("team_abbreviation") or "").upper()
             if name and pid:
-                pmap[pid] = {"name": name, "team": team, "pos": attrs.get("position","")}
+                pmap[pid] = {"name": name, "team": team}
 
-    # Collect sample props
-    sample, teams_seen = [], set()
-    for proj in raw.get("data", []):
+    sample: list = []
+    teams_seen: set = set()
+    parse_fail = 0
+    for proj in _pp_data:
         if "projection" not in (proj.get("type") or "").lower():
             continue
         attrs  = proj.get("attributes", {})
         rel    = proj.get("relationships", {})
-        pid    = str(rel.get("new_player", rel.get("player", {}))
-                        .get("data", {}).get("id", ""))
-        pinfo  = pmap.get(pid, {})
-        name   = pinfo.get("name", "")
-        team   = pinfo.get("team", "")
+
+        name = team = ""
+        # Try Structure A
+        name = (attrs.get("name") or attrs.get("player_name") or attrs.get("display_name") or "").strip()
+        team = (attrs.get("team") or attrs.get("team_abbr") or attrs.get("team_abbreviation") or "").strip().upper()
+        # Try Structure B
+        if not name:
+            _po  = attrs.get("player", {})
+            if isinstance(_po, dict):
+                name = (_po.get("name") or _po.get("display_name") or "").strip()
+                team = (_po.get("team") or "").strip().upper()
+        # Try Structure C
+        if not name:
+            for _rk in ("new_player", "player", "projection_player"):
+                _rd  = rel.get(_rk, {}).get("data", {})
+                _pid = str(_rd.get("id", "")) if isinstance(_rd, dict) else ""
+                if _pid and _pid in pmap:
+                    name = pmap[_pid]["name"]
+                    team = pmap[_pid]["team"]
+                    break
+
         stat   = attrs.get("stat_type", "")
         line   = attrs.get("line_score", 0)
         status = attrs.get("status", "")
         if team:
             teams_seen.add(team)
         if len(sample) < 30:
-            sample.append({"player": name, "team": team, "stat_type": stat,
-                           "line": line, "status": status})
+            sample.append({"player": name or "(unknown)", "team": team or "(unknown)",
+                           "stat_type": stat, "line": line, "status": status})
+        if not name or not team:
+            parse_fail += 1
 
     return {
-        "total_projections": len(raw.get("data", [])),
-        "included_players":  len(pmap),
-        "unique_teams":      sorted(teams_seen),
-        "sample_props":      sample,
-        "first_included_types": list({i.get("type") for i in raw.get("included", [])})[:10],
+        "total_projections":     len(_pp_data),
+        "included_players_map":  len(pmap),
+        "unique_teams":          sorted(teams_seen),
+        "parse_failures":        parse_fail,
+        "nba_leagues_found":     nba_leagues,
+        "included_types":        inc_types,
+        "first_proj_attr_keys":  list(first_proj_attrs.keys()),
+        "first_proj_rel_keys":   list(first_proj_rels.keys()),
+        "sample_included_types": sample_included,
+        "sample_props":          sample,
     }
 
 
