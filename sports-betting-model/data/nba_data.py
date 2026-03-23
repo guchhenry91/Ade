@@ -5,7 +5,9 @@ Secondary: balldontlie.io   (free, BALLDONTLIE_KEY env var for higher limits)
 """
 from __future__ import annotations
 import re
+import time
 import logging
+import threading
 from typing import Any, Dict, List, Optional
 
 from data.fetcher import espn_fetch, bdl_fetch
@@ -170,12 +172,42 @@ def get_player_game_log(player_id: int, season: int = 2024,
 
 # ── All players for a team (Ball Don't Lie) ──────────────────────────────────
 
+# In-memory cache for BDL team map — avoids race condition where parallel
+# ThreadPoolExecutor workers all miss the disk cache simultaneously, firing
+# 8+ simultaneous requests and triggering HTTP 429.
+_bdl_team_map_cache: Dict[str, Any] = {}
+_bdl_team_map_lock  = threading.Lock()
+_BDL_TEAM_MAP_TTL   = 86400  # 24 hours
+
+
 def get_bdl_team_map() -> Dict[str, int]:
-    """Return {abbreviation: bdl_team_id} for all 30 NBA teams."""
-    data = bdl_fetch("teams", {"per_page": 40})
-    if not data:
-        return {}
-    return {t.get("abbreviation", ""): t.get("id") for t in data.get("data", [])}
+    """Return {abbreviation: bdl_team_id} for all 30 NBA teams.
+
+    Cached in memory for 24 h with a threading lock so parallel callers
+    only fire one HTTP request regardless of how many threads ask at once.
+    """
+    now = time.time()
+
+    # Fast path: read under lock
+    with _bdl_team_map_lock:
+        if _bdl_team_map_cache.get("expires", 0) > now:
+            return _bdl_team_map_cache["data"]
+
+    # Slow path: fetch outside lock, then store under lock
+    data   = bdl_fetch("teams", {"per_page": 40})
+    result = {}
+    if data:
+        result = {t.get("abbreviation", ""): t.get("id")
+                  for t in data.get("data", [])}
+
+    with _bdl_team_map_lock:
+        # Another thread may have populated the cache while we were fetching.
+        # Only overwrite if we got a real result, or the cache is still empty.
+        if result or _bdl_team_map_cache.get("expires", 0) <= now:
+            _bdl_team_map_cache["data"]    = result
+            _bdl_team_map_cache["expires"] = now + _BDL_TEAM_MAP_TTL
+
+    return _bdl_team_map_cache.get("data", result)
 
 
 def get_team_players_with_averages(team_abbr: str, season: int = 2024) -> List[Dict]:

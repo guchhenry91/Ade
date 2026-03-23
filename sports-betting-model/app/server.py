@@ -70,6 +70,13 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 async def _startup_preload():
     """Warm the cache in background so the first real request is fast."""
     def _preload():
+        import os as _os
+        if not _os.getenv("BALLDONTLIE_KEY", ""):
+            print(
+                "[WARNING] BALLDONTLIE_KEY not set — NBA player stats will be severely "
+                "rate-limited. Add BALLDONTLIE_KEY to Render environment variables. "
+                "Free tier available at https://www.balldontlie.io"
+            )
         today_str = date.today().strftime("%Y%m%d")
         print("[STARTUP] Preloading NBA / MLB / NHL in background…")
         try:
@@ -384,8 +391,10 @@ def _build_nba_games(today_str: str) -> list:
         nba_standings    = get_nba_win_pcts()  # {team_name_lower: win_pct} — 6h cache
 
         raw_games = nba_get_games(dates=today_str)
-        # Parallel BDL fetch: all team rosters in one ThreadPoolExecutor call
-        # (was sequential → ~200-500ms × 20 teams = 4-10s; now ~500ms total)
+        # Parallel BDL fetch: limited to 3 workers to avoid bursting the rate limit.
+        # get_bdl_team_map() is cached in-memory (24h) so all workers share one fetch.
+        # Each team then needs 2 more BDL calls (players list + season averages).
+        # With 3 workers: 6 simultaneous calls max — safe for both free and paid tiers.
         unique_abbrs = list({
             abbr for g in raw_games
             for abbr in (g.get("home_abbr", ""), g.get("away_abbr", "")) if abbr
@@ -393,8 +402,12 @@ def _build_nba_games(today_str: str) -> list:
         bdl_by_abbr: dict[str, list] = {}
         if unique_abbrs:
             def _fetch_abbr(abbr):
-                return abbr, get_team_players_with_averages(abbr, season=BDL_SEASON)
-            with ThreadPoolExecutor(max_workers=min(8, len(unique_abbrs))) as _ex:
+                try:
+                    return abbr, get_team_players_with_averages(abbr, season=BDL_SEASON)
+                except Exception as _e:
+                    print(f"[NBA] BDL fetch failed for {abbr}: {_e}")
+                    return abbr, []
+            with ThreadPoolExecutor(max_workers=min(3, len(unique_abbrs))) as _ex:
                 for abbr, players in _ex.map(_fetch_abbr, unique_abbrs):
                     bdl_by_abbr[abbr] = players or []
             print(f"[NBA] BDL parallel fetch: {sum(len(v) for v in bdl_by_abbr.values())} players for {len(bdl_by_abbr)} teams")
