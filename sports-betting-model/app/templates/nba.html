@@ -219,7 +219,6 @@
   {% if roster %}
   <div class="team-label">{{ team_label }} · {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}</div>
   <div style="padding:0 12px;" id="nba-grid-{{ gid }}-{{ loop.index0 }}">
-
     {% for p in roster %}
     {# Find highest-confidence prop for sort key and filter matching #}
     {% set best_conf = namespace(val=0, stat='', stars=0) %}
@@ -341,14 +340,12 @@
     {% endfor %}
 
   </div>
-  {% endif %}
-  {% endfor %}
-
-  {% if not game.home_roster and not game.away_roster %}
-  <div style="padding:24px;text-align:center;color:var(--txt3);font-size:13px;">
-    No player prop data available yet — check back closer to tip-off.
+  {% else %}
+  <div style="padding:12px 16px;color:var(--txt3);font-size:12px;">
+    No PrizePicks props available for {{ abbr }} tonight.
   </div>
   {% endif %}
+  {% endfor %}
 
   </div>
 </div>
