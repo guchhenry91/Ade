@@ -17,10 +17,6 @@ LEAGUES = {
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports"
 ESPN_CORE = "https://sports.core.api.espn.com/v2/sports"
 
-# ── Ball Don't Lie – NBA (free tier, no key needed for basic) ────────────────
-BDL_BASE = "https://api.balldontlie.io/v1"
-BDL_API_KEY = ""          # optional – set env var BALLDONTLIE_KEY for higher rate limits
-
 # ── API-Football (free tier: 100 req/day) ────────────────────────────────────
 API_FOOTBALL_KEY = ""     # set env var API_FOOTBALL_KEY
 API_FOOTBALL_HOST = "v3.football.api-sports.io"

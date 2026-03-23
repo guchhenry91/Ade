@@ -1,18 +1,23 @@
 """
 NBA data layer.
-Primary  : ESPN public API  (no key)
-Secondary: balldontlie.io   (free, BALLDONTLIE_KEY env var for higher limits)
+Primary  : ESPN public API  (no key, no rate limits)
+All BDL (Ball Don't Lie) calls have been removed. ESPN is free and reliable.
 """
 from __future__ import annotations
 import re
 import time
 import logging
 import threading
-from typing import Any, Dict, List, Optional
+import unicodedata
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional, Tuple
 
-from data.fetcher import espn_fetch, bdl_fetch
+from data.fetcher import espn_fetch, fetch
 
 logger = logging.getLogger(__name__)
+
+# NBA data: ESPN free API (no key required)
+# Replaced BDL March 2026 — was causing 429 rate-limit errors
 
 
 def _espn_team_id(team_obj) -> str:
@@ -63,7 +68,6 @@ def get_games(dates: Optional[str] = None) -> List[Dict]:
                 })
 
         def _record_wins_losses(competitor: dict) -> tuple:
-            """Extract (wins, losses) from ESPN competitor records."""
             for rec in competitor.get("records", []):
                 if rec.get("type") in ("total", "overall"):
                     summary = rec.get("summary", "")
@@ -131,152 +135,192 @@ def get_all_teams() -> List[Dict]:
     return teams
 
 
-# ── Player season averages (Ball Don't Lie) ──────────────────────────────────
+# ── ESPN Player lookup — in-memory cache (prevents parallel race conditions) ─
 
-def get_season_averages(player_ids: List[int], season: int = 2024) -> List[Dict]:
+_espn_athlete_id_cache: Dict[str, Tuple[Optional[str], float]] = {}
+_espn_cache_lock = threading.Lock()
+
+
+def get_espn_athlete_id(player_name: str) -> Optional[str]:
+    """Search ESPN for an NBA athlete by name. Returns ESPN athlete_id or None.
+
+    Normalises accents (Dončić → Doncic) for reliable search.
+    Cached in memory for 24 h.
     """
-    Fetch season averages for a list of player IDs from balldontlie.
-    Returns list of stat dicts.
-    """
-    if not player_ids:
-        return []
+    # Normalize accents so Dončić → Doncic for search
+    normalized = unicodedata.normalize("NFD", player_name)
+    ascii_name  = normalized.encode("ascii", "ignore").decode()
+    cache_key   = ascii_name.lower().strip()
 
-    id_params = "&".join(f"player_ids[]={pid}" for pid in player_ids)
-    data = bdl_fetch(f"season_averages?season={season}&{id_params}")
-    if not data:
-        return []
-    return data.get("data", [])
-
-
-def search_players(name: str) -> List[Dict]:
-    """Search players by name on balldontlie."""
-    data = bdl_fetch("players", {"search": name, "per_page": 5})
-    if not data:
-        return []
-    return data.get("data", [])
-
-
-def get_player_game_log(player_id: int, season: int = 2024,
-                        last_n: int = 10) -> List[Dict]:
-    """Return last N game-log entries for a player."""
-    data = bdl_fetch("stats", {
-        "player_ids[]": player_id,
-        "seasons[]":    season,
-        "per_page":     last_n,
-        "sort_order":   "desc",
-    })
-    if not data:
-        return []
-    return data.get("data", [])
-
-
-# ── All players for a team (Ball Don't Lie) ──────────────────────────────────
-
-# In-memory cache for BDL team map — avoids race condition where parallel
-# ThreadPoolExecutor workers all miss the disk cache simultaneously, firing
-# 8+ simultaneous requests and triggering HTTP 429.
-_bdl_team_map_cache: Dict[str, Any] = {}
-_bdl_team_map_lock  = threading.Lock()
-_BDL_TEAM_MAP_TTL   = 86400  # 24 hours
-
-
-def get_bdl_team_map() -> Dict[str, int]:
-    """Return {abbreviation: bdl_team_id} for all 30 NBA teams.
-
-    Cached in memory for 24 h with a threading lock so parallel callers
-    only fire one HTTP request regardless of how many threads ask at once.
-    """
     now = time.time()
+    with _espn_cache_lock:
+        entry = _espn_athlete_id_cache.get(cache_key)
+        if entry is not None:
+            athlete_id, expires = entry
+            if now < expires:
+                return athlete_id
 
-    # Fast path: read under lock
-    with _bdl_team_map_lock:
-        if _bdl_team_map_cache.get("expires", 0) > now:
-            return _bdl_team_map_cache["data"]
-
-    # Slow path: fetch outside lock, then store under lock
-    data   = bdl_fetch("teams", {"per_page": 40})
-    result = {}
+    data = espn_fetch("basketball", "nba", "athletes",
+                      params={"search": ascii_name})
+    athlete_id: Optional[str] = None
     if data:
-        result = {t.get("abbreviation", ""): t.get("id")
-                  for t in data.get("data", [])}
+        athletes = data.get("athletes", [])
+        target = cache_key
+        for ath in athletes[:5]:
+            ath_name = (ath.get("displayName") or ath.get("fullName") or "").lower()
+            ath_norm = (unicodedata.normalize("NFD", ath_name)
+                        .encode("ascii", "ignore").decode().lower())
+            if ath_norm == target or target in ath_norm or ath_norm in target:
+                athlete_id = str(ath.get("id", "")) or None
+                break
+        if not athlete_id and athletes:
+            athlete_id = str(athletes[0].get("id", "")) or None
 
-    with _bdl_team_map_lock:
-        # Another thread may have populated the cache while we were fetching.
-        # Only overwrite if we got a real result, or the cache is still empty.
-        if result or _bdl_team_map_cache.get("expires", 0) <= now:
-            _bdl_team_map_cache["data"]    = result
-            _bdl_team_map_cache["expires"] = now + _BDL_TEAM_MAP_TTL
+    with _espn_cache_lock:
+        _espn_athlete_id_cache[cache_key] = (athlete_id, now + 86400)
 
-    return _bdl_team_map_cache.get("data", result)
+    return athlete_id
 
 
-def get_team_players_with_averages(team_abbr: str, season: int = 2024) -> List[Dict]:
+def get_espn_player_stats(athlete_id: str) -> Dict[str, float]:
+    """Fetch season per-game averages for an ESPN NBA athlete.
+
+    Parses ESPN's splits.categories looking for the per-game average category.
+    Returns dict with keys: pts, reb, ast, fg3m, stl, blk.
     """
-    Fetch every active player on *team_abbr* with their season per-game averages
-    from Ball Don't Lie.  Returns list sorted by minutes played desc.
-    Players with 0 pts and < 5 min are skipped (DNP / two-ways).
-    """
-    team_map = get_bdl_team_map()
-    team_id  = team_map.get(team_abbr.upper() if team_abbr else "")
-    if not team_id:
-        logger.debug("BDL team_id not found for abbr %s", team_abbr)
-        return []
+    data = espn_fetch("basketball", "nba", f"athletes/{athlete_id}/stats")
+    if not data:
+        return {}
 
-    players_data = bdl_fetch("players", {"team_ids[]": team_id, "per_page": 100})
-    if not players_data:
-        return []
-    players   = players_data.get("data", [])
-    player_ids = [p["id"] for p in players]
-    if not player_ids:
-        return []
-
-    # Fetch all season averages in one request
-    id_qs     = "&".join(f"player_ids[]={pid}" for pid in player_ids)
-    avgs_data = bdl_fetch(f"season_averages?season={season}&{id_qs}")
-    avgs_map  = {}
-    if avgs_data:
-        for a in avgs_data.get("data", []):
-            avgs_map[a.get("player_id")] = a
-
-    def _min(avg: dict) -> float:
-        """Parse 'MM:SS' or numeric minutes string → float."""
-        raw = avg.get("min") or "0"
-        if isinstance(raw, str) and ":" in raw:
-            parts = raw.split(":")
-            return float(parts[0]) + float(parts[1]) / 60
-        try:
-            return float(raw)
-        except (TypeError, ValueError):
-            return 0.0
-
-    result = []
-    for p in players:
-        pid  = p["id"]
-        avg  = avgs_map.get(pid, {})
-        pts  = float(avg.get("pts", 0) or 0)
-        mins = _min(avg)
-        if pts < 1.0 and mins < 5.0:   # skip non-contributors
+    stat_values: Dict[str, float] = {}
+    # ESPN returns stats under splits.categories or directly under categories
+    categories = (data.get("splits", {}).get("categories", [])
+                  or data.get("categories", []))
+    for cat in categories:
+        cat_name = (cat.get("name") or "").lower()
+        if cat_name not in ("avg", "pergame", "perGame", "average", "averages"):
             continue
-        result.append({
-            "player_id": pid,
-            "name":      f"{p.get('first_name','').strip()} {p.get('last_name','').strip()}".strip(),
-            "position":  p.get("position", ""),
-            "pts":       round(pts, 1),
-            "reb":       round(float(avg.get("reb", 0) or 0), 1),
-            "ast":       round(float(avg.get("ast", 0) or 0), 1),
-            "fg3m":      round(float(avg.get("fg3m", 0) or 0), 1),
-            "stl":       round(float(avg.get("stl", 0) or 0), 1),
-            "blk":       round(float(avg.get("blk", 0) or 0), 1),
-            "min":       round(mins, 1),
-            "gp":        int(avg.get("games_played", 0) or 0),
-        })
+        for s in cat.get("stats", []):
+            stat_values[s.get("name", "")] = float(s.get("value", 0) or 0)
+        if stat_values:
+            break  # stop at first matching category
 
-    return sorted(result, key=lambda x: x["min"], reverse=True)
+    if not stat_values:
+        return {}
+
+    return {
+        "pts":  float(stat_values.get("avgPoints",
+                stat_values.get("pts",
+                stat_values.get("points", 0)))),
+        "reb":  float(stat_values.get("avgRebounds",
+                stat_values.get("reb",
+                stat_values.get("rebounds", 0)))),
+        "ast":  float(stat_values.get("avgAssists",
+                stat_values.get("ast",
+                stat_values.get("assists", 0)))),
+        "fg3m": float(stat_values.get("avgThreePointFieldGoalsMade",
+                stat_values.get("fg3m",
+                stat_values.get("threePointFieldGoalsMade", 0)))),
+        "stl":  float(stat_values.get("avgSteals",
+                stat_values.get("stl",
+                stat_values.get("steals", 0)))),
+        "blk":  float(stat_values.get("avgBlocks",
+                stat_values.get("blk",
+                stat_values.get("blocks", 0)))),
+    }
 
 
-# ── Standings (win% per team) ────────────────────────────────────────────────
+def get_espn_player_logs(athlete_id: str, num_games: int = 10) -> List[Dict]:
+    """Fetch last N game logs for an ESPN NBA athlete.
 
-_standings_cache: dict = {}  # {"data": {...}, "ts": float}
+    Returns list of dicts with keys: pts, reb, ast, fg3m.
+    ESPN returns a labels array + events dict; we align values to labels.
+    """
+    data = espn_fetch("basketball", "nba", f"athletes/{athlete_id}/gamelog")
+    if not data:
+        return []
+
+    labels = data.get("labels", [])
+
+    def _find_col(keywords: List[str]) -> Optional[int]:
+        """Find column index where label matches any keyword (case-insensitive)."""
+        for i, lbl in enumerate(labels):
+            lbl_up = lbl.upper()
+            if any(k.upper() in lbl_up for k in keywords):
+                return i
+        return None
+
+    pts_col  = _find_col(["PTS", "POINT"])
+    reb_col  = _find_col(["REB", "TRB"])
+    ast_col  = _find_col(["AST"])
+    fg3m_col = _find_col(["3PM", "3P", "THREE", "FG3M"])
+
+    events = data.get("events", {})
+    event_list: list = list(events.values()) if isinstance(events, dict) else (events or [])
+
+    logs: List[Dict] = []
+    for event in event_list:
+        stats_arr = event.get("stats", [])
+        if not stats_arr:
+            continue
+        entry: Dict[str, float] = {}
+        for field, col in [("pts", pts_col), ("reb", reb_col),
+                            ("ast", ast_col),  ("fg3m", fg3m_col)]:
+            if col is not None and col < len(stats_arr):
+                try:
+                    entry[field] = float(stats_arr[col])
+                except (TypeError, ValueError):
+                    entry[field] = 0.0
+        if entry:
+            logs.append(entry)
+
+    return logs[-num_games:] if logs else []
+
+
+def fetch_all_player_stats(player_names: List[str]) -> Dict[str, Dict]:
+    """Parallel-fetch ESPN athlete ID + season stats + game logs for all names.
+
+    Uses 10 workers — ESPN has no rate limit so parallelism is safe.
+
+    Returns:
+        {name_lower: {"name": str, "athlete_id": str,
+                      "pts": float, "reb": float, "ast": float, "fg3m": float,
+                      "stl": float, "blk": float, "game_logs": list}}
+    """
+    def _fetch_one(name: str) -> Tuple[str, Dict]:
+        try:
+            athlete_id = get_espn_athlete_id(name)
+            if not athlete_id:
+                logger.debug("ESPN: athlete_id not found for %s", name)
+                return name, {}
+            season_stats = get_espn_player_stats(athlete_id) or {}
+            game_logs    = get_espn_player_logs(athlete_id)
+            return name, {
+                "name":       name,
+                "athlete_id": athlete_id,
+                "game_logs":  game_logs,
+                **season_stats,
+            }
+        except Exception as exc:
+            logger.debug("ESPN player fetch failed for %s: %s", name, exc)
+            return name, {}
+
+    results: Dict[str, Dict] = {}
+    if not player_names:
+        return results
+
+    max_workers = min(10, max(1, len(player_names)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for name, player_data in executor.map(_fetch_one, player_names):
+            if player_data:
+                results[name.lower()] = player_data
+
+    return results
+
+
+# ── Standings (win% per team) ─────────────────────────────────────────────────
+
+_standings_cache: dict = {}
 _STANDINGS_TTL = 6 * 3600   # 6-hour cache
 
 
@@ -285,7 +329,6 @@ def get_nba_win_pcts() -> Dict[str, float]:
     Return {team_name_lower: win_pct} from ESPN NBA standings.
     Cached for 6 hours. Falls back to {} on failure.
     """
-    import time
     now = time.time()
     if _standings_cache.get("ts", 0) + _STANDINGS_TTL > now:
         return _standings_cache.get("data", {})
@@ -295,7 +338,6 @@ def get_nba_win_pcts() -> Dict[str, float]:
         data = espn_fetch("basketball", "nba", "standings")
         if not data:
             return result
-        # ESPN standings may be nested under "children" (by conference) or flat
         entries: list = []
         for child in data.get("children", [data]):
             st = child.get("standings", child)
@@ -328,12 +370,11 @@ def get_nba_win_pcts() -> Dict[str, float]:
     return result
 
 
-# ── Net-rating helper ────────────────────────────────────────────────────────
+# ── Net-rating helper ─────────────────────────────────────────────────────────
 
 def get_team_net_rating(team_id: str) -> float:
     """Return team net rating (pts/100 poss). Falls back to 0.0."""
     stats = get_team_stats(team_id)
-    # ESPN may expose 'netRating' or we approximate from offensive / defensive
     if "netRating" in stats:
         return float(stats["netRating"])
     off = stats.get("offensiveRating", 110.0)

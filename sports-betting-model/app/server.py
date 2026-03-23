@@ -70,15 +70,8 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 async def _startup_preload():
     """Warm the cache in background so the first real request is fast."""
     def _preload():
-        import os as _os
-        if not _os.getenv("BALLDONTLIE_KEY", ""):
-            print(
-                "[WARNING] BALLDONTLIE_KEY not set — NBA player stats will be severely "
-                "rate-limited. Add BALLDONTLIE_KEY to Render environment variables. "
-                "Free tier available at https://www.balldontlie.io"
-            )
         today_str = date.today().strftime("%Y%m%d")
-        print("[STARTUP] Preloading NBA / MLB / NHL in background…")
+        print("[STARTUP] Preloading NBA / MLB / NHL in background… (ESPN data source)")
         try:
             with ThreadPoolExecutor(max_workers=3) as ex:
                 futs = {
@@ -172,16 +165,11 @@ def _ml_to_prob(ml) -> float:
 # ── Game-data builders (reused by today + sport pages) ───────────────────────
 
 def _build_nba_games(today_str: str) -> list:
-    from data.nba_data   import get_games as nba_get_games, \
-                                get_team_players_with_averages, get_nba_win_pcts
+    from data.nba_data   import get_games as nba_get_games, get_nba_win_pcts, \
+                                fetch_all_player_stats
     from data.odds_api   import build_odds_lookup, find_game_odds, decimal_to_american
     from data.prizepicks import get_nba_projections
-    from data.fetcher    import bdl_fetch
     from utils.stats     import confidence_label, shot_attempt_over_under, threept_made_ou
-
-    # Dynamic season: NBA season starts in October; March 2026 → season 2025
-    _yr = date.today()
-    BDL_SEASON = _yr.year if _yr.month >= 10 else _yr.year - 1
 
     # ── PrizePicks line lookup: real market lines per (player_name, stat_key) ─
     _PP_STAT_KEY = {
@@ -193,9 +181,8 @@ def _build_nba_games(today_str: str) -> list:
                           "points+", "fantasy", "score", "combo")
 
     pp_lines: dict[tuple, float] = {}
-    # team_abbr_upper → {player_name_lower → {pts, reb, ast, fg3m from PP lines}}
+    # team_abbr_upper → {name_lower → {name, pos}} for ESPN batch fetch
     pp_by_team: dict[str, dict] = {}
-    _STAT_TO_BDL = {"pts": "pts", "reb": "reb", "ast": "ast", "3pm": "fg3m"}
     try:
         for proj in get_nba_projections():
             stat_raw = (proj.get("stat") or "").lower()
@@ -210,7 +197,6 @@ def _build_nba_games(today_str: str) -> list:
             team_abbr = (proj.get("team") or "").upper().strip()
             if line_val > 0:
                 pp_lines[(name_key, sk)] = line_val
-                # Build per-team player lookup for BDL fallback
                 if team_abbr:
                     if team_abbr not in pp_by_team:
                         pp_by_team[team_abbr] = {}
@@ -218,59 +204,25 @@ def _build_nba_games(today_str: str) -> list:
                         pp_by_team[team_abbr][name_key] = {
                             "name": name_raw,
                             "pos":  (proj.get("pos") or ""),
-                            "pts": 0.0, "reb": 0.0, "ast": 0.0, "fg3m": 0.0,
                         }
-                    bdl_key = _STAT_TO_BDL.get(sk, sk)
-                    pp_by_team[team_abbr][name_key][bdl_key] = line_val
         print(f"[NBA] PrizePicks lines: {len(pp_lines)} entries, {len(pp_by_team)} teams")
     except Exception as _ppe:
         print(f"[NBA] PrizePicks line fetch failed: {_ppe}")
 
-    def _nba_props_from_pp(abbr: str) -> list:
-        """Build NBA roster props from PrizePicks team players when BDL fails."""
-        players = list(pp_by_team.get(abbr.upper() if abbr else "", {}).values())
-        if not players:
-            return []
-        return _nba_props_from_avgs(players)
-
-    # ── Batch game-log fetch: last 10 games for a list of BDL players ─────────
-    def _fetch_batch_logs(players: list) -> dict:
-        """One BDL call per 15 players → {player_id: [last 10 game dicts]}"""
-        pids = [p["player_id"] for p in players if p.get("player_id")]
-        if not pids:
-            return {}
-        all_logs: dict = {}
-        for i in range(0, min(len(pids), 30), 15):
-            chunk = pids[i:i + 15]
-            id_qs = "&".join(f"player_ids[]={pid}" for pid in chunk)
-            data  = bdl_fetch(
-                f"stats?{id_qs}&seasons[]={BDL_SEASON}&per_page=150&sort_order=desc"
-            )
-            if not data:
-                continue
-            for stat in data.get("data", []):
-                pid = stat.get("player_id") or (stat.get("player") or {}).get("id")
-                if pid:
-                    all_logs.setdefault(pid, [])
-                    if len(all_logs[pid]) < 10:
-                        all_logs[pid].append(stat)
-        return all_logs
-
     # NBA per-game stat caps to reject ESPN fantasy composites / season totals
-    # No modern player averages > these thresholds per game
     _STAT_CAPS = {"pts": 45.0, "reb": 20.0, "ast": 15.0, "fg3m": 7.0}
 
-    # Stat key → BDL field name for game-log lookup
-    _BDL_FIELD = {"pts": "pts", "reb": "reb", "ast": "ast", "3pm": "fg3m",
-                  "stl": "stl", "blk": "blk"}
+    # Stat key → field name in ESPN game-log dicts (same names used by get_espn_player_logs)
+    _STAT_FIELD = {"pts": "pts", "reb": "reb", "ast": "ast", "3pm": "fg3m",
+                   "stl": "stl", "blk": "blk"}
 
     def _make_prop(stat_label: str, avg: float, std, player_name: str, stat_key: str,
                    player_id=None, game_logs=None):
         """
         Build one prop dict using:
-          1. Real BDL season avg for normal-distribution base
+          1. Real ESPN season avg for normal-distribution base
           2. PrizePicks line as market line (if available)
-          3. Hit-rate from last 5 / last 10 BDL game logs
+          3. Hit-rate from last 5 / last 10 ESPN game logs
           Weighted formula: 35% L5 hit-rate + 35% L10 hit-rate + 30% season-avg model
           Clamped [0.30, 0.82] so result always varies by player.
         """
@@ -285,10 +237,10 @@ def _build_nba_games(today_str: str) -> list:
         else:
             season_over, _ = shot_attempt_over_under(avg, line, std_factor=std)
 
-        # Game-log hit rates
-        bdl_field    = _BDL_FIELD.get(stat_key, stat_key)
+        # Game-log hit rates (ESPN game-log dicts use same field names as BDL)
+        stat_field   = _STAT_FIELD.get(stat_key, stat_key)
         player_logs  = (game_logs or {}).get(player_id, []) if player_id else []
-        last10_vals  = [float(g.get(bdl_field) or 0) for g in player_logs[:10]]
+        last10_vals  = [float(g.get(stat_field) or 0) for g in player_logs[:10]]
         last5_vals   = last10_vals[:5]
         last5_avg    = round(sum(last5_vals)  / len(last5_vals),  1) if last5_vals  else None
         last10_avg   = round(sum(last10_vals) / len(last10_vals), 1) if last10_vals else None
@@ -391,26 +343,49 @@ def _build_nba_games(today_str: str) -> list:
         nba_standings    = get_nba_win_pcts()  # {team_name_lower: win_pct} — 6h cache
 
         raw_games = nba_get_games(dates=today_str)
-        # Parallel BDL fetch: limited to 3 workers to avoid bursting the rate limit.
-        # get_bdl_team_map() is cached in-memory (24h) so all workers share one fetch.
-        # Each team then needs 2 more BDL calls (players list + season averages).
-        # With 3 workers: 6 simultaneous calls max — safe for both free and paid tiers.
-        unique_abbrs = list({
-            abbr for g in raw_games
-            for abbr in (g.get("home_abbr", ""), g.get("away_abbr", "")) if abbr
+
+        # ── ESPN batch fetch for all PrizePicks players ───────────────────────
+        # Collect unique player names from PP by team so we can look up real
+        # season averages + game logs from ESPN (no rate limit, no API key).
+        all_pp_player_names = list({
+            data["name"]
+            for team_data in pp_by_team.values()
+            for data in team_data.values()
+            if data.get("name")
         })
-        bdl_by_abbr: dict[str, list] = {}
-        if unique_abbrs:
-            def _fetch_abbr(abbr):
-                try:
-                    return abbr, get_team_players_with_averages(abbr, season=BDL_SEASON)
-                except Exception as _e:
-                    print(f"[NBA] BDL fetch failed for {abbr}: {_e}")
-                    return abbr, []
-            with ThreadPoolExecutor(max_workers=min(3, len(unique_abbrs))) as _ex:
-                for abbr, players in _ex.map(_fetch_abbr, unique_abbrs):
-                    bdl_by_abbr[abbr] = players or []
-            print(f"[NBA] BDL parallel fetch: {sum(len(v) for v in bdl_by_abbr.values())} players for {len(bdl_by_abbr)} teams")
+        espn_player_data: dict = {}
+        if all_pp_player_names:
+            try:
+                espn_player_data = fetch_all_player_stats(all_pp_player_names)
+                print(f"[NBA] ESPN stats: {len(espn_player_data)}/{len(all_pp_player_names)} players found")
+            except Exception as _espn_e:
+                print(f"[NBA] ESPN batch fetch failed: {_espn_e}")
+
+        # Game logs: {athlete_id: [{pts, reb, ast, fg3m}, ...]}
+        espn_game_logs: dict = {
+            data["athlete_id"]: data.get("game_logs", [])
+            for data in espn_player_data.values()
+            if data.get("athlete_id")
+        }
+
+        def _nba_props_from_pp_espn(abbr: str) -> list:
+            """Build NBA roster from PrizePicks players enriched with ESPN season stats."""
+            team_players = pp_by_team.get(abbr.upper() if abbr else "", {})
+            if not team_players:
+                return []
+            enriched = []
+            for name_lower, pp_data in team_players.items():
+                espn_data = espn_player_data.get(name_lower, {})
+                enriched.append({
+                    "name":      pp_data.get("name", name_lower),
+                    "pos":       pp_data.get("pos", ""),
+                    "pts":       float(espn_data.get("pts", 0.0)),
+                    "reb":       float(espn_data.get("reb", 0.0)),
+                    "ast":       float(espn_data.get("ast", 0.0)),
+                    "fg3m":      float(espn_data.get("fg3m", 0.0)),
+                    "player_id": espn_data.get("athlete_id"),  # ESPN athlete_id
+                })
+            return _nba_props_from_avgs(enriched, espn_game_logs)
 
         for g in raw_games:
             home_team = g.get("home_team") or "TBD"
@@ -424,7 +399,6 @@ def _build_nba_games(today_str: str) -> list:
             if g.get("home_ml"):
                 h_prob = _ml_to_prob(g.get("home_ml"))
             else:
-                # Try ESPN standings first (most reliable)
                 h_wpct = (nba_standings.get(home_team.lower())
                           or nba_standings.get(home_abbr.lower()))
                 a_wpct = (nba_standings.get(away_team.lower())
@@ -434,13 +408,12 @@ def _build_nba_games(today_str: str) -> list:
                     raw = h_wpct / (h_wpct + a_wpct)
                     h_prob = max(0.25, min(0.75, raw * 0.97 + 0.03))  # +3% HCA
                 else:
-                    # Fall back to scoreboard team records (log5)
                     hw = g.get("home_wins", 0) or 0
                     hl = g.get("home_losses", 0) or 0
                     aw = g.get("away_wins", 0) or 0
                     al = g.get("away_losses", 0) or 0
                     if hw + hl > 0 and aw + al > 0:
-                        hr = (hw / (hw + hl)) * 0.97 + 0.03  # +3% HCA
+                        hr = (hw / (hw + hl)) * 0.97 + 0.03
                         ar = aw / (aw + al)
                         h_prob = max(0.25, min(0.75, hr / (hr + ar)))
                     else:
@@ -453,36 +426,16 @@ def _build_nba_games(today_str: str) -> list:
             leaders = g.get("leaders", [])
             print(f"[NBA] {home_team} vs {away_team} — ESPN leaders: {len(leaders)}")
 
-            # Primary: BDL full team roster (pre-fetched in parallel above)
-            home_bdl = bdl_by_abbr.get(home_abbr, [])
-            away_bdl = bdl_by_abbr.get(away_abbr, [])
-            print(f"[NBA] BDL home={len(home_bdl)} away={len(away_bdl)}")
+            # Primary: PP players with real ESPN season stats + game logs
+            home_roster = _nba_props_from_pp_espn(home_abbr)
+            away_roster = _nba_props_from_pp_espn(away_abbr)
+            print(f"[NBA] ESPN home={len(home_roster)} away={len(away_roster)}")
 
-            # Batch-fetch game logs for all BDL players in 2 calls (home + away)
-            all_bdl = home_bdl + away_bdl
-            game_logs: dict = {}
-            if all_bdl:
-                try:
-                    game_logs = _fetch_batch_logs(all_bdl)
-                    print(f"[NBA] Game logs fetched for {len(game_logs)} players")
-                except Exception as _le:
-                    print(f"[NBA] Game log fetch failed: {_le}")
-
-            if home_bdl:
-                home_roster = _nba_props_from_avgs(home_bdl, game_logs)
-            else:
-                # Fallback 1: PrizePicks team players (correct team, no ESPN team_id bug)
-                home_roster = _nba_props_from_pp(home_abbr)
-                if not home_roster:
-                    # Fallback 2: ESPN competition leaders filtered by team_id
-                    home_roster = _nba_roster_from_leaders(leaders, home_id)
-
-            if away_bdl:
-                away_roster = _nba_props_from_avgs(away_bdl, game_logs)
-            else:
-                away_roster = _nba_props_from_pp(away_abbr)
-                if not away_roster:
-                    away_roster = _nba_roster_from_leaders(leaders, away_id)
+            # Fallback: ESPN competition leaders (already embedded in scoreboard)
+            if not home_roster:
+                home_roster = _nba_roster_from_leaders(leaders, home_id)
+            if not away_roster:
+                away_roster = _nba_roster_from_leaders(leaders, away_id)
 
             # Last resort: presets split evenly to avoid duplicates
             if not home_roster and not away_roster:
@@ -1077,10 +1030,31 @@ def _build_nhl_props(today_str: str) -> tuple[list, int]:
                     if not any(m in (p.get("stat") or "").lower() for m in _MMA_REJECT_STATS)]
         print(f"[NHL] PrizePicks (after MMA filter): {len(pp_projs)} projections")
 
+        # Build a {name_lower: {goals_pg, assists_pg, pts_pg, shots_pg, saves_pg}}
+        # map from NHL roster API so build_props_from_prizepicks can use real
+        # per-game averages instead of position priors.
+        nhl_player_stats: dict = {}
+        seen_teams: set = set()
+        for g in games:
+            for abbr in [g.get("home_abbr", ""), g.get("away_abbr", "")]:
+                if not abbr or abbr in seen_teams:
+                    continue
+                seen_teams.add(abbr)
+                try:
+                    roster = get_team_roster_stats(abbr)
+                    for p in roster:
+                        pname = p.get("name", "")
+                        if pname:
+                            nhl_player_stats[pname.lower()] = p
+                except Exception:
+                    pass
+        print(f"[NHL] NHL roster stats: {len(nhl_player_stats)} players")
+
         if pp_projs:
-            all_props = build_props_from_prizepicks(pp_projs)
+            # Pass real per-game averages so Poisson uses actual goal rates
+            all_props = build_props_from_prizepicks(pp_projs, nhl_player_stats)
         else:
-            # Fall back: NHL roster stats API — flatten to one entry per prop
+            # Fall back: build directly from NHL roster stats
             seen_players: set = set()
             for g in games:
                 for abbr in [g.get("home_abbr", ""), g.get("away_abbr", "")]:
@@ -1157,8 +1131,8 @@ async def nhl_page(request: Request):
 
 @app.get("/api/debug/nba")
 async def debug_nba():
-    """Diagnostic: returns raw ESPN leaders + BDL availability for today's NBA games."""
-    from data.nba_data import get_games as nba_get_games, get_team_players_with_averages
+    """Diagnostic: returns ESPN scoreboard leaders + ESPN athlete search test."""
+    from data.nba_data import get_games as nba_get_games, get_espn_athlete_id, get_espn_player_stats
     from datetime import date
     today_str = date.today().strftime("%Y%m%d")
     raw_games = nba_get_games(dates=today_str)
@@ -1166,24 +1140,26 @@ async def debug_nba():
     for g in raw_games:
         home_abbr = g.get("home_abbr", "")
         away_abbr = g.get("away_abbr", "")
-        try:
-            home_bdl = get_team_players_with_averages(home_abbr)
-        except Exception as e:
-            home_bdl = f"ERROR: {e}"
-        try:
-            away_bdl = get_team_players_with_averages(away_abbr)
-        except Exception as e:
-            away_bdl = f"ERROR: {e}"
+        leaders   = g.get("leaders", [])
+        # Test ESPN athlete lookup for a known player (first leader found)
+        test_player = next((l["name"] for l in leaders if l.get("name")), None)
+        espn_test = {}
+        if test_player:
+            try:
+                aid = get_espn_athlete_id(test_player)
+                stats = get_espn_player_stats(aid) if aid else {}
+                espn_test = {"player": test_player, "athlete_id": aid, "stats": stats}
+            except Exception as _e:
+                espn_test = {"player": test_player, "error": str(_e)}
         out.append({
-            "game": f"{g.get('home_team')} vs {g.get('away_team')}",
-            "home_id": g.get("home_id"), "away_id": g.get("away_id"),
-            "home_abbr": home_abbr, "away_abbr": away_abbr,
-            "espn_leaders_count": len(g.get("leaders", [])),
-            "espn_leaders": g.get("leaders", []),
-            "bdl_home_count": len(home_bdl) if isinstance(home_bdl, list) else home_bdl,
-            "bdl_home_sample": home_bdl[:2] if isinstance(home_bdl, list) else home_bdl,
-            "bdl_away_count": len(away_bdl) if isinstance(away_bdl, list) else away_bdl,
-            "bdl_away_sample": away_bdl[:2] if isinstance(away_bdl, list) else away_bdl,
+            "game":               f"{g.get('home_team')} vs {g.get('away_team')}",
+            "home_id":            g.get("home_id"),
+            "away_id":            g.get("away_id"),
+            "home_abbr":          home_abbr,
+            "away_abbr":          away_abbr,
+            "espn_leaders_count": len(leaders),
+            "espn_leaders":       leaders[:4],
+            "espn_player_test":   espn_test,
         })
     return {"today": today_str, "game_count": len(raw_games), "games": out}
 

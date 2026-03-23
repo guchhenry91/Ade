@@ -2,10 +2,17 @@
 NHL props model.
 Calculates OVER/UNDER probabilities for skater points/goals/assists/shots
 and goalie saves/save-percentage.
+
+Key fix (March 2026):
+- Goals/Assists/Points props at line 0.5 are BINARY events.
+  Use Poisson P(X ≥ 1) = 1 − e^(−λ) rather than normal distribution.
+  Old code set avg_est = line which always produced exactly 50% confidence.
+- Position-based λ priors used when real per-game averages are unavailable.
 """
 from __future__ import annotations
+import math
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from utils.stats import shot_attempt_over_under, threept_made_ou, confidence_label
 
@@ -23,6 +30,38 @@ _GOALIE_MARKETS: List[Tuple[str, str, float, float]] = [
     ("Saves",        "saves_pg",   0.18, 15.0),
 ]
 
+# Binary NHL stats — at line 0.5, use Poisson P(X ≥ 1) = 1 − e^(−λ)
+_BINARY_STATS = frozenset({"Goals", "Assists", "Points"})
+
+# Position-based λ priors (goals/assists/points per game) for when real stats
+# are unavailable. These are conservative mid-season NHL league averages.
+_NHL_STAT_PRIORS: Dict[str, Dict[str, float]] = {
+    "Goals": {
+        "C": 0.35, "LW": 0.32, "RW": 0.32, "D": 0.18, "G": 0.01, "": 0.28,
+    },
+    "Assists": {
+        "C": 0.45, "LW": 0.40, "RW": 0.38, "D": 0.42, "G": 0.01, "": 0.40,
+    },
+    "Points": {
+        "C": 0.80, "LW": 0.72, "RW": 0.70, "D": 0.60, "G": 0.01, "": 0.70,
+    },
+    "Shots": {
+        "C": 3.2,  "LW": 3.0,  "RW": 3.0,  "D": 2.2,  "G": 1.0,  "": 2.8,
+    },
+    "Saves": {
+        "G": 25.0, "": 25.0,
+    },
+}
+
+
+def _poisson_prob_score(lam: float) -> float:
+    """P(X ≥ 1) where X ~ Poisson(lambda). P = 1 − e^(−λ).
+    Used for binary 0.5-line props (will this player score/assist tonight?).
+    """
+    if lam <= 0:
+        return 0.05
+    return round(1.0 - math.exp(-lam), 4)
+
 
 def _stars(prob: float) -> int:
     if prob >= 0.85:
@@ -36,15 +75,30 @@ def _stars(prob: float) -> int:
     return 1
 
 
+def _nhl_over_prob(stat_label: str, avg: float, line: float, std: float) -> Tuple[float, float]:
+    """Compute (over_prob, under_prob) for an NHL stat.
+
+    For Goals/Assists/Points at line ≤ 0.5: Poisson (binary event).
+    For Shots/Saves (counting stats): normal distribution.
+    """
+    is_binary = stat_label in _BINARY_STATS and line <= 0.5
+    if is_binary:
+        over_p = _poisson_prob_score(avg)
+        under_p = 1.0 - over_p
+    else:
+        over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
+    return over_p, under_p
+
+
 def build_skater_props(player: Dict) -> List[Dict]:
-    """Build prop cards for a skater."""
+    """Build prop cards for a skater using real NHL per-game averages."""
     props: List[Dict] = []
     for label, key, std, min_avg in _SKATER_MARKETS:
         avg = float(player.get(key, 0) or 0)
         if avg < min_avg:
             continue
         line = max(0.5, round(avg * 2) / 2 - 0.5)
-        over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
+        over_p, under_p = _nhl_over_prob(label, avg, line, std)
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
         props.append({
             "stat":       label,
@@ -119,11 +173,19 @@ def _normalize_nhl_stat(stat_raw: str) -> Tuple[str, float]:
     return stat_raw, 0.60
 
 
-def build_props_from_prizepicks(pp_projections: List[Dict]) -> List[Dict]:
+def build_props_from_prizepicks(
+    pp_projections: List[Dict],
+    player_stats_map: Optional[Dict[str, Dict]] = None,
+) -> List[Dict]:
     """
-    Build NHL prop cards directly from PrizePicks projections.
+    Build NHL prop cards from PrizePicks projections.
     Rejects the entire batch if it contains MMA stats (wrong league_id).
     Returns flat list — one entry per (player × stat).
+
+    player_stats_map: optional {name_lower → {goals_pg, assists_pg, pts_pg,
+                                               shots_pg, saves_pg}} from NHL API.
+                      When provided, real per-game averages are used for
+                      probability calculation instead of position priors.
     """
     # Guard: reject MMA data masquerading as NHL
     all_stats_lower = [(p.get("stat") or "").lower() for p in pp_projections]
@@ -133,6 +195,15 @@ def build_props_from_prizepicks(pp_projections: List[Dict]) -> List[Dict]:
         logger.warning("NHL PrizePicks batch appears to be MMA data — discarding %d projections",
                        len(pp_projections))
         return []
+
+    # Stat label → key in player_stats_map dict
+    _LABEL_TO_STAT_KEY = {
+        "Goals":   "goals_pg",
+        "Assists":  "assists_pg",
+        "Points":   "pts_pg",
+        "Shots":    "shots_pg",
+        "Saves":    "saves_pg",
+    }
 
     results: List[Dict] = []
     for proj in pp_projections:
@@ -146,18 +217,36 @@ def build_props_from_prizepicks(pp_projections: List[Dict]) -> List[Dict]:
 
         stat_label, std_factor = _normalize_nhl_stat(stat_raw)
 
-        avg_est = line
-        over_p, under_p = shot_attempt_over_under(avg_est, line, std_factor=std_factor)
+        # Determine best available average for this player + stat
+        player_name = proj.get("name", "")
+        pos         = (proj.get("pos") or "").upper()
+        name_lower  = player_name.lower()
+
+        real_stats = (player_stats_map or {}).get(name_lower, {})
+        stat_key   = _LABEL_TO_STAT_KEY.get(stat_label)
+        real_avg   = float(real_stats.get(stat_key, 0)) if stat_key else 0.0
+
+        if real_avg > 0:
+            # Real NHL per-game average available — most accurate
+            avg_est = real_avg
+        else:
+            # Fall back to position-based prior (better than avg_est = line)
+            pos_priors = _NHL_STAT_PRIORS.get(stat_label, {})
+            avg_est = pos_priors.get(pos, pos_priors.get("", 0))
+            if avg_est <= 0:
+                avg_est = line  # last resort: line-based (50/50 estimate)
+
+        over_p, under_p = _nhl_over_prob(stat_label, avg_est, line, std_factor)
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
 
         results.append({
-            "name":       proj.get("name", ""),
+            "name":       player_name,
             "team":       proj.get("team", ""),
             "pos":        proj.get("pos", ""),
             "stat":       stat_label,
             "line":       line,
             "pp_line":    line,
-            "avg":        round(avg_est, 2),
+            "avg":        round(avg_est, 2) if avg_est < 2 else round(avg_est, 1),
             "over_prob":  round(over_p  * 100, 1),
             "under_prob": round(under_p * 100, 1),
             "pick":       pick,

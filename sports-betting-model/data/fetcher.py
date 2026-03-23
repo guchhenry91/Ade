@@ -1,13 +1,15 @@
 """
-Generic HTTP fetcher with retry logic and caching.
+Generic HTTP fetcher with retry logic and disk caching.
 All data-source modules use this as their HTTP client.
+
+NBA data: ESPN free API (no key required).
+BDL (Ball Don't Lie) has been removed — was causing HTTP 429 rate limits.
 """
 import os
 import time
 import json
 import hashlib
 import logging
-import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -17,10 +19,6 @@ logger = logging.getLogger(__name__)
 
 CACHE_DIR  = Path(__file__).parent.parent / ".cache"
 CACHE_TTL  = 3600   # seconds
-
-# One-time warning flags (per process)
-_bdl_no_key_warned = False
-_bdl_lock = threading.Lock()
 
 
 def _cache_path(url: str, params: dict) -> Path:
@@ -34,7 +32,8 @@ def fetch(url: str, params: Optional[Dict] = None, headers: Optional[Dict] = Non
     """
     Fetch JSON from *url* with optional disk cache.
     Returns parsed JSON or None on failure.
-    On HTTP 429 (rate limited): returns None immediately — no retries.
+    On HTTP 429: returns None immediately — no retries (retrying a rate limit
+    just makes it worse; callers should use a fallback data source).
     """
     params  = params or {}
     headers = headers or {}
@@ -64,10 +63,9 @@ def fetch(url: str, params: Optional[Dict] = None, headers: Optional[Dict] = Non
         except requests.exceptions.HTTPError as e:
             status = e.response.status_code
             if status == 429:
-                # Rate limited — return None immediately, do NOT retry.
-                # Retrying a 429 only makes the problem worse; callers should
-                # use their fallback data source instead.
-                logger.warning("[BDL] Rate limited (429) for %s — returning None, use fallback", url)
+                # Rate limited — return None immediately without retrying.
+                # Callers should use their ESPN fallback instead.
+                logger.warning("[RATE LIMIT 429] %s — returning None", url)
                 return None
             logger.warning("HTTP %s for %s (attempt %d)", status, url, attempt + 1)
             if status in (500, 502, 503):
@@ -95,31 +93,8 @@ def api_football_fetch(endpoint: str, params: Optional[Dict] = None) -> Optional
                  params=params, headers=headers)
 
 
-def bdl_fetch(endpoint: str, params: Optional[Dict] = None) -> Optional[Any]:
-    """Fetch from balldontlie.io NBA API.
-
-    Requires BALLDONTLIE_KEY env var for reliable rate limits.
-    Without a key, BDL restricts anonymous requests severely (~5 req/min).
-    Sign up free at https://www.balldontlie.io and set BALLDONTLIE_KEY.
-    """
-    global _bdl_no_key_warned
-    key = os.getenv("BALLDONTLIE_KEY", "")
-    if not key and not _bdl_no_key_warned:
-        with _bdl_lock:
-            if not _bdl_no_key_warned:
-                print(
-                    "[WARNING] BALLDONTLIE_KEY not set — NBA stats will be severely "
-                    "rate-limited (~5 req/min). Add BALLDONTLIE_KEY to Render env vars. "
-                    "Sign up free at https://www.balldontlie.io"
-                )
-                _bdl_no_key_warned = True
-    headers = {"Authorization": key} if key else {}
-    return fetch(f"https://api.balldontlie.io/v1/{endpoint}",
-                 params=params, headers=headers)
-
-
 def espn_fetch(sport: str, league: str, endpoint: str,
                params: Optional[Dict] = None) -> Optional[Any]:
-    """Fetch from ESPN public API."""
+    """Fetch from ESPN public API (no key required, no rate limits)."""
     url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/{endpoint}"
     return fetch(url, params=params)

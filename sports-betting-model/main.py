@@ -238,7 +238,6 @@ def main() -> None:
         print("\n[!] No signals generated.")
         print("    Tips:")
         print("    • Set API_FOOTBALL_KEY env var for soccer player/xG data")
-        print("    • Set BALLDONTLIE_KEY  env var for higher NBA rate limits")
         print("    • Games may not be scheduled today – try --fixture or --player-prop")
     else:
         print_signals_table(display, title=title)

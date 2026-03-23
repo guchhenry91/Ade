@@ -8,6 +8,9 @@ Markets generated:
   • PLAYER_REBOUNDS_OU   – player rebounds over/under
   • PLAYER_ASSISTS_OU    – player assists over/under
   • PLAYER_3PM_OU        – three-pointers made over/under
+
+NBA data: ESPN free API (no key required).
+BDL (Ball Don't Lie) removed March 2026 — was causing HTTP 429 rate limits.
 """
 from __future__ import annotations
 import logging
@@ -15,8 +18,8 @@ import math
 from typing import Dict, List, Optional
 
 from data.nba_data import (
-    get_games, get_team_net_rating, get_season_averages, search_players,
-    get_player_game_log,
+    get_games, get_team_net_rating,
+    get_espn_athlete_id, get_espn_player_stats,
 )
 from utils.stats import (
     nba_win_prob, shot_attempt_over_under, threept_made_ou,
@@ -176,24 +179,22 @@ class NBAModel:
         return signals
 
     def player_props_by_id(self,
-                           player_id: int,
+                           athlete_id: str,
                            player_name: str,
                            prop_lines: Dict[str, float],
                            market_odds: Optional[Dict[str, Dict]] = None
                            ) -> List[BetSignal]:
         """
-        Generate O/U props for a player given a dict of lines:
+        Generate O/U props for a player given ESPN athlete_id and a dict of lines:
           prop_lines = {"pts": 22.5, "reb": 7.5, "ast": 4.5, "3pm": 2.5}
-        market_odds = {"pts": {"over": 1.90, "under": 1.90}, ...}
         """
-        avgs_data = get_season_averages([player_id], self.season)
-        avgs = avgs_data[0] if avgs_data else {}
+        espn_stats = get_espn_player_stats(athlete_id) if athlete_id else {}
 
         stat_map = {
-            "pts": float(avgs.get("pts", NBA_LEAGUE_AVG["ppg"])),
-            "reb": float(avgs.get("reb", NBA_LEAGUE_AVG["rpg"])),
-            "ast": float(avgs.get("ast", NBA_LEAGUE_AVG["apg"])),
-            "3pm": float(avgs.get("fg3m", NBA_LEAGUE_AVG["3pm"])),
+            "pts": float(espn_stats.get("pts", NBA_LEAGUE_AVG["ppg"])),
+            "reb": float(espn_stats.get("reb", NBA_LEAGUE_AVG["rpg"])),
+            "ast": float(espn_stats.get("ast", NBA_LEAGUE_AVG["apg"])),
+            "3pm": float(espn_stats.get("fg3m", NBA_LEAGUE_AVG["3pm"])),
         }
 
         signals = []
@@ -213,12 +214,11 @@ class NBAModel:
                              known_avgs:  Optional[Dict[str, float]] = None,
                              ) -> List[BetSignal]:
         """
-        Same as player_props_by_id but resolves name → id first.
-        Pass known_avgs={"pts": 27.1, "reb": 7.4, "ast": 8.3} to skip
-        network lookup (useful when API is unavailable).
+        Generate O/U props for a player by name (resolves name → ESPN athlete_id).
+        Pass known_avgs={"pts": 27.1, "reb": 7.4, "ast": 8.3} to skip the
+        network lookup (useful for demo / offline mode).
         """
         if known_avgs:
-            # Build signals directly from supplied averages
             signals = []
             mo = market_odds or {}
             stat_map = {
@@ -235,18 +235,17 @@ class NBAModel:
                     player_name, stat, avg, line, mo.get(stat))
             return signals
 
-        results = search_players(player_name)
-        if not results:
-            logger.warning("Player not found: %s", player_name)
+        athlete_id = get_espn_athlete_id(player_name)
+        if not athlete_id:
+            logger.warning("ESPN: player not found: %s", player_name)
             return []
-        player_id = results[0]["id"]
-        return self.player_props_by_id(player_id, player_name,
+        return self.player_props_by_id(athlete_id, player_name,
                                        prop_lines, market_odds)
 
     # ── Season average O/U (long-term) ──────────────────────────────────────
 
     def season_avg_ou_signals(self,
-                              player_ids:   List[int],
+                              player_ids:   List[str],   # ESPN athlete IDs
                               player_names: List[str],
                               stat:         str,
                               line:         float,
@@ -255,24 +254,23 @@ class NBAModel:
         """
         Over/under on a player finishing the season above/below a stat line.
         Uses season-to-date average + regression toward mean.
+        player_ids are ESPN athlete_id strings.
         """
-        avgs_data = get_season_averages(player_ids, self.season)
-        stat_key  = {"pts": "pts", "reb": "reb", "ast": "ast", "3pm": "fg3m"
-                     }.get(stat, stat)
-
+        stat_key = {"pts": "pts", "reb": "reb", "ast": "ast", "3pm": "fg3m"}.get(stat, stat)
         signals = []
         mo = market_odds or {}
-        for i, player_id in enumerate(player_ids):
-            name = player_names[i] if i < len(player_names) else str(player_id)
-            entry = next((a for a in avgs_data
-                          if a.get("player_id") == player_id), None)
-            if not entry:
+
+        for i, athlete_id in enumerate(player_ids):
+            name = player_names[i] if i < len(player_names) else str(athlete_id)
+            espn_stats = get_espn_player_stats(athlete_id)
+            if not espn_stats:
                 continue
-            current_avg = float(entry.get(stat_key, 0))
-            games_played = float(entry.get("games_played", 40))
-            # Bayesian shrinkage toward league mean
+            current_avg = float(espn_stats.get(stat_key, 0))
+            if current_avg < 0.5:
+                continue
+            # Bayesian shrinkage toward league mean (assume 60 games played)
             prior = NBA_LEAGUE_AVG.get(stat, current_avg)
-            weight = min(games_played / 82, 1.0)
+            weight = 0.75  # approximate weight for mid-season
             projected = weight * current_avg + (1 - weight) * prior
 
             over_p, under_p = shot_attempt_over_under(projected, line,
@@ -293,8 +291,7 @@ class NBAModel:
                     edge_pct    = ep,
                     confidence  = confidence_label(prob),
                     notes       = (f"Current avg: {current_avg:.1f}  "
-                                   f"Projected: {projected:.1f}  "
-                                   f"Games: {int(games_played)}"),
+                                   f"Projected: {projected:.1f}"),
                 ))
         return signals
 
@@ -308,7 +305,6 @@ class NBAModel:
                 g["home_team"], g["away_team"],
                 g.get("home_id"), g.get("away_id"),
             )
-            # total points if O/U line is available
             if g.get("over_under"):
                 try:
                     line = float(g["over_under"])
