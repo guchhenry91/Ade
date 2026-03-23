@@ -22,13 +22,17 @@
 {% endblock %}
 
 {# ─── Jinja2 macro: render one team's player table ─── #}
-{% macro player_table(roster, team_label, color_class, tid, sport) %}
+{% macro player_table(roster, team_label, color_class, tid, sport, wins=0, losses=0) %}
 {% if roster %}
+{% set top_roster = roster[:2] %}
 <div class="mb-4">
   <div class="team-header rounded-t px-3 py-1.5 flex items-center justify-between">
-    <span class="text-xs font-semibold {{ color_class }}">{{ team_label }}</span>
+    <span class="text-xs font-semibold {{ color_class }}">
+      {{ team_label }}
+      {%- if wins or losses %} <span class="text-slate-500">({{ wins }}-{{ losses }})</span>{% endif %}
+    </span>
     <span class="text-xs text-slate-600">
-      {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}
+      Top 2 props
       {%- if sport in ('Basketball','Football') %} · Model O/U{% else %} · Goal probability{% endif %}
     </span>
   </div>
@@ -39,29 +43,21 @@
       <thead><tr>
         <th class="text-left">Player</th>
         <th>POS</th>
-        {% if sport == 'Basketball' %}<th>PTS</th><th>3PM</th><th>REB</th><th>AST</th>{% endif %}
-        <th>Stat</th><th>Avg/G</th><th>Line</th><th>Over%</th><th>Pick</th>
+        <th>Stat</th><th>Line</th><th>Conf%</th><th>Pick</th>
       </tr></thead>
       <tbody id="{{ tid }}">
-      {% for p in roster %}
-        {# primary prop row #}
+      {% for p in top_roster %}
         {% set pr = p.props[0] if p.props else none %}
-        <tr class="{% if loop.index0 >= 8 %}player-extra-{{ tid }} hidden{% endif %}">
+        {% if pr %}
+        {% set conf_p = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
+        <tr>
           <td class="text-slate-200 font-medium whitespace-nowrap">{{ p.name }}</td>
           <td class="text-slate-500 text-center">{{ p.pos or '—' }}</td>
-          {% if sport == 'Basketball' %}
-          <td class="text-white   text-center font-semibold">{{ p.pts  if p.pts  else '—' }}</td>
-          <td class="text-slate-300 text-center">{{ p.fg3m if p.fg3m else '—' }}</td>
-          <td class="text-slate-300 text-center">{{ p.reb  if p.reb  else '—' }}</td>
-          <td class="text-slate-300 text-center">{{ p.ast  if p.ast  else '—' }}</td>
-          {% endif %}
-          {% if pr %}
           <td class="text-slate-400 text-center text-xs">{{ pr.stat }}</td>
-          <td class="text-slate-300 text-center">{{ pr.avg }}</td>
           <td class="text-slate-400 text-center">{{ pr.line }}</td>
           <td class="text-center">
-            <span class="{% if pr.over_prob > 55 %}text-green-400{% elif pr.over_prob < 45 %}text-red-400{% else %}text-slate-500{% endif %} font-medium">
-              {{ pr.over_prob }}%
+            <span class="{% if conf_p > 68 %}text-green-400{% elif conf_p > 58 %}text-yellow-400{% elif conf_p < 45 %}text-red-400{% else %}text-slate-500{% endif %} font-medium">
+              {{ conf_p }}%
             </span>
           </td>
           <td class="text-center">
@@ -69,41 +65,15 @@
               {{ pr.pick }}
             </span>
           </td>
-          {% else %}
-          <td colspan="5" class="text-slate-700 text-center">—</td>
-          {% endif %}
         </tr>
-        {# additional prop sub-rows #}
-        {% if p.props and p.props|length > 1 %}
-        {% for pr2 in p.props[1:] %}
-        <tr class="sub-row {% if loop.index0 >= 8 %}player-extra-{{ tid }} hidden{% endif %}">
-          <td colspan="{% if sport=='Basketball' %}6{% else %}2{% endif %}"
-              class="text-slate-600 text-right pr-2">↳</td>
-          <td class="text-slate-400 text-center text-xs">{{ pr2.stat }}</td>
-          <td class="text-slate-300 text-center">{{ pr2.avg }}</td>
-          <td class="text-slate-400 text-center">{{ pr2.line }}</td>
-          <td class="text-center">
-            <span class="{% if pr2.over_prob > 55 %}text-green-400{% elif pr2.over_prob < 45 %}text-red-400{% else %}text-slate-500{% endif %} font-medium text-xs">
-              {{ pr2.over_prob }}%
-            </span>
-          </td>
-          <td class="text-center">
-            <span class="{% if pr2.pick=='OVER' %}pick-over{% elif pr2.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %} text-xs">
-              {{ pr2.pick }}
-            </span>
-          </td>
-        </tr>
-        {% endfor %}
         {% endif %}
       {% endfor %}
       </tbody>
     </table>
-    {% if roster|length > 8 %}
-    <button onclick="toggleExtra('{{ tid }}')" id="btn-{{ tid }}"
-      class="w-full text-xs text-indigo-400 hover:text-indigo-300 py-2 bg-slate-900 border-t border-slate-800">
-      ▼ Show all {{ roster|length }} players
-    </button>
-    {% endif %}
+    <a href="/{{ 'nba' if sport=='Basketball' else 'nfl' }}"
+       class="block text-center text-xs text-indigo-400 hover:text-indigo-300 py-1.5 border-t border-slate-800">
+      Full analysis →
+    </a>
 
     {% else %}{# Soccer #}
     <table class="player-tbl w-full">
@@ -194,7 +164,9 @@
       <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
         {% if game.kickoff %}
           <span>{{ game.kickoff[:10] }}</span>
-          {% if game.kickoff|length > 10 %}<span>{{ game.kickoff[11:16] }} UTC</span>{% endif %}
+          {% if game.kickoff|length > 10 %}
+          <span class="local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+          {% endif %}
         {% endif %}
         {% if game.home_xg is defined and game.home_xg %}
           <span class="book-pill px-2 py-0.5 rounded text-slate-300">
@@ -312,8 +284,8 @@
 
       <!-- ═══════ PLAYER TABLES ════════════════════════════════════════════ -->
       <div class="xl:col-span-3">
-        {{ player_table(game.home_roster, game.home_team, 'text-indigo-300', 'h-'~gid, game.sport) }}
-        {{ player_table(game.away_roster, game.away_team, 'text-purple-300', 'a-'~gid, game.sport) }}
+        {{ player_table(game.home_roster, game.home_team, 'text-indigo-300', 'h-'~gid, game.sport, game.home_wins|default(0), game.home_losses|default(0)) }}
+        {{ player_table(game.away_roster, game.away_team, 'text-purple-300', 'a-'~gid, game.sport, game.away_wins|default(0), game.away_losses|default(0)) }}
 
         {% if not game.home_roster and not game.away_roster %}
         <p class="text-xs text-slate-600 italic mt-2">
@@ -346,18 +318,19 @@ setInterval(() => {
   if (el) el.textContent = `${m}:${s.toString().padStart(2,'0')}`;
 }, 1000);
 
-// Toggle extra player rows
-function toggleExtra(tid) {
-  const rows = document.querySelectorAll('.player-extra-' + tid);
-  const btn  = document.getElementById('btn-' + tid);
-  const hidden = rows.length > 0 && rows[0].classList.contains('hidden');
-  rows.forEach(r => r.classList.toggle('hidden', !hidden));
-  if (btn) {
-    const count = rows.length;
-    btn.textContent = hidden
-      ? '▲ Show fewer players'
-      : `▼ Show all players (${count + 8} total)`;
-  }
-}
+// Convert UTC game times to user's local timezone
+document.querySelectorAll('.local-game-time').forEach(el => {
+  const utc = el.dataset.utc;
+  if (!utc) return;
+  try {
+    const d = new Date(utc);
+    const local = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    el.textContent = local + (tz ? ' ' + tz.split('/').pop().replace('_',' ') : '');
+  } catch(e) {}
+});
+
+// Toggle extra player rows (kept for backwards compat)
+function toggleExtra(tid) {}
 </script>
 {% endblock %}

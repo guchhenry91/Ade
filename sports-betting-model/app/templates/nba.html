@@ -89,6 +89,36 @@
   background: rgba(255,165,0,.15); color: #ffa500;
   border: 1px solid rgba(255,165,0,.3); border-radius: 4px;
 }
+
+/* ── Team filter tabs ── */
+.team-tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.team-tab {
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1px solid #333;
+  background: #1a1a2e;
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  letter-spacing: .04em;
+}
+.team-tab:hover { border-color: #00d4ff; color: #00d4ff; }
+.team-tab.active { background: #00d4ff; border-color: #00d4ff; color: #000; }
+@media (max-width: 640px) {
+  .team-tab-bar { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px;
+                  scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .team-tab-bar::-webkit-scrollbar { display: none; }
+}
 </style>
 {% endblock %}
 
@@ -136,11 +166,21 @@
 </div>
 {% else %}
 
+<!-- Team filter tabs -->
+<div class="team-tab-bar" id="nba-team-tabs">
+  <button class="team-tab active" data-team="all">All Teams</button>
+  {% for game in games %}
+  <button class="team-tab" data-team="{{ game.home_abbr }}">{{ game.home_abbr }}</button>
+  <button class="team-tab" data-team="{{ game.away_abbr }}">{{ game.away_abbr }}</button>
+  {% endfor %}
+</div>
+
 {% for game in games %}
 {% set gid = loop.index0|string %}
 
 <!-- Game block -->
-<div class="card" style="margin-bottom:28px;overflow:hidden;">
+<div class="card game-card" data-teams="{{ game.home_abbr }},{{ game.away_abbr }}"
+     style="margin-bottom:28px;overflow:hidden;">
 
   <!-- Game header -->
   <div class="game-hdr">
@@ -218,11 +258,12 @@
             {% set stars_n = best_conf.stars %}
             <div class="stars">{% for i in range(5) %}<span {% if i >= stars_n %}class="star-empty"{% endif %}>★</span>{% endfor %}</div>
             <div class="conf-label">
-              {% if stars_n >= 5 %}Elite Pick
-              {% elif stars_n == 4 %}Strong Pick
-              {% elif stars_n == 3 %}Good Pick
-              {% elif stars_n == 2 %}Moderate
-              {% else %}Use Caution{% endif %}
+              {% if best_conf.val >= 85 %}Elite Pick
+              {% elif best_conf.val >= 78 %}Strong Pick
+              {% elif best_conf.val >= 68 %}Good Pick
+              {% elif best_conf.val >= 58 %}Moderate
+              {% elif best_conf.val >= 50 %}Use Caution
+              {% else %}Under territory{% endif %}
             </div>
           </div>
         </div>
@@ -318,7 +359,7 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  // Filter by stat type
+  // ── Stat-type filter ──────────────────────────────────────────────────────
   document.querySelectorAll('.filter-btn[data-group="nba"]').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.filter-btn[data-group="nba"]').forEach(b => b.classList.remove('active'));
@@ -329,7 +370,6 @@ document.addEventListener('DOMContentLoaded', () => {
           card.style.display = '';
           card.querySelectorAll('.stat-section').forEach(s => s.style.display = '');
         } else {
-          // Show card if it has this stat; hide non-matching stat-sections
           const stats = (card.dataset.stats || '').split(' ').filter(Boolean);
           if (stats.includes(filter)) {
             card.style.display = '';
@@ -339,6 +379,23 @@ document.addEventListener('DOMContentLoaded', () => {
           } else {
             card.style.display = 'none';
           }
+        }
+      });
+    });
+  });
+
+  // ── Team filter tabs ──────────────────────────────────────────────────────
+  document.querySelectorAll('.team-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.team-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const team = tab.dataset.team;
+      document.querySelectorAll('.game-card').forEach(card => {
+        if (team === 'all') {
+          card.style.display = '';
+        } else {
+          const teams = (card.dataset.teams || '').split(',');
+          card.style.display = teams.includes(team) ? '' : 'none';
         }
       });
     });

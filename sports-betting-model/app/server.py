@@ -180,6 +180,24 @@ def _build_nba_games(today_str: str) -> list:
     _PP_SKIP_FRAGMENTS = ("pra", "pts+", "reb+", "ast+", "+reb", "+ast",
                           "points+", "fantasy", "score", "combo")
 
+    # ── ESPN scoreboard abbreviation → PrizePicks abbreviation ───────────────
+    # ESPN uses shorter abbrs in scoreboard; PP uses the standard 3-letter codes.
+    _ESPN_TO_PP: dict[str, str] = {
+        "GS":   "GSW",   # Golden State
+        "SA":   "SAS",   # San Antonio
+        "NO":   "NOP",   # New Orleans
+        "NY":   "NYK",   # New York
+        "BK":   "BKN",   # Brooklyn
+        "UTAH": "UTA",   # Utah
+        "WSH":  "WAS",   # Washington
+        "CHA":  "CHA",   # Charlotte (usually same, but keep explicit)
+    }
+
+    def _norm_nba_abbr(abbr: str) -> str:
+        """Normalise ESPN scoreboard abbreviation to PrizePicks abbreviation."""
+        u = (abbr or "").upper().strip()
+        return _ESPN_TO_PP.get(u, u)
+
     pp_lines: dict[tuple, float] = {}
     # team_abbr_upper → {name_lower → {name, pos}} for ESPN batch fetch
     pp_by_team: dict[str, dict] = {}
@@ -370,19 +388,33 @@ def _build_nba_games(today_str: str) -> list:
 
         def _nba_props_from_pp_espn(abbr: str) -> list:
             """Build NBA roster from PrizePicks players enriched with ESPN season stats."""
-            team_players = pp_by_team.get(abbr.upper() if abbr else "", {})
+            norm = _norm_nba_abbr(abbr)
+            # Try normalised abbr first, then raw upper abbr as fallback
+            team_players = (pp_by_team.get(norm)
+                            or pp_by_team.get((abbr or "").upper(), {}))
             if not team_players:
                 return []
             enriched = []
             for name_lower, pp_data in team_players.items():
                 espn_data = espn_player_data.get(name_lower, {})
+                # Sanity-check ESPN per-game averages: pts should be >= 1.0 for real
+                # NBA players. Values below this indicate API misparse or missing data.
+                raw_pts  = float(espn_data.get("pts",  0.0))
+                raw_reb  = float(espn_data.get("reb",  0.0))
+                raw_ast  = float(espn_data.get("ast",  0.0))
+                raw_fg3m = float(espn_data.get("fg3m", 0.0))
+                # Check if at least one meaningful stat is present
+                has_valid_stats = (raw_pts  >= 1.0 or raw_reb  >= 1.0
+                                   or raw_ast >= 1.0 or raw_fg3m >= 0.1)
+                if not has_valid_stats:
+                    raw_pts = raw_reb = raw_ast = raw_fg3m = 0.0
                 enriched.append({
                     "name":      pp_data.get("name", name_lower),
                     "pos":       pp_data.get("pos", ""),
-                    "pts":       float(espn_data.get("pts", 0.0)),
-                    "reb":       float(espn_data.get("reb", 0.0)),
-                    "ast":       float(espn_data.get("ast", 0.0)),
-                    "fg3m":      float(espn_data.get("fg3m", 0.0)),
+                    "pts":       raw_pts,
+                    "reb":       raw_reb,
+                    "ast":       raw_ast,
+                    "fg3m":      raw_fg3m,
                     "player_id": espn_data.get("athlete_id"),  # ESPN athlete_id
                 })
             return _nba_props_from_avgs(enriched, espn_game_logs)
@@ -427,9 +459,12 @@ def _build_nba_games(today_str: str) -> list:
             print(f"[NBA] {home_team} vs {away_team} — ESPN leaders: {len(leaders)}")
 
             # Primary: PP players with real ESPN season stats + game logs
+            home_abbr_norm = _norm_nba_abbr(home_abbr)
+            away_abbr_norm = _norm_nba_abbr(away_abbr)
             home_roster = _nba_props_from_pp_espn(home_abbr)
             away_roster = _nba_props_from_pp_espn(away_abbr)
-            print(f"[NBA] ESPN home={len(home_roster)} away={len(away_roster)}")
+            print(f"[NBA] {home_abbr}→{home_abbr_norm} vs {away_abbr}→{away_abbr_norm} "
+                  f"ESPN home={len(home_roster)} away={len(away_roster)}")
 
             # Fallback: ESPN competition leaders (already embedded in scoreboard)
             if not home_roster:
@@ -450,10 +485,14 @@ def _build_nba_games(today_str: str) -> list:
             games.append({
                 "sport": "Basketball", "league": "NBA", "sport_icon": "🏀",
                 "home_team": home_team, "away_team": away_team,
-                "home_abbr": g.get("home_abbr", ""),
-                "away_abbr": g.get("away_abbr", ""),
+                "home_abbr": home_abbr_norm,
+                "away_abbr": away_abbr_norm,
                 "kickoff": g.get("date", ""), "status": g.get("status", ""),
                 "home_score": g.get("home_score"), "away_score": g.get("away_score"),
+                "home_wins":   g.get("home_wins", 0),
+                "home_losses": g.get("home_losses", 0),
+                "away_wins":   g.get("away_wins", 0),
+                "away_losses": g.get("away_losses", 0),
                 "spread": g.get("spread"), "over_under": g.get("over_under"),
                 "home_prob": round(h_prob * 100, 1),
                 "away_prob": round(a_prob * 100, 1),
@@ -996,7 +1035,7 @@ def _build_mlb_props(today_str: str) -> tuple[list, int]:
                 }
                 for prop in props:
                     all_props.append({**player_meta, **prop})
-            if len(all_props) >= 120:  # cap (was 60 but now flat so ~2× entries)
+            if len(all_props) >= 500:  # generous cap — show all teams
                 break
 
     except Exception:

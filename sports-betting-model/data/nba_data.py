@@ -196,9 +196,11 @@ def get_espn_player_stats(athlete_id: str) -> Dict[str, float]:
     # ESPN returns stats under splits.categories or directly under categories
     categories = (data.get("splits", {}).get("categories", [])
                   or data.get("categories", []))
+    # Broad match: any category name containing a per-game keyword
+    _PG_KEYWORDS = ("avg", "per", "game", "average")
     for cat in categories:
         cat_name = (cat.get("name") or "").lower()
-        if cat_name not in ("avg", "pergame", "perGame", "average", "averages"):
+        if not any(k in cat_name for k in _PG_KEYWORDS):
             continue
         for s in cat.get("stats", []):
             stat_values[s.get("name", "")] = float(s.get("value", 0) or 0)

@@ -1,6 +1,28 @@
 {% extends "base.html" %}
 {% block title %}MLB Props – BetModel Pro{% endblock %}
 
+{% block head %}
+<style>
+.team-tab-bar {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 12px 0; margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.team-tab {
+  padding: 5px 14px; border-radius: 20px; border: 1px solid #333;
+  background: #1a1a2e; color: #aaa; font-size: 12px; font-weight: 600;
+  cursor: pointer; white-space: nowrap; transition: all 0.15s; letter-spacing: .04em;
+}
+.team-tab:hover { border-color: #00d4ff; color: #00d4ff; }
+.team-tab.active { background: #00d4ff; border-color: #00d4ff; color: #000; }
+@media (max-width: 640px) {
+  .team-tab-bar { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px;
+                  scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .team-tab-bar::-webkit-scrollbar { display: none; }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <!-- Page header -->
 <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
@@ -43,6 +65,18 @@
 </div>
 {% else %}
 
+<!-- Team filter tabs (built from unique teams in all_props) -->
+{% set seen_teams = namespace(list=[]) %}
+{% for p in all_props %}{% set t = p.get('team','') %}{% if t and t not in seen_teams.list %}{% set _ = seen_teams.list.append(t) %}{% endif %}{% endfor %}
+{% if seen_teams.list|length > 1 %}
+<div class="team-tab-bar" id="mlb-team-tabs">
+  <button class="team-tab active" data-team="all">All Teams</button>
+  {% for t in seen_teams.list|sort %}
+  <button class="team-tab" data-team="{{ t }}">{{ t }}</button>
+  {% endfor %}
+</div>
+{% endif %}
+
 <!-- Props grid (flat list, not nested by game) -->
 <div class="props-grid" id="mlb-grid">
 {% for p in all_props %}
@@ -51,9 +85,10 @@
 {% set conf_pct = (pr.get('over_prob', p.get('over_prob', 50)) if pick != 'UNDER' else pr.get('under_prob', p.get('under_prob', 50))) %}
 {% set stars_n = pr.get('stars', p.get('stars', (conf_pct / 20)|int)) %}
 {% set stat_key = (pr.get('stat', p.get('stat','')) or '')|lower|replace(' ','-') %}
+{% set player_team = p.get('team', '') %}
 
 <div class="prop-card {% if pick=='OVER' %}over-card{% elif pick=='UNDER' %}under-card{% else %}fair-card{% endif %}"
-     data-group="mlb" data-stat="{{ stat_key }}"
+     data-group="mlb" data-stat="{{ stat_key }}" data-team="{{ player_team }}"
      data-conf="{{ conf_pct }}" data-stars="{{ stars_n }}">
 
   <!-- Player name -->
@@ -151,6 +186,24 @@
 
 {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', () => { initFilters('mlb'); });
+document.addEventListener('DOMContentLoaded', () => {
+  initFilters('mlb');
+
+  // Team filter tabs
+  document.querySelectorAll('#mlb-team-tabs .team-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#mlb-team-tabs .team-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const team = tab.dataset.team;
+      document.querySelectorAll('#mlb-grid .prop-card').forEach(card => {
+        if (team === 'all') {
+          card.style.display = '';
+        } else {
+          card.style.display = (card.dataset.team === team) ? '' : 'none';
+        }
+      });
+    });
+  });
+});
 </script>
 {% endblock %}
