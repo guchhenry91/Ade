@@ -20,7 +20,8 @@ from fastapi.templating import Jinja2Templates
 from typing import Optional
 import traceback
 import json
-from datetime import date
+import time as _time
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from models.football_model import FootballModel
@@ -41,16 +42,48 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     tb = traceback.format_exc()
+    # Log for server-side debugging
+    print(f"[ERROR] {request.url.path}: {exc}\n{tb}")
+    # Return user-friendly error page
     return HTMLResponse(
-        content=f"<pre style='color:red;background:#111;padding:20px;'>"
-                f"ERROR on {request.url.path}\n\n{tb}</pre>",
+        content="""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>BetModel Pro · Error</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#fff;
+  display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}
+.box{text-align:center;max-width:480px;padding:40px;}
+.icon{font-size:56px;margin-bottom:16px;}
+h1{font-size:22px;font-weight:700;margin-bottom:10px;}
+p{color:#aaa;font-size:14px;line-height:1.6;margin-bottom:24px;}
+a{display:inline-block;padding:10px 24px;background:#00d4ff;color:#000;
+  border-radius:8px;font-weight:700;text-decoration:none;}
+</style></head><body>
+<div class="box">
+  <div class="icon">⚠️</div>
+  <h1>Something went wrong</h1>
+  <p>We had trouble loading this page. This is usually a temporary issue
+     with one of our data sources.</p>
+  <a href="javascript:location.reload()">Try again</a>
+  &nbsp;
+  <a href="/" style="background:#1a1a2e;color:#aaa;border:1px solid #2a2a4e;">
+    Go home
+  </a>
+</div></body></html>""",
         status_code=500,
     )
 
 
+@app.get("/health")
 @app.get("/healthz")
 async def healthz():
-    return {"status": "ok"}
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+def _now_iso() -> str:
+    """Current UTC time as ISO-8601 string, passed to templates."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -699,6 +732,7 @@ async def soccer_page(request: Request):
     return TEMPLATES.TemplateResponse(request, "soccer.html", {
         "games": games, "today": today_label,
         "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+        "generated_at": _now_iso(),
     })
 
 
@@ -714,6 +748,7 @@ async def nba_page(request: Request):
     return TEMPLATES.TemplateResponse(request, "nba.html", {
         "games": games, "today": today_label,
         "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+        "generated_at": _now_iso(),
     })
 
 
@@ -728,6 +763,7 @@ async def nfl_page(request: Request):
     return TEMPLATES.TemplateResponse(request, "nfl.html", {
         "games": games, "today": today_label,
         "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+        "generated_at": _now_iso(),
     })
 
 
@@ -969,6 +1005,7 @@ async def mlb_page(request: Request):
         "total_players": len(all_props),
         "total_games":  total_games,
         "today":        today_label,
+        "generated_at": _now_iso(),
     })
 
 
@@ -986,6 +1023,7 @@ async def nhl_page(request: Request):
         "total_players": len(all_props),
         "total_games":  total_games,
         "today":        today_label,
+        "generated_at": _now_iso(),
     })
 
 
@@ -1053,3 +1091,131 @@ _NFL_PRESETS = [
     {"name": "Josh Allen",       "rush_yds": 560,  "rec_yds": 0,    "pass_yds": 4250, "tds": 12, "rush_att": 95,  "rec_tgt": 0,   "games": 17},
     {"name": "Lamar Jackson",    "rush_yds": 780,  "rec_yds": 0,    "pass_yds": 4200, "tds": 5,  "rush_att": 110, "rec_tgt": 0,   "games": 17},
 ]
+
+
+# ─────────────────────────────────────────────
+#  /api/sanity  — data quality checks
+# ─────────────────────────────────────────────
+
+@app.get("/api/sanity")
+async def sanity_check():
+    """
+    Programmatic sanity checks on live data. Call /api/sanity in production
+    to verify all data pipelines are returning sane values.
+    """
+    today_str = date.today().strftime("%Y%m%d")
+    failures: list = []
+    warnings: list = []
+    passed:   list = []
+
+    def _fail(msg: str): failures.append(msg)
+    def _warn(msg: str): warnings.append(msg)
+    def _ok(msg: str):   passed.append(msg)
+
+    # ── NBA checks ────────────────────────────────────────────────────────────
+    try:
+        nba_games = _build_nba_games(today_str)
+        if not nba_games:
+            _warn("NBA: no games today")
+        else:
+            seen_probs: set = set()
+            for g in nba_games:
+                for roster in [g.get("home_roster", []), g.get("away_roster", [])]:
+                    for player in roster:
+                        name = player.get("name", "?")
+                        for pr in player.get("props", []):
+                            stat = pr.get("stat", "?")
+                            op   = pr.get("over_prob", 0)
+                            avg  = pr.get("avg", 0)
+                            stars = pr.get("stars", 0)
+                            if not (30.0 <= op <= 82.1):
+                                _fail(f"NBA over_prob out of range: {name} {stat} = {op}%")
+                            if avg and avg > 45:
+                                _fail(f"NBA avg too high (season total?): {name} {stat} = {avg}")
+                            if not (1 <= stars <= 5):
+                                _fail(f"NBA stars out of range: {name} {stat} stars={stars}")
+                            seen_probs.add(round(op, 1))
+            if len(seen_probs) < 3:
+                _warn(f"NBA: only {len(seen_probs)} unique over_prob values — may be hardcoded")
+            else:
+                _ok(f"NBA: {len(seen_probs)} distinct over_prob values")
+            _ok(f"NBA: {len(nba_games)} games loaded")
+    except Exception as e:
+        _fail(f"NBA build crashed: {e}")
+
+    # ── MLB checks ────────────────────────────────────────────────────────────
+    try:
+        mlb_props, _ = _build_mlb_props(today_str)
+        if not mlb_props:
+            _warn("MLB: no props today")
+        else:
+            for player in mlb_props:
+                name = player.get("name", "?")
+                for pr in player.get("props", []):
+                    stat  = pr.get("stat", "?")
+                    avg   = pr.get("avg", 0)
+                    op    = pr.get("over_prob", 0)
+                    line  = pr.get("line", 0)
+                    if avg and avg > 0 and abs(avg - line) < 0.001:
+                        _warn(f"MLB avg == line (may be fallback): {name} {stat} avg={avg} line={line}")
+                    if avg and avg > 30:
+                        _fail(f"MLB avg looks like season total: {name} {stat} avg={avg}")
+            _ok(f"MLB: {len(mlb_props)} props loaded")
+    except Exception as e:
+        _fail(f"MLB build crashed: {e}")
+
+    # ── Soccer checks ─────────────────────────────────────────────────────────
+    try:
+        soccer_games = _build_soccer_games(today_str)
+        if not soccer_games:
+            _warn("Soccer: no games today")
+        else:
+            for g in soccer_games:
+                h = g.get("home_prob", 0)
+                d = g.get("draw_prob") or 0
+                a = g.get("away_prob", 0)
+                total_prob = h + d + a
+                if abs(total_prob - 100.0) > 1.5:
+                    _fail(f"Soccer probs don't sum to 100: {g.get('home_team')} vs {g.get('away_team')}: {h}+{d}+{a}={total_prob}")
+                for roster in [g.get("home_roster", []), g.get("away_roster", [])]:
+                    for scorer in roster:
+                        sname = scorer.get("name", "")
+                        if "Lead Striker" in sname or "estimate" in sname.lower():
+                            _fail(f"Soccer: fake placeholder name: {sname}")
+                        gp = scorer.get("goal_prob", 0)
+                        if not (0 < gp < 75):
+                            _warn(f"Soccer goal_prob unusual: {sname} = {gp}%")
+                        sp = scorer.get("shots_pg", 0)
+                        try:
+                            if not (1.4 <= float(sp) <= 9.0):
+                                _warn(f"Soccer shots_pg unusual: {sname} = {sp}")
+                        except (TypeError, ValueError):
+                            pass
+            _ok(f"Soccer: {len(soccer_games)} games loaded")
+    except Exception as e:
+        _fail(f"Soccer build crashed: {e}")
+
+    # ── NHL checks ────────────────────────────────────────────────────────────
+    _MMA_STATS = {"rounds", "strikes", "takedowns", "knockdowns", "submission"}
+    try:
+        nhl_props, _ = _build_nhl_props(today_str)
+        for player in nhl_props:
+            name = player.get("name", "?")
+            for pr in player.get("props", []):
+                stat = (pr.get("stat") or "").lower()
+                if any(mma in stat for mma in _MMA_STATS):
+                    _fail(f"NHL: MMA stat detected: {name} {stat}")
+        if nhl_props:
+            _ok(f"NHL: {len(nhl_props)} props (no MMA detected)")
+        else:
+            _warn("NHL: no props today (off season or no PP data)")
+    except Exception as e:
+        _fail(f"NHL build crashed: {e}")
+
+    return {
+        "timestamp": _now_iso(),
+        "status": "FAIL" if failures else ("WARN" if warnings else "PASS"),
+        "failures": failures,
+        "warnings": warnings,
+        "passed":   passed,
+    }

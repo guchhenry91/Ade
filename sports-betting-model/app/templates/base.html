@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="BetModel Pro — real-time sports betting model with NBA, MLB, NHL, NFL and Soccer player props, win probabilities, and statistical edge analysis."/>
   <title>{% block title %}BetModel Pro{% endblock %}</title>
+  <!-- Emoji favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>"/>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Tailwind CDN (supports legacy templates that use utility classes) -->
@@ -201,7 +204,47 @@
     /* ── Footer ── */
     footer {
       text-align: center; font-size: 11px; color: var(--txt3);
-      padding: 24px 16px; border-top: 1px solid var(--border);
+      padding: 24px 16px 12px; border-top: 1px solid var(--border);
+      line-height: 1.8;
+    }
+    footer .disclaimer {
+      color: #444466; font-size: 10px; margin-top: 6px;
+    }
+
+    /* ── Loading skeleton ── */
+    .skeleton {
+      background: linear-gradient(90deg, #1a1a2e 25%, #22223a 50%, #1a1a2e 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 6px;
+    }
+    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    /* ── Page loading overlay ── */
+    #page-loader {
+      position:fixed; inset:0; background:rgba(13,13,13,.85);
+      display:flex; align-items:center; justify-content:center;
+      z-index:9999; transition:opacity .3s;
+    }
+    #page-loader.hidden { opacity:0; pointer-events:none; }
+    .spinner {
+      width:40px; height:40px; border:3px solid #2a2a4e;
+      border-top-color:var(--accent); border-radius:50%;
+      animation:spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* ── "Last updated" bar ── */
+    .updated-bar {
+      font-size:11px; color:var(--txt3);
+      padding:6px 0 2px; display:flex; align-items:center; gap:8px;
+    }
+    .updated-bar .dot { width:6px; height:6px; border-radius:50%; background:var(--over); }
+
+    /* ── Confidence label ── */
+    .conf-label {
+      font-size:9px; font-weight:700; text-transform:uppercase;
+      letter-spacing:.06em; color:var(--txt3); margin-top:2px;
     }
 
     /* ── Mobile ── */
@@ -270,9 +313,53 @@
   {% endfor %}
 </div>
 
-<footer>BetModel Pro · Model probabilities only · Not financial advice</footer>
+<!-- PAGE LOADER (hidden after page fully loads) -->
+<div id="page-loader" class="hidden">
+  <div class="spinner"></div>
+</div>
+
+<footer>
+  <div>🎯 BetModel Pro · Statistical model probabilities only</div>
+  <div class="disclaimer">
+    Not financial advice. These are statistical estimates, not guarantees.
+    Please gamble responsibly. If gambling is a problem, call 1-800-GAMBLER.
+  </div>
+</footer>
 
 <script>
+/* ── Page-load spinner: show on navigation, hide on load ── */
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('a:not([target])').forEach(a => {
+    a.addEventListener('click', e => {
+      const href = a.getAttribute('href') || '';
+      if (href.startsWith('/') && !href.startsWith('//')) {
+        const loader = document.getElementById('page-loader');
+        if (loader) loader.classList.remove('hidden');
+      }
+    });
+  });
+});
+
+/* ── "Last updated N minutes ago" ── */
+function initTimestamps() {
+  document.querySelectorAll('[data-generated-at]').forEach(el => {
+    const iso = el.dataset.generatedAt;
+    if (!iso) return;
+    const genMs = new Date(iso).getTime();
+    function update() {
+      const diffS = Math.floor((Date.now() - genMs) / 1000);
+      let label;
+      if (diffS < 60)       label = 'Just now';
+      else if (diffS < 3600) label = `${Math.floor(diffS/60)} min ago`;
+      else                   label = `${Math.floor(diffS/3600)}h ago`;
+      el.textContent = `Last updated: ${label}`;
+    }
+    update();
+    setInterval(update, 30000);
+  });
+}
+document.addEventListener('DOMContentLoaded', initTimestamps);
+
 /* ── Filter button logic ── */
 function initFilters(groupClass) {
   document.querySelectorAll(`.filter-btn[data-group="${groupClass}"]`).forEach(btn => {

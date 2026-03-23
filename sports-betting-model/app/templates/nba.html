@@ -75,6 +75,20 @@
 /* ── Win prob pills in game header ── */
 .wp-home { color: #818cf8; font-weight: 700; font-size: 12px; }
 .wp-away { color: #c084fc; font-weight: 700; font-size: 12px; }
+
+/* ── Filter bar: horizontal scroll on mobile ── */
+@media (max-width: 640px) {
+  .filter-bar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+                padding-bottom: 6px; scrollbar-width: none; }
+  .filter-bar::-webkit-scrollbar { display: none; }
+}
+
+/* ── Live soon badge ── */
+.badge-live-soon {
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  background: rgba(255,165,0,.15); color: #ffa500;
+  border: 1px solid rgba(255,165,0,.3); border-radius: 4px;
+}
 </style>
 {% endblock %}
 
@@ -91,7 +105,15 @@
       {% endif %}
     </div>
   </div>
-  <a href="/nba" class="btn btn-accent">↻ Refresh</a>
+  <div style="text-align:right;">
+    <a href="/nba" class="btn btn-accent">↻ Refresh</a>
+    {% if generated_at %}
+    <div class="updated-bar" style="justify-content:flex-end;margin-top:6px;">
+      <span class="dot"></span>
+      <span data-generated-at="{{ generated_at }}"></span>
+    </div>
+    {% endif %}
+  </div>
 </div>
 
 <!-- Filter bar -->
@@ -133,10 +155,11 @@
     <div style="display:flex;align-items:center;gap:10px;">
       <span style="font-size:11px;padding:4px 10px;border-radius:20px;font-weight:600;
         {% if 'FINAL' in (game.status or '') or game.status=='Final' %}background:#1a2a1a;color:#666
-        {% elif 'PROGRESS' in (game.status or '') %}background:#1a3a1a;color:var(--over)
+        {% elif 'PROGRESS' in (game.status or '') or 'IN_PROGRESS' in (game.status or '') %}background:#1a3a1a;color:var(--over)
+        {% elif 'STATUS_SCHEDULED' in (game.status or '') %}background:#1a1a3a;color:var(--accent)
         {% else %}background:#1a1a3a;color:var(--accent){% endif %}">
         {% if 'FINAL' in (game.status or '') or game.status=='Final' %}✓ Final
-        {% elif 'PROGRESS' in (game.status or '') %}🔴 Live
+        {% elif 'PROGRESS' in (game.status or '') or 'IN_PROGRESS' in (game.status or '') %}🔴 Live
         {% else %}⏰ Upcoming{% endif %}
       </span>
       <div style="display:flex;gap:6px;">
@@ -193,7 +216,14 @@
           </div>
           <div style="font-size:10px;color:var(--txt3);margin-top:2px;">
             {% set stars_n = best_conf.stars %}
-            {% for i in range(5) %}<span {% if i >= stars_n %}class="star-empty"{% endif %} style="font-size:11px;">★</span>{% endfor %}
+            <div class="stars">{% for i in range(5) %}<span {% if i >= stars_n %}class="star-empty"{% endif %}>★</span>{% endfor %}</div>
+            <div class="conf-label">
+              {% if stars_n >= 5 %}Elite Pick
+              {% elif stars_n == 4 %}Strong Pick
+              {% elif stars_n == 3 %}Good Pick
+              {% elif stars_n == 2 %}Moderate
+              {% else %}Use Caution{% endif %}
+            </div>
           </div>
         </div>
         {% endif %}

@@ -12,7 +12,15 @@
       across <strong style="color:var(--accent)">{{ total_games }}</strong> game{{ 's' if total_games != 1 else '' }}
     </div>
   </div>
-  <a href="/nhl" class="btn btn-accent">↻ Refresh</a>
+  <div style="text-align:right;">
+    <a href="/nhl" class="btn btn-accent">↻ Refresh</a>
+    {% if generated_at %}
+    <div class="updated-bar" style="justify-content:flex-end;margin-top:6px;">
+      <span class="dot"></span>
+      <span data-generated-at="{{ generated_at }}"></span>
+    </div>
+    {% endif %}
+  </div>
 </div>
 
 <!-- Filter bar -->
@@ -71,8 +79,17 @@
   </div>
 
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-    <div class="stars">
-      {% for i in range(5) %}<span {% if i >= stars_n %}class="star-empty"{% endif %}>★</span>{% endfor %}
+    <div>
+      <div class="stars">
+        {% for i in range(5) %}<span {% if i >= stars_n %}class="star-empty"{% endif %}>★</span>{% endfor %}
+      </div>
+      <div class="conf-label">
+        {% if stars_n >= 5 %}Elite Pick
+        {% elif stars_n == 4 %}Strong Pick
+        {% elif stars_n == 3 %}Good Pick
+        {% elif stars_n == 2 %}Moderate
+        {% else %}Use Caution{% endif %}
+      </div>
     </div>
     <span style="font-size:13px;font-weight:700;
       {% if pick=='OVER' %}color:var(--over){% elif pick=='UNDER' %}color:var(--under){% else %}color:var(--txt2){% endif %}">

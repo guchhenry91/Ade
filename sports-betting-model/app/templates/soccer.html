@@ -28,7 +28,15 @@
       {% endif %}
     </p>
   </div>
-  <a href="/soccer" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium">↻ Refresh</a>
+  <div style="text-align:right;">
+    <a href="/soccer" class="btn btn-accent">↻ Refresh</a>
+    {% if generated_at %}
+    <div class="updated-bar" style="justify-content:flex-end;margin-top:6px;">
+      <span class="dot"></span>
+      <span data-generated-at="{{ generated_at }}"></span>
+    </div>
+    {% endif %}
+  </div>
 </div>
 
 {% if total == 0 %}
