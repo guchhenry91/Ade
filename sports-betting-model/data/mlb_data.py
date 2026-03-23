@@ -137,16 +137,21 @@ def get_batter_season_stats(mlb_player_id: str | int) -> Dict[str, Any]:
         gp = max(int(s.get("gamesPlayed", 1) or 1), 1)
         hits = int(s.get("hits", 0) or 0)
         tb   = int(s.get("totalBases", 0) or 0)
+        hr   = int(s.get("homeRuns", 0) or 0)
+        rbi  = int(s.get("rbi", 0) or 0)
+        runs = int(s.get("runs", 0) or 0)
         return {
             "avg":     round(float(s.get("avg", 0) or 0), 3),
-            "hr":      int(s.get("homeRuns", 0) or 0),
-            "rbi":     int(s.get("rbi", 0) or 0),
+            "hr":      hr,
+            "hr_pg":   round(hr   / gp, 3),
+            "rbi":     rbi,
+            "rbi_pg":  round(rbi  / gp, 2),
             "hits":    hits,
             "hits_pg": round(hits / gp, 2),
             "tb":      tb,
-            "tb_pg":   round(tb / gp, 2),
-            "runs":    int(s.get("runs", 0) or 0),
-            "runs_pg": round(int(s.get("runs", 0) or 0) / gp, 2),
+            "tb_pg":   round(tb   / gp, 2),
+            "runs":    runs,
+            "runs_pg": round(runs / gp, 2),
             "games":   gp,
         }
     except Exception as e:

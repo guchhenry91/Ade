@@ -16,7 +16,7 @@ _SKATER_MARKETS: List[Tuple[str, str, float, float]] = [
     ("Points",       "pts_pg",     0.80, 0.20),
     ("Goals",        "goals_pg",   0.90, 0.10),
     ("Assists",      "assists_pg", 0.85, 0.10),
-    ("Shots on Goal","shots_pg",   0.35, 1.0),
+    ("Shots",        "shots_pg",   0.35, 1.0),
 ]
 
 _GOALIE_MARKETS: List[Tuple[str, str, float, float]] = [
@@ -43,7 +43,6 @@ def build_skater_props(player: Dict) -> List[Dict]:
         avg = float(player.get(key, 0) or 0)
         if avg < min_avg:
             continue
-        # For low-average stats (goals, points < 1), use Poisson-like line floor
         line = max(0.5, round(avg * 2) / 2 - 0.5)
         over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
@@ -95,50 +94,59 @@ _HOCKEY_VALID_STATS = frozenset({
 })
 
 
+def _normalize_nhl_stat(stat_raw: str) -> Tuple[str, float]:
+    """
+    Map a raw PrizePicks stat_type string to (display_label, std_factor).
+    Longer/more-specific patterns checked first to avoid substring collisions:
+      - "goals" IS a substring of "shots on goal" → check "shots on goal" first
+      - "points" IS a substring of "power play points" → check "power play" first
+    """
+    s = stat_raw.lower().strip()
+
+    # Most specific multi-word patterns first
+    if "shots on goal" in s:        return "Shots",       0.35
+    if "power play" in s:           return "Power Play",  0.85
+    if "blocked shot" in s or "blocks" in s: return "Shots",  0.35
+
+    # Single-word matches
+    if "saves" in s or s == "sv":   return "Saves",       0.18
+    if "assists" in s:              return "Assists",      0.85
+    if "goals" in s:                return "Goals",        0.90
+    if "shots" in s:                return "Shots",        0.35
+    if "points" in s:               return "Points",       0.80
+
+    # Fallback: keep original label
+    return stat_raw, 0.60
+
+
 def build_props_from_prizepicks(pp_projections: List[Dict]) -> List[Dict]:
     """
     Build NHL prop cards directly from PrizePicks projections.
     Rejects the entire batch if it contains MMA stats (wrong league_id).
+    Returns flat list — one entry per (player × stat).
     """
     # Guard: reject MMA data masquerading as NHL
     all_stats_lower = [(p.get("stat") or "").lower() for p in pp_projections]
-    has_mma = any(any(mma in s for mma in _MMA_REJECT_STATS) for s in all_stats_lower)
-    has_hockey = any(any(hk in s for hk in _HOCKEY_VALID_STATS) for s in all_stats_lower)
+    has_mma    = any(any(mma in s for mma in _MMA_REJECT_STATS) for s in all_stats_lower)
+    has_hockey = any(any(hk in s  for hk in _HOCKEY_VALID_STATS) for s in all_stats_lower)
     if has_mma and not has_hockey:
         logger.warning("NHL PrizePicks batch appears to be MMA data — discarding %d projections",
                        len(pp_projections))
         return []
 
-    _pp_stat_map: Dict[str, Tuple[str, float]] = {
-        "Points":       ("pts",    0.80),
-        "Goals":        ("goals",  0.90),
-        "Assists":      ("assists",0.85),
-        "Shots":        ("shots",  0.35),
-        "Saves":        ("saves",  0.18),
-        "Power Play":   ("pp",     0.85),
-    }
-
     results: List[Dict] = []
     for proj in pp_projections:
         stat_raw = proj.get("stat", "")
-        # Skip MMA stats that slipped through
+        # Skip individual MMA stats that slipped through
         if any(mma in stat_raw.lower() for mma in _MMA_REJECT_STATS):
             continue
-        line     = float(proj.get("line", 0) or 0)
+        line = float(proj.get("line", 0) or 0)
         if line <= 0:
             continue
 
-        stat_label = stat_raw
-        std_factor = 0.60
-        for key, (_, sf) in _pp_stat_map.items():
-            if key.lower() in stat_raw.lower():
-                stat_label = key
-                std_factor = sf
-                break
+        stat_label, std_factor = _normalize_nhl_stat(stat_raw)
 
-        # Market-efficient: PrizePicks line ≈ expected median → use as avg estimate
-        # Variance around the line is captured by std_factor
-        avg_est  = line
+        avg_est = line
         over_p, under_p = shot_attempt_over_under(avg_est, line, std_factor=std_factor)
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
 

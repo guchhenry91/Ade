@@ -18,23 +18,23 @@ _PITCHER_MARKETS: List[Tuple[str, str, float, float]] = [
 ]
 
 _BATTER_MARKETS: List[Tuple[str, str, float, float]] = [
-    ("Hits",         "hits_pg", 0.55, 0.3),
-    ("Total Bases",  "tb_pg",   0.50, 0.5),
-    ("Runs",         "runs_pg", 0.60, 0.3),
+    ("Hits",        "hits_pg", 0.55, 0.30),
+    ("Total Bases", "tb_pg",   0.50, 0.50),
+    ("Home Runs",   "hr_pg",   0.90, 0.05),   # ~3-4 HR/season minimum
+    ("RBI",         "rbi_pg",  0.65, 0.20),   # ~33 RBI/season minimum
+    ("Runs",        "runs_pg", 0.60, 0.30),
 ]
 
 
 def build_pitcher_props(player: Dict) -> List[Dict]:
     """Build prop cards for a pitcher from season-average stats.
-    If player dict contains a '<stat>_line' key, uses that as the market line
-    instead of generating one from the season avg (avoids constant-probability bug).
+    If player dict contains a '<stat>_line' key, uses that as the market line.
     """
     props: List[Dict] = []
     for label, key, std, min_avg in _PITCHER_MARKETS:
         avg = float(player.get(key, 0) or 0)
         if avg < min_avg:
             continue
-        # Use pp_line if available, otherwise generate from avg
         line_key = key[:-3] + "_line"  # "so_pg" → "so_line"
         raw_line = player.get(line_key)
         line     = float(raw_line) if raw_line else max(0.5, round(avg * 2) / 2 - 0.5)
@@ -62,7 +62,7 @@ def build_batter_props(player: Dict) -> List[Dict]:
         avg = float(player.get(key, 0) or 0)
         if avg < min_avg:
             continue
-        line_key = key[:-3] + "_line"  # "hits_pg" → "hits_line", "tb_pg" → "tb_line"
+        line_key = key[:-3] + "_line"  # "hits_pg" → "hits_line", "hr_pg" → "hr_line"
         raw_line = player.get(line_key)
         line     = float(raw_line) if raw_line else max(0.5, round(avg * 2) / 2 - 0.5)
         over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
@@ -80,41 +80,42 @@ def build_batter_props(player: Dict) -> List[Dict]:
     return props
 
 
+def _normalize_mlb_stat(stat_raw: str) -> Tuple[str, float]:
+    """
+    Map a raw PrizePicks stat_type string to (display_label, std_factor).
+    Uses longest-match-first logic to avoid substring collisions
+    (e.g. "earned runs" must not match "runs" first).
+    """
+    s = stat_raw.lower().strip()
+    # Longer / more specific patterns first
+    if "earned run" in s:           return "Earned Runs",   0.60
+    if "home run" in s or s == "hr": return "Home Runs",    0.90
+    if "total base" in s:           return "Total Bases",   0.50
+    if "strikeout" in s or s == "k" or s == "so": return "Strikeouts", 0.35
+    if "inning" in s:               return "Innings Pitched", 0.20
+    if "rbi" in s or "run batted" in s: return "RBI",       0.65
+    if "run" in s:                  return "Runs",          0.60
+    if "hit" in s:                  return "Hits",          0.55
+    if "walk" in s or s == "bb":    return "Walks",         0.60
+    if "save" in s:                 return "Saves",         0.50
+    return stat_raw, 0.50  # unknown — keep original label
+
+
 def build_props_from_prizepicks(pp_projections: List[Dict]) -> List[Dict]:
     """
     Build prop cards directly from PrizePicks projections for MLB.
-    The PrizePicks line IS the market line — we calculate our O/U prob
-    using the league-average std_factor for that stat type.
+    The PrizePicks line IS the market line.
+    Returns flat list — one entry per (player × stat).
     """
-    _pp_stat_map: Dict[str, Tuple[str, float]] = {
-        "Strikeouts":    ("so",    0.35),
-        "Hits":          ("hits",  0.55),
-        "Home Runs":     ("hr",    0.90),
-        "Total Bases":   ("tb",    0.50),
-        "RBIs":          ("rbi",   0.65),
-        "Runs":          ("runs",  0.60),
-        "Earned Runs":   ("er",    0.60),
-        "Walks":         ("walks", 0.60),
-        "Saves":         ("saves", 0.50),
-    }
-
     results: List[Dict] = []
     for proj in pp_projections:
-        stat_raw  = proj.get("stat", "")
-        line      = float(proj.get("line", 0) or 0)
+        stat_raw = proj.get("stat", "")
+        line     = float(proj.get("line", 0) or 0)
         if line <= 0:
             continue
 
-        # Normalize stat name
-        stat_label = stat_raw
-        std_factor = 0.50  # default
-        for key, (_, sf) in _pp_stat_map.items():
-            if key.lower() in stat_raw.lower():
-                stat_label = key
-                std_factor = sf
-                break
+        stat_label, std_factor = _normalize_mlb_stat(stat_raw)
 
-        # Use the line as the avg estimate (market-efficient: line ≈ median)
         avg_est = line
         over_p, under_p = shot_attempt_over_under(avg_est, line, std_factor=std_factor)
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")

@@ -44,8 +44,12 @@ def fetch(url: str, params: Optional[Dict] = None, headers: Optional[Dict] = Non
 
     for attempt in range(4):
         try:
+            _t0 = time.time()
             resp = requests.get(url, params=params, headers=headers,
                                 timeout=timeout)
+            _ms = (time.time() - _t0) * 1000
+            if _ms > 800:
+                logger.warning("[SLOW %.0fms] %s", _ms, url)
             resp.raise_for_status()
             data = resp.json()
             if use_cache:

@@ -21,8 +21,35 @@ from typing import Optional
 import traceback
 import json
 import time as _time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 from pathlib import Path
+
+# ── In-memory page cache ───────────────────────────────────────────────────────
+# Avoids recomputing expensive data fetches on every page request.
+# TTL: 10 minutes for live props data.
+_PAGE_CACHE: dict = {}
+_CACHE_LOCK = threading.Lock()
+
+def _cached(key: str, fetch_fn, ttl: int = 600):
+    """Return cached value if fresh, else call fetch_fn(), cache, and return."""
+    now = _time.time()
+    with _CACHE_LOCK:
+        entry = _PAGE_CACHE.get(key)
+        if entry:
+            data, expires = entry
+            if now < expires:
+                print(f"[CACHE HIT] {key}")
+                return data
+            print(f"[CACHE EXPIRED] {key}")
+        else:
+            print(f"[CACHE MISS] {key}")
+    data = fetch_fn()
+    if data is not None:
+        with _CACHE_LOCK:
+            _PAGE_CACHE[key] = (data, now + ttl)
+    return data
 
 from models.football_model import FootballModel
 from models.nba_model      import NBAModel
@@ -37,6 +64,33 @@ TEMPLATES.env.cache = None  # disable LRU cache (Python 3.14 compatibility)
 
 app = FastAPI(title="Sports Betting Model", version="1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.on_event("startup")
+async def _startup_preload():
+    """Warm the cache in background so the first real request is fast."""
+    def _preload():
+        today_str = date.today().strftime("%Y%m%d")
+        print("[STARTUP] Preloading NBA / MLB / NHL in background…")
+        try:
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                futs = {
+                    ex.submit(_build_nba_games, today_str): f"nba_{today_str}",
+                    ex.submit(_build_mlb_props, today_str): f"mlb_{today_str}",
+                    ex.submit(_build_nhl_props, today_str): f"nhl_{today_str}",
+                }
+                for fut in as_completed(futs):
+                    key = futs[fut]
+                    try:
+                        data = fut.result()
+                        with _CACHE_LOCK:
+                            _PAGE_CACHE[key] = (data, _time.time() + 600)
+                        print(f"[STARTUP] {key} preloaded OK")
+                    except Exception as _e:
+                        print(f"[STARTUP] {key} preload failed: {_e}")
+        except Exception as _e:
+            print(f"[STARTUP] Preload error: {_e}")
+    threading.Thread(target=_preload, daemon=True).start()
 
 
 @app.exception_handler(Exception)
@@ -132,6 +186,9 @@ def _build_nba_games(today_str: str) -> list:
                           "points+", "fantasy", "score", "combo")
 
     pp_lines: dict[tuple, float] = {}
+    # team_abbr_upper → {player_name_lower → {pts, reb, ast, fg3m from PP lines}}
+    pp_by_team: dict[str, dict] = {}
+    _STAT_TO_BDL = {"pts": "pts", "reb": "reb", "ast": "ast", "3pm": "fg3m"}
     try:
         for proj in get_nba_projections():
             stat_raw = (proj.get("stat") or "").lower()
@@ -140,13 +197,34 @@ def _build_nba_games(today_str: str) -> list:
             sk = next((v for k, v in _PP_STAT_KEY.items() if k in stat_raw), None)
             if not sk:
                 continue
-            name_key = (proj.get("name") or "").lower().strip()
+            name_raw  = (proj.get("name") or "").strip()
+            name_key  = name_raw.lower()
             line_val  = float(proj.get("line") or 0)
+            team_abbr = (proj.get("team") or "").upper().strip()
             if line_val > 0:
                 pp_lines[(name_key, sk)] = line_val
-        print(f"[NBA] PrizePicks line lookup: {len(pp_lines)} entries")
+                # Build per-team player lookup for BDL fallback
+                if team_abbr:
+                    if team_abbr not in pp_by_team:
+                        pp_by_team[team_abbr] = {}
+                    if name_key not in pp_by_team[team_abbr]:
+                        pp_by_team[team_abbr][name_key] = {
+                            "name": name_raw,
+                            "pos":  (proj.get("pos") or ""),
+                            "pts": 0.0, "reb": 0.0, "ast": 0.0, "fg3m": 0.0,
+                        }
+                    bdl_key = _STAT_TO_BDL.get(sk, sk)
+                    pp_by_team[team_abbr][name_key][bdl_key] = line_val
+        print(f"[NBA] PrizePicks lines: {len(pp_lines)} entries, {len(pp_by_team)} teams")
     except Exception as _ppe:
         print(f"[NBA] PrizePicks line fetch failed: {_ppe}")
+
+    def _nba_props_from_pp(abbr: str) -> list:
+        """Build NBA roster props from PrizePicks team players when BDL fails."""
+        players = list(pp_by_team.get(abbr.upper() if abbr else "", {}).values())
+        if not players:
+            return []
+        return _nba_props_from_avgs(players)
 
     # ── Batch game-log fetch: last 10 games for a list of BDL players ─────────
     def _fetch_batch_logs(players: list) -> dict:
@@ -305,7 +383,23 @@ def _build_nba_games(today_str: str) -> list:
         nba_book_lookup  = build_odds_lookup("NBA")
         nba_standings    = get_nba_win_pcts()  # {team_name_lower: win_pct} — 6h cache
 
-        for g in nba_get_games(dates=today_str):
+        raw_games = nba_get_games(dates=today_str)
+        # Parallel BDL fetch: all team rosters in one ThreadPoolExecutor call
+        # (was sequential → ~200-500ms × 20 teams = 4-10s; now ~500ms total)
+        unique_abbrs = list({
+            abbr for g in raw_games
+            for abbr in (g.get("home_abbr", ""), g.get("away_abbr", "")) if abbr
+        })
+        bdl_by_abbr: dict[str, list] = {}
+        if unique_abbrs:
+            def _fetch_abbr(abbr):
+                return abbr, get_team_players_with_averages(abbr, season=BDL_SEASON)
+            with ThreadPoolExecutor(max_workers=min(8, len(unique_abbrs))) as _ex:
+                for abbr, players in _ex.map(_fetch_abbr, unique_abbrs):
+                    bdl_by_abbr[abbr] = players or []
+            print(f"[NBA] BDL parallel fetch: {sum(len(v) for v in bdl_by_abbr.values())} players for {len(bdl_by_abbr)} teams")
+
+        for g in raw_games:
             home_team = g.get("home_team") or "TBD"
             away_team = g.get("away_team") or "TBD"
             home_id   = str(g.get("home_id", ""))
@@ -346,14 +440,10 @@ def _build_nba_games(today_str: str) -> list:
             leaders = g.get("leaders", [])
             print(f"[NBA] {home_team} vs {away_team} — ESPN leaders: {len(leaders)}")
 
-            # Primary: BDL full team roster with real season averages
-            try:
-                home_bdl = get_team_players_with_averages(home_abbr, season=BDL_SEASON)
-                away_bdl = get_team_players_with_averages(away_abbr, season=BDL_SEASON)
-                print(f"[NBA] BDL home={len(home_bdl)} away={len(away_bdl)}")
-            except Exception as _e:
-                print(f"[NBA] BDL error: {_e}")
-                home_bdl, away_bdl = [], []
+            # Primary: BDL full team roster (pre-fetched in parallel above)
+            home_bdl = bdl_by_abbr.get(home_abbr, [])
+            away_bdl = bdl_by_abbr.get(away_abbr, [])
+            print(f"[NBA] BDL home={len(home_bdl)} away={len(away_bdl)}")
 
             # Batch-fetch game logs for all BDL players in 2 calls (home + away)
             all_bdl = home_bdl + away_bdl
@@ -368,12 +458,18 @@ def _build_nba_games(today_str: str) -> list:
             if home_bdl:
                 home_roster = _nba_props_from_avgs(home_bdl, game_logs)
             else:
-                home_roster = _nba_roster_from_leaders(leaders, home_id)
+                # Fallback 1: PrizePicks team players (correct team, no ESPN team_id bug)
+                home_roster = _nba_props_from_pp(home_abbr)
+                if not home_roster:
+                    # Fallback 2: ESPN competition leaders filtered by team_id
+                    home_roster = _nba_roster_from_leaders(leaders, home_id)
 
             if away_bdl:
                 away_roster = _nba_props_from_avgs(away_bdl, game_logs)
             else:
-                away_roster = _nba_roster_from_leaders(leaders, away_id)
+                away_roster = _nba_props_from_pp(away_abbr)
+                if not away_roster:
+                    away_roster = _nba_roster_from_leaders(leaders, away_id)
 
             # Last resort: presets split evenly to avoid duplicates
             if not home_roster and not away_roster:
@@ -744,10 +840,10 @@ async def soccer_page(request: Request):
 async def nba_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    games       = _build_nba_games(today_str)
+    games       = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str))
     return TEMPLATES.TemplateResponse(request, "nba.html", {
-        "games": games, "today": today_label,
-        "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+        "games": games or [], "today": today_label,
+        "total": len(games or []), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
         "generated_at": _now_iso(),
     })
 
@@ -914,19 +1010,27 @@ def _build_mlb_props(today_str: str) -> tuple[list, int]:
             else:
                 hits_pg = season_stats.get("hits_pg") or pp_lines.get("hits_line") or 0
                 tb_pg   = season_stats.get("tb_pg")   or pp_lines.get("tb_line")   or 0
+                hr_pg   = season_stats.get("hr_pg",  0) or pp_lines.get("hr_line",  0) or 0
+                rbi_pg  = season_stats.get("rbi_pg", 0) or pp_lines.get("rbi_line", 0) or 0
                 runs_pg = season_stats.get("runs_pg", 0.6) or 0.6
-                bstats  = {"hits_pg": hits_pg, "tb_pg": tb_pg, "runs_pg": runs_pg, **pp_lines}
+                bstats  = {
+                    "hits_pg": hits_pg, "tb_pg": tb_pg, "hr_pg": hr_pg,
+                    "rbi_pg":  rbi_pg,  "runs_pg": runs_pg, **pp_lines,
+                }
                 props = build_batter_props(bstats)
 
+            # Flatten: emit one entry per prop so the template renders each as
+            # a separate card with the correct data-stat for filter tabs.
             if props:
-                all_props.append({
-                    "name": player_name,
-                    "pos":  pos,
-                    "team": projs[0].get("team", ""),
+                player_meta = {
+                    "name":     player_name,
+                    "pos":      pos,
+                    "team":     projs[0].get("team", ""),
                     "opponent": "",
-                    "props": props,
-                })
-            if len(all_props) >= 60:  # cap to avoid overwhelming the page
+                }
+                for prop in props:
+                    all_props.append({**player_meta, **prop})
+            if len(all_props) >= 120:  # cap (was 60 but now flat so ~2× entries)
                 break
 
     except Exception:
@@ -963,7 +1067,7 @@ def _build_nhl_props(today_str: str) -> tuple[list, int]:
         if pp_projs:
             all_props = build_props_from_prizepicks(pp_projs)
         else:
-            # Fall back: NHL roster stats API
+            # Fall back: NHL roster stats API — flatten to one entry per prop
             seen_players: set = set()
             for g in games:
                 for abbr in [g.get("home_abbr", ""), g.get("away_abbr", "")]:
@@ -982,8 +1086,17 @@ def _build_nhl_props(today_str: str) -> tuple[list, int]:
                             props = build_goalie_props(p)
                         else:
                             props = build_skater_props(p)
-                        if props:
-                            all_props.append({**p, "team": abbr, "props": props})
+                        player_meta = {
+                            "name":      pname,
+                            "team":      abbr,
+                            "pos":       p.get("pos", ""),
+                            "is_goalie": p.get("is_goalie", False),
+                            "gp":        p.get("gp", 0),
+                            "sv_pct":    p.get("sv_pct", 0),
+                            "gaa":       p.get("gaa", 0),
+                        }
+                        for prop in props:
+                            all_props.append({**player_meta, **prop})
     except Exception:
         traceback.print_exc()
         total_games = 0
@@ -999,13 +1112,14 @@ def _build_nhl_props(today_str: str) -> tuple[list, int]:
 async def mlb_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    all_props, total_games = _build_mlb_props(today_str)
+    result      = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str))
+    all_props, total_games = result if result else ([], 0)
     return TEMPLATES.TemplateResponse(request, "mlb.html", {
-        "all_props":    all_props,
+        "all_props":     all_props,
         "total_players": len(all_props),
-        "total_games":  total_games,
-        "today":        today_label,
-        "generated_at": _now_iso(),
+        "total_games":   total_games,
+        "today":         today_label,
+        "generated_at":  _now_iso(),
     })
 
 
@@ -1017,13 +1131,14 @@ async def mlb_page(request: Request):
 async def nhl_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    all_props, total_games = _build_nhl_props(today_str)
+    result      = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str))
+    all_props, total_games = result if result else ([], 0)
     return TEMPLATES.TemplateResponse(request, "nhl.html", {
-        "all_props":    all_props,
+        "all_props":     all_props,
         "total_players": len(all_props),
-        "total_games":  total_games,
-        "today":        today_label,
-        "generated_at": _now_iso(),
+        "total_games":   total_games,
+        "today":         today_label,
+        "generated_at":  _now_iso(),
     })
 
 
