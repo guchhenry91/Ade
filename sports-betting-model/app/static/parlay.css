@@ -16,7 +16,7 @@
   border-radius: 20px;
   padding: 8px 16px;
   cursor: pointer;
-  z-index: 200;
+  z-index: 600;
   box-shadow: 0 4px 16px rgba(0,212,255,.4);
   transition: all .2s;
   display: none;
@@ -36,7 +36,7 @@
   background: var(--card);
   border-left: 1px solid var(--border);
   box-shadow: -4px 0 32px rgba(0,0,0,.5);
-  z-index: 150;
+  z-index: 500;
   display: flex;
   flex-direction: column;
   transition: right .25s cubic-bezier(.4,0,.2,1);
@@ -300,4 +300,79 @@
   }
   #parlay-panel.open { bottom: 0; right: 0; }
   #parlay-badge { bottom: 64px; }
+  /* Minimum 44px touch target for parlay buttons on mobile */
+  .parlay-add-btn { min-height: 44px; }
+  .parlay-btn    { min-height: 44px; }
 }
+
+/* ── Nav parlay badge ── */
+#parlay-nav-btn {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 8px;
+  background: rgba(0,212,255,.1);
+  border: 1px solid rgba(0,212,255,.25);
+  color: var(--accent);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+  transition: all .15s;
+  margin-left: 6px;
+}
+#parlay-nav-btn:hover { background: rgba(0,212,255,.2); }
+#parlay-nav-btn.has-legs { display: inline-flex; }
+
+/* ── Shake animation (9th leg attempt) ── */
+@keyframes parlay-shake {
+  0%, 100% { transform: translateX(0); }
+  18%       { transform: translateX(-7px); }
+  36%       { transform: translateX(7px); }
+  54%       { transform: translateX(-5px); }
+  72%       { transform: translateX(5px); }
+  90%       { transform: translateX(-2px); }
+}
+.parlay-shake { animation: parlay-shake .45s ease; }
+
+/* ── Best / weakest leg highlight ── */
+.parlay-leg.best-leg {
+  border-color: var(--star);
+  box-shadow: 0 0 0 1px rgba(245,158,11,.25);
+}
+.parlay-leg.weak-leg {
+  border-color: rgba(255,68,68,.55);
+}
+.parlay-leg-badge {
+  font-size: 8px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; padding: 1px 5px; border-radius: 3px;
+  margin-top: 2px; display: inline-block;
+}
+.parlay-leg-badge.best { color: var(--star); background: rgba(245,158,11,.12); }
+.parlay-leg-badge.weak { color: var(--under); background: rgba(255,68,68,.1); }
+
+/* ── Drag-and-drop ── */
+.parlay-leg-drag {
+  cursor: grab; color: var(--txt3); font-size: 13px;
+  padding: 0 3px; user-select: none; flex-shrink: 0;
+}
+.parlay-leg.dragging   { opacity: .45; }
+.parlay-leg.drag-over  { border-color: var(--accent); background: rgba(0,212,255,.05); }
+
+/* ── 1-leg "add more" hint ── */
+.parlay-one-leg-hint {
+  font-size: 11px; color: var(--accent); text-align: center;
+  background: rgba(0,212,255,.05);
+  border: 1px dashed rgba(0,212,255,.2);
+  border-radius: 6px; padding: 8px 10px; margin-top: 6px;
+}
+
+/* ── Guard toast (copy/analyze empty state) ── */
+.parlay-toast {
+  position: absolute; bottom: 56px; left: 12px; right: 12px;
+  background: rgba(255,165,0,.15); border: 1px solid rgba(255,165,0,.4);
+  color: #ffa500; font-size: 11px; font-weight: 600;
+  text-align: center; padding: 8px 12px; border-radius: 8px;
+  z-index: 10; opacity: 1; transition: opacity .3s;
+  pointer-events: none;
+}
+.parlay-toast.fade { opacity: 0; }

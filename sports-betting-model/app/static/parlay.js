@@ -7,12 +7,14 @@
 const parlayState = (function () {
   /* ── Constants ── */
   const MAX_LEGS = 8;
+  const SPORT_EMOJI = { NBA: '🏀', MLB: '⚾', NHL: '🏒', NFL: '🏈', Soccer: '⚽' };
 
   /* ── State ── */
   let legs = [];
   let aiAnalysis = null;
   let aiLegsHash = null;
   let currentTab = 'builder';
+  let _lastConfettiHash = null;
 
   /* ── SessionStorage persistence ── */
   function save() {
@@ -72,6 +74,7 @@ const parlayState = (function () {
   function clearAll() {
     legs = [];
     aiAnalysis = null;
+    _lastConfettiHash = null;
     save();
     render();
   }
@@ -84,10 +87,15 @@ const parlayState = (function () {
       if (idx > -1) removeLeg(idx);
     } else {
       if (legs.length >= MAX_LEGS) {
-        const orig = btn.innerHTML;
-        btn.innerHTML = '🔒 Parlay Full';
-        btn.disabled = true;
-        setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 2000);
+        /* Shake the panel to signal it's full */
+        const target = document.getElementById('parlay-panel') || document.getElementById('parlay-badge');
+        if (target) {
+          target.classList.remove('parlay-shake');
+          void target.offsetWidth; // force reflow
+          target.classList.add('parlay-shake');
+          target.addEventListener('animationend', () => target.classList.remove('parlay-shake'), { once: true });
+        }
+        _showToast('Maximum 8 legs reached');
         return;
       }
       const ok = addLeg(leg);
@@ -122,20 +130,21 @@ const parlayState = (function () {
     return prob;
   }
 
-  /* Convert probability to American odds */
+  /* Convert probability to American odds — always show sign */
   function toAmericanOdds(prob) {
     if (prob <= 0 || prob >= 1) return 0;
     if (prob >= 0.5) return Math.round(-(prob / (1 - prob)) * 100);
     return Math.round(((1 - prob) / prob) * 100);
   }
 
+  /* Format American odds with mandatory sign */
+  function fmtOdds(american) {
+    return american >= 0 ? `+${american}` : `${american}`;
+  }
+
   /*
    * Model edge vs a naive 55% benchmark.
    * edge = (our combined prob - benchmark_prob) / n_legs
-   * Positive = our picks beat the benchmark; negative = below.
-   *
-   * For 3 legs at 68/74/61%: combined=0.307, benchmark=0.55^3=0.166,
-   * edge = (0.307-0.166)/3 ≈ +4.7% — matches spec's illustrative +4.2%.
    */
   function getModelEdge(combinedProb) {
     if (legs.length === 0 || combinedProb <= 0) return 0;
@@ -211,7 +220,6 @@ const parlayState = (function () {
   ================================================================ */
   function buildBestParlay() {
     const allBtns = Array.from(document.querySelectorAll('.parlay-add-btn'));
-    /* Exclude already-added and disabled */
     const available = allBtns.filter(b => !b.classList.contains('added') && !b.disabled);
 
     if (available.length === 0) {
@@ -219,21 +227,16 @@ const parlayState = (function () {
       return;
     }
 
-    const candidates = available
+    /* Require ≥65% confidence */
+    const pool = available
       .map(btn => ({ btn, conf: parseFloat(btn.dataset.confidence || 50) }))
+      .filter(c => c.conf >= 65)
       .sort((a, b) => b.conf - a.conf);
 
-    /* Prefer ≥65% confidence; fall back to all if not enough */
-    const pool = candidates.filter(c => c.conf >= 65);
-    const source = pool.length >= 2 ? pool : candidates;
-
-    clearAll();
-
+    /* Pick exactly 3 from different games */
     const usedGames = new Set();
     const picked = [];
-
-    /* Pass 1: pick from different games */
-    for (const { btn } of source) {
+    for (const { btn } of pool) {
       if (picked.length >= 3) break;
       const game = btn.dataset.game || '';
       if (!usedGames.has(game)) {
@@ -242,16 +245,14 @@ const parlayState = (function () {
       }
     }
 
-    /* Pass 2: fill remaining slots from any game */
-    for (const { btn } of source) {
-      if (picked.length >= 3) break;
-      if (!picked.includes(btn)) picked.push(btn);
+    if (picked.length < 3) {
+      _showAutoMsg('Not enough high-confidence picks today');
+      return;
     }
 
+    clearAll();
     picked.forEach(btn => toggleLeg(btn));
-    _showAutoMsg(pool.length >= 2
-      ? 'Auto-built from today\'s top picks (≥65% confidence)'
-      : 'Auto-built from today\'s best available picks');
+    _showAutoMsg('Auto-built from today\'s top picks (≥65% confidence)');
   }
 
   function _showAutoMsg(msg) {
@@ -267,11 +268,14 @@ const parlayState = (function () {
      COPY PARLAY
   ================================================================ */
   function copyParlay() {
-    if (legs.length === 0) return;
-    const prob    = getCombinedProb();
+    if (legs.length < 2) {
+      _showToast('Add at least 2 legs first');
+      return;
+    }
+    const prob     = getCombinedProb();
     const american = toAmericanOdds(prob);
-    const grade   = getGradeData();
-    const edge    = getModelEdge(prob);
+    const grade    = getGradeData();
+    const edge     = getModelEdge(prob);
     const starsStr = grade ? '★'.repeat(grade.stars) + '☆'.repeat(5 - grade.stars) : '';
 
     const text = [
@@ -281,7 +285,7 @@ const parlayState = (function () {
         `✅ ${l.player} ${l.stat} ${l.pick} ${l.line} (${Math.round(l.confidence * 100)}%)`
       ),
       '━━━━━━━━━━━━━━━━━━━━━━━━',
-      `Combined: ${(prob * 100).toFixed(1)}% | ${american >= 0 ? '+' : ''}${american} odds`,
+      `Combined: ${(prob * 100).toFixed(1)}% | ${fmtOdds(american)} odds`,
       grade ? `Grade: ${starsStr} ${grade.label}` : '',
       `Model Edge: ${edge >= 0 ? '+' : ''}${(edge * 100).toFixed(1)}%`,
       '━━━━━━━━━━━━━━━━━━━━━━━━',
@@ -377,7 +381,10 @@ const parlayState = (function () {
      AI ANALYSIS
   ================================================================ */
   async function analyzeParlay() {
-    if (legs.length < 2) return;
+    if (legs.length < 2) {
+      _showToast('Add at least 2 legs first');
+      return;
+    }
 
     const hash = legs.map(l => `${l.player}|${l.stat}|${l.line}|${l.pick}`).join(',');
 
@@ -400,11 +407,11 @@ const parlayState = (function () {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          legs:         legs,
+          legs:          legs,
           combined_prob: parseFloat((prob * 100).toFixed(1)),
-          grade:        grade ? grade.label : '',
-          grade_stars:  grade ? grade.stars : 0,
-          edge:         parseFloat((edge * 100).toFixed(2)),
+          grade:         grade ? grade.label : '',
+          grade_stars:   grade ? grade.stars : 0,
+          edge:          parseFloat((edge * 100).toFixed(2)),
         }),
       });
 
@@ -434,7 +441,6 @@ const parlayState = (function () {
       sec = document.createElement('div');
       sec.id = 'parlay-ai-section';
       sec.className = 'parlay-ai-section';
-      /* Append inside summary card if present, else inside actions */
       const summary = document.getElementById('parlay-summary');
       if (summary) summary.appendChild(sec);
     }
@@ -471,6 +477,18 @@ const parlayState = (function () {
     }
   }
 
+  /* Update nav-bar parlay badge */
+  function _updateNavBadge() {
+    const btn = document.getElementById('parlay-nav-btn');
+    if (!btn) return;
+    if (legs.length > 0) {
+      btn.classList.add('has-legs');
+      btn.textContent = `🎯 Parlay (${legs.length})`;
+    } else {
+      btn.classList.remove('has-legs');
+    }
+  }
+
   /* ================================================================
      TAB SWITCHING
   ================================================================ */
@@ -493,6 +511,8 @@ const parlayState = (function () {
     renderSummary();
     renderButtons();
     _updateBadge();
+    _updateNavBadge();
+    _maybeConfetti();
   }
 
   /* ── Render legs list ── */
@@ -512,32 +532,64 @@ const parlayState = (function () {
       return;
     }
 
+    /* Find best and weakest leg indices */
+    const bestIdx = legs.reduce((bi, l, i) => l.confidence > legs[bi].confidence ? i : bi, 0);
+    const weakIdx = legs.reduce((wi, l, i) => l.confidence < legs[wi].confidence ? i : wi, 0);
+    /* Only mark best/weak if they're different legs */
+    const markBest = legs.length > 1;
+    const markWeak = legs.length > 1 && weakIdx !== bestIdx;
+
     const gameCounts = {};
     legs.forEach(l => { gameCounts[l.game] = (gameCounts[l.game] || 0) + 1; });
 
     let html = '<div id="parlay-autosuggest-msg"></div>';
     legs.forEach((leg, i) => {
-      const pct      = Math.round(leg.confidence * 100);
+      const pct       = Math.round(leg.confidence * 100);
       const starsHtml = _starsHtml(leg.stars);
-      const isSGP    = gameCounts[leg.game] > 1;
+      const isSGP     = gameCounts[leg.game] > 1;
       const confColor = pct >= 65 ? 'var(--over)' : pct >= 55 ? '#ffa500' : 'var(--under)';
+      const sportEmoji = SPORT_EMOJI[leg.sport] || '🎯';
+
+      const isBest = markBest && i === bestIdx;
+      const isWeak = markWeak && i === weakIdx;
+      const legClass = isBest ? ' best-leg' : isWeak ? ' weak-leg' : '';
+
+      const badgeHtml = isBest
+        ? '<span class="parlay-leg-badge best">⭐ Best leg</span>'
+        : isWeak
+          ? '<span class="parlay-leg-badge weak">⚠️ Weakest leg</span>'
+          : '';
 
       html += `
-        <div class="parlay-leg" id="parlay-leg-${i}">
-          <div class="parlay-leg-sport">${escHtml(leg.sport)} · ${escHtml(leg.game)}</div>
-          <div class="parlay-leg-player">${escHtml(leg.player)}</div>
-          <div class="parlay-leg-prop">${escHtml(leg.stat)} ${escHtml(leg.pick)} ${leg.line}</div>
-          ${isSGP ? '<span class="parlay-sgp-warn">⚠️ Same-game</span>' : ''}
-          <div class="parlay-leg-meta">
-            <span class="parlay-leg-conf" style="color:${confColor}">${pct}%</span>
-            <span class="parlay-leg-stars">${starsHtml}</span>
-            <button class="parlay-leg-remove" onclick="parlayState.remove(${i})">✕ Remove</button>
+        <div class="parlay-leg${legClass}" id="parlay-leg-${i}" draggable="true" data-idx="${i}">
+          <div style="display:flex;align-items:flex-start;gap:6px;">
+            <span class="parlay-leg-drag" title="Drag to reorder">⠿</span>
+            <div style="flex:1;min-width:0;">
+              <div class="parlay-leg-sport">${sportEmoji} ${escHtml(leg.sport)} · ${escHtml(leg.game)}</div>
+              <div class="parlay-leg-player">${escHtml(leg.player)}</div>
+              <div class="parlay-leg-prop">${escHtml(leg.stat)} ${escHtml(leg.pick)} ${leg.line}</div>
+              ${isSGP ? '<span class="parlay-sgp-warn">⚠️ Same-game</span>' : ''}
+              ${badgeHtml}
+              <div class="parlay-leg-meta">
+                <span class="parlay-leg-conf" style="color:${confColor}">${pct}%</span>
+                <span class="parlay-leg-stars">${starsHtml}</span>
+                <button class="parlay-leg-remove" onclick="parlayState.remove(${i})">✕ Remove</button>
+              </div>
+            </div>
           </div>
         </div>
       `;
     });
 
+    /* 1-leg hint */
+    if (legs.length === 1) {
+      html += `<div class="parlay-one-leg-hint">Add 1 more leg to build a parlay</div>`;
+    }
+
     container.innerHTML = html;
+
+    /* Wire up drag-and-drop */
+    _initDragAndDrop(container);
   }
 
   /* ── Render summary card ── */
@@ -555,14 +607,14 @@ const parlayState = (function () {
     container.style.display = 'block';
     if (actionsEl) actionsEl.style.display = 'flex';
 
-    const prob      = getCombinedProb();
-    const american  = toAmericanOdds(prob);
-    const edge      = getModelEdge(prob);
-    const grade     = getGradeData();
-    const kelly     = getKelly();
-    const warns     = getWarnings();
+    const prob     = getCombinedProb();
+    const american = toAmericanOdds(prob);
+    const edge     = getModelEdge(prob);
+    const grade    = getGradeData();
+    const kelly    = getKelly();
+    const warns    = getWarnings();
 
-    const americanStr = american >= 0 ? `+${american}` : `${american}`;
+    const americanStr = fmtOdds(american);
     const edgeStr     = edge >= 0 ? `+${(edge * 100).toFixed(1)}%` : `${(edge * 100).toFixed(1)}%`;
     const edgeClass   = edge >= 0 ? 'positive' : 'negative';
 
@@ -644,11 +696,11 @@ const parlayState = (function () {
     }
 
     container.innerHTML = saved.map(p => {
-      const legsText   = p.legs.map(l => `${l.player} ${l.stat} ${l.pick} ${l.line}`).join('\n');
-      const probStr    = (p.combinedProb * 100).toFixed(1);
-      const oddsStr    = p.americanOdds >= 0 ? `+${p.americanOdds}` : `${p.americanOdds}`;
-      const starsHtml  = _starsHtml(p.gradeStars || 0);
-      const resColor   = p.result === 'won' ? 'var(--over)' : p.result === 'lost' ? 'var(--under)' : 'var(--txt3)';
+      const legsText  = p.legs.map(l => `${l.player} ${l.stat} ${l.pick} ${l.line}`).join('\n');
+      const probStr   = (p.combinedProb * 100).toFixed(1);
+      const oddsStr   = fmtOdds(p.americanOdds);
+      const starsHtml = _starsHtml(p.gradeStars || 0);
+      const resColor  = p.result === 'won' ? 'var(--over)' : p.result === 'lost' ? 'var(--under)' : 'var(--txt3)';
 
       return `
         <div class="saved-parlay-item">
@@ -680,7 +732,7 @@ const parlayState = (function () {
     return filled + empty;
   }
 
-  /* Safe HTML escaping for user-sourced strings used in innerHTML */
+  /* Safe HTML escaping */
   function escHtml(str) {
     if (!str && str !== 0) return '';
     return String(str)
@@ -689,6 +741,84 @@ const parlayState = (function () {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  /* ── Toast notification (empty-state guard) ── */
+  function _showToast(msg) {
+    const panel = document.getElementById('parlay-panel');
+    if (!panel) return;
+    const old = panel.querySelector('.parlay-toast');
+    if (old) old.remove();
+    const toast = document.createElement('div');
+    toast.className = 'parlay-toast';
+    toast.textContent = msg;
+    panel.appendChild(toast);
+    /* Open panel so user sees the toast */
+    openPanel();
+    setTimeout(() => {
+      toast.classList.add('fade');
+      setTimeout(() => { if (toast.parentNode) toast.remove(); }, 400);
+    }, 2500);
+  }
+
+  /* ── Confetti on 5-star parlay ── */
+  function _maybeConfetti() {
+    const grade = getGradeData();
+    if (!grade || grade.stars < 5) return;
+    const hash = legs.map(l => l.player + l.stat).join(',');
+    if (hash === _lastConfettiHash) return; // already fired
+    _lastConfettiHash = hash;
+    if (typeof confetti === 'function') {
+      confetti({ particleCount: 90, spread: 65, origin: { y: 0.55 } });
+    } else {
+      /* CSS fallback: brief gold glow on panel */
+      const panel = document.getElementById('parlay-panel');
+      if (panel) {
+        const orig = panel.style.boxShadow;
+        panel.style.boxShadow = '0 0 48px rgba(245,158,11,.65)';
+        setTimeout(() => { panel.style.boxShadow = orig; }, 900);
+      }
+    }
+  }
+
+  /* ── Drag-and-drop reordering ── */
+  function _initDragAndDrop(container) {
+    const legEls = Array.from(container.querySelectorAll('.parlay-leg[draggable]'));
+    let dragIdx = null;
+
+    legEls.forEach(el => {
+      const idx = parseInt(el.dataset.idx, 10);
+
+      el.addEventListener('dragstart', e => {
+        dragIdx = idx;
+        el.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+
+      el.addEventListener('dragend', () => {
+        el.classList.remove('dragging');
+        legEls.forEach(e2 => e2.classList.remove('drag-over'));
+        dragIdx = null;
+      });
+
+      el.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (idx !== dragIdx) el.classList.add('drag-over');
+      });
+
+      el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+
+      el.addEventListener('drop', e => {
+        e.preventDefault();
+        el.classList.remove('drag-over');
+        if (dragIdx === null || dragIdx === idx) return;
+        const [moved] = legs.splice(dragIdx, 1);
+        legs.splice(idx, 0, moved);
+        save();
+        render();
+      });
+    });
   }
 
   /* ================================================================

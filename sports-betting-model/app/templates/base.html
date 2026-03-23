@@ -10,6 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/parlay.css">
+  <!-- canvas-confetti for 5-star parlay celebration -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Tailwind CDN (supports legacy templates that use utility classes) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -291,6 +293,8 @@
       {{ icon }} {{ label }}
     </a>
     {% endfor %}
+    <!-- Parlay counter badge (shown in real time by parlay.js) -->
+    <button id="parlay-nav-btn" onclick="parlayState.openPanel()" aria-label="Open Parlay Builder"></button>
   </div>
 </nav>
 
