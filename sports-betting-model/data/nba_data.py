@@ -1,7 +1,9 @@
 """
 NBA data layer.
-Primary  : ESPN public API  (no key, no rate limits)
-All BDL (Ball Don't Lie) calls have been removed. ESPN is free and reliable.
+Primary  : ESPN public API  (no key, no rate limits) for schedule/scoreboard
+Player stats: NBA Stats API (stats.nba.com, free, no key) — official NBA data
+All ESPN /athletes/{id}/stats and /athletes/{id}/gamelog calls removed;
+those IDs don't match across ESPN endpoints (roster ID ≠ stats athlete ID).
 """
 from __future__ import annotations
 import re
@@ -16,8 +18,214 @@ from data.fetcher import espn_fetch, fetch
 
 logger = logging.getLogger(__name__)
 
-# NBA data: ESPN free API (no key required)
-# Replaced BDL March 2026 — was causing 429 rate-limit errors
+# ── NBA Stats API helpers ──────────────────────────────────────────────────────
+
+# Headers required by stats.nba.com to avoid 403/429
+_NBA_STATS_HEADERS: Dict[str, str] = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Referer":            "https://www.nba.com",
+    "Accept":             "application/json, text/plain, */*",
+    "Accept-Language":    "en-US,en;q=0.9",
+    "Origin":             "https://www.nba.com",
+    "x-nba-stats-origin": "stats",
+    "x-nba-stats-token":  "true",
+}
+
+# ESPN team abbreviation → NBA Stats API abbreviation (mismatches only)
+ESPN_TO_NBA: Dict[str, str] = {
+    "GS":   "GSW",
+    "NO":   "NOP",
+    "NY":   "NYK",
+    "SA":   "SAS",
+    "UTAH": "UTA",
+    "WSH":  "WAS",
+    "NJ":   "BKN",
+}
+
+# In-memory cache for all-players list (24 h TTL)
+_nba_players_cache: Dict = {}
+_NBA_PLAYERS_TTL = 86400
+
+
+def _nba_stats_fetch(endpoint: str, params: Optional[Dict] = None,
+                     timeout: int = 12) -> Optional[Any]:
+    """Fetch from stats.nba.com with required headers and disk cache."""
+    url = f"https://stats.nba.com/stats/{endpoint}"
+    return fetch(url, params=params, headers=_NBA_STATS_HEADERS,
+                 use_cache=True, timeout=timeout)
+
+
+def get_all_nba_players() -> Dict[str, List[Dict]]:
+    """Fetch all active NBA players from NBA Stats API (cached 24 h).
+
+    Returns {team_abbr: [{id, name, team}]} keyed by NBA Stats API abbreviation.
+    Single call; result covers every team so we only hit the API once per day.
+    """
+    now = time.time()
+    if _nba_players_cache.get("ts", 0) + _NBA_PLAYERS_TTL > now:
+        return _nba_players_cache.get("data", {})
+
+    data = _nba_stats_fetch("commonallplayers", {
+        "LeagueID": "00",
+        "Season":   "2025-26",
+        "IsOnlyCurrentSeason": "1",
+    }, timeout=15)
+
+    if not data:
+        print("[NBA] commonallplayers: no response from NBA Stats API")
+        return {}
+
+    try:
+        result_set   = data["resultSets"][0]
+        headers_list = result_set["headers"]
+        rows         = result_set["rowSet"]
+
+        id_idx   = headers_list.index("PERSON_ID")
+        name_idx = headers_list.index("DISPLAY_FIRST_LAST")
+        team_idx = headers_list.index("TEAM_ABBREVIATION")
+
+        team_players: Dict[str, List[Dict]] = {}
+        for row in rows:
+            pid  = str(row[id_idx])
+            name = row[name_idx] or ""
+            team = row[team_idx] or ""
+            if not team or not name:
+                continue
+            team_players.setdefault(team, []).append(
+                {"id": pid, "name": name, "team": team}
+            )
+
+        total = sum(len(v) for v in team_players.values())
+        print(f"[NBA] NBA Stats API: {total} players on "
+              f"{len(team_players)} teams: {sorted(team_players)}")
+
+        _nba_players_cache["data"] = team_players
+        _nba_players_cache["ts"]   = now
+        return team_players
+
+    except Exception as e:
+        print(f"[NBA] get_all_nba_players parse error: {e}")
+        return {}
+
+
+def get_nba_player_season_stats(person_id: str) -> Dict[str, float]:
+    """Fetch season per-game averages from stats.nba.com.
+
+    Returns {pts, reb, ast, fg3m, stl, blk}.
+    Uses 2025-26 season row; falls back to most-recent row.
+    """
+    data = _nba_stats_fetch("playercareerstats", {
+        "PlayerID": person_id,
+        "PerMode":  "PerGame",
+    })
+    if not data:
+        return {}
+
+    try:
+        season_set = None
+        for rs in data.get("resultSets", []):
+            if rs["name"] == "SeasonTotalsRegularSeason":
+                season_set = rs
+                break
+
+        if not season_set or not season_set.get("rowSet"):
+            print(f"[NBA STATS] No season rows for {person_id}")
+            return {}
+
+        h    = season_set["headers"]
+        rows = season_set["rowSet"]
+
+        # Prefer 2025-26; fall back to most-recent row
+        current = None
+        if "SEASON_ID" in h:
+            sid_i = h.index("SEASON_ID")
+            for row in rows:
+                if row[sid_i] == "2025-26":
+                    current = row
+                    break
+        if current is None and rows:
+            current = rows[-1]
+
+        if current is None:
+            return {}
+
+        def val(col: str) -> float:
+            try:
+                return float(current[h.index(col)] or 0)
+            except (ValueError, IndexError):
+                return 0.0
+
+        result = {
+            "pts":  val("PTS"),
+            "reb":  val("REB"),
+            "ast":  val("AST"),
+            "fg3m": val("FG3M"),
+            "stl":  val("STL"),
+            "blk":  val("BLK"),
+        }
+
+        if result["pts"] == 0 and result["reb"] == 0:
+            print(f"[NBA STATS] All zeros for {person_id} — "
+                  f"available headers sample: {h[:8]}")
+        else:
+            print(f"[NBA STATS] {person_id}: "
+                  f"{result['pts']}pts {result['reb']}reb "
+                  f"{result['ast']}ast {result['fg3m']}3pm")
+
+        return result
+
+    except Exception as e:
+        print(f"[NBA STATS] Parse error for {person_id}: {e}")
+        return {}
+
+
+def get_nba_player_game_logs(person_id: str, num_games: int = 10) -> List[Dict]:
+    """Fetch recent game logs from stats.nba.com.
+
+    Returns list of {pts, reb, ast, fg3m} dicts, newest first, capped at num_games.
+    """
+    data = _nba_stats_fetch("playergamelog", {
+        "PlayerID":   person_id,
+        "Season":     "2025-26",
+        "SeasonType": "Regular Season",
+    })
+    if not data:
+        return []
+
+    try:
+        rs   = data["resultSets"][0]
+        h    = rs["headers"]
+        rows = rs["rowSet"]
+
+        if not rows:
+            return []
+
+        def val(row, col: str) -> float:
+            try:
+                return float(row[h.index(col)] or 0)
+            except (ValueError, IndexError):
+                return 0.0
+
+        logs = [
+            {"pts":  val(row, "PTS"),
+             "reb":  val(row, "REB"),
+             "ast":  val(row, "AST"),
+             "fg3m": val(row, "FG3M")}
+            for row in rows[:num_games]
+        ]
+
+        if logs:
+            print(f"[NBA LOGS] {person_id}: {len(logs)} games, "
+                  f"last: {logs[0]}")
+        return logs
+
+    except Exception as e:
+        print(f"[NBA LOGS] Parse error for {person_id}: {e}")
+        return []
 
 
 def _espn_team_id(team_obj) -> str:

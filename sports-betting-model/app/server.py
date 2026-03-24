@@ -166,8 +166,8 @@ def _ml_to_prob(ml) -> float:
 
 def _build_nba_games(today_str: str) -> list:
     from data.nba_data   import (get_games as nba_get_games, get_nba_win_pcts,
-                                  get_espn_team_roster, get_espn_player_stats,
-                                  get_espn_player_logs)
+                                  get_all_nba_players, get_nba_player_season_stats,
+                                  get_nba_player_game_logs, ESPN_TO_NBA)
     from data.odds_api   import build_odds_lookup, find_game_odds, decimal_to_american
     from utils.stats     import confidence_label, shot_attempt_over_under, threept_made_ou
 
@@ -274,81 +274,64 @@ def _build_nba_games(today_str: str) -> list:
                             "pts": p.get("pts", 0), "props": props})
         return out
 
+    # Load all active NBA players once (cached 24 h) — avoids per-team roster calls
+    all_nba_players = get_all_nba_players()   # {NBA_abbr: [{id, name, team}]}
+
     def _nba_team_roster_with_props(team_id: str, team_abbr: str) -> list:
+        """Fetch NBA Stats API roster for a team and generate prop cards.
+
+        team_id is the ESPN team ID (kept for signature compatibility but unused).
+        team_abbr is the ESPN abbreviation; translated to NBA Stats API abbr if needed.
         """
-        Fetch ESPN team roster → get season stats + game logs for each player
-        → build prop cards. Returns up to 10 players sorted by pts.
-        No PrizePicks needed — lines generated from season averages.
-        """
-        if not team_id:
-            return []
-        try:
-            roster = get_espn_team_roster(team_id)
-        except Exception as _re:
-            print(f"[NBA] Roster fetch failed for {team_abbr}: {_re}")
+        # Translate ESPN abbr → NBA Stats API abbr (e.g. "GS" → "GSW")
+        nba_abbr = ESPN_TO_NBA.get(team_abbr, team_abbr)
+        players  = (all_nba_players.get(nba_abbr)
+                    or all_nba_players.get(team_abbr)
+                    or [])
+
+        if not players:
+            avail = sorted(all_nba_players)[:12]
+            print(f"[NBA] {team_abbr}/{nba_abbr}: no players — "
+                  f"available abbrs: {avail}")
             return []
 
-        if not roster:
-            print(f"[NBA] {team_abbr}: empty roster from ESPN")
-            return []
-
-        print(f"[NBA] {team_abbr}: {len(roster)} players on ESPN roster")
+        print(f"[NBA] {team_abbr}: {len(players)} players from NBA Stats API")
 
         def _fetch_one(player: dict) -> dict | None:
-            pid  = player.get("id", "")
-            name = player.get("name", "")
-            pos  = player.get("pos", "")
-            if not pid or not name:
-                return None
+            pid  = player["id"]
+            name = player["name"]
             try:
-                season_stats = get_espn_player_stats(pid) or {}
-                game_logs    = get_espn_player_logs(pid)
-
+                season_stats = get_nba_player_season_stats(pid) or {}
                 pts  = float(season_stats.get("pts",  0))
                 reb  = float(season_stats.get("reb",  0))
-                ast  = float(season_stats.get("ast",  0))
-                fg3m = float(season_stats.get("fg3m", 0))
 
-                # If season stats empty, compute averages from game logs instead
-                if pts == 0 and reb == 0 and game_logs:
-                    n = len(game_logs)
-                    pts  = round(sum(float(g.get("pts",  0) or 0) for g in game_logs) / n, 1)
-                    reb  = round(sum(float(g.get("reb",  0) or 0) for g in game_logs) / n, 1)
-                    ast  = round(sum(float(g.get("ast",  0) or 0) for g in game_logs) / n, 1)
-                    fg3m = round(sum(float(g.get("fg3m", 0) or 0) for g in game_logs) / n, 1)
-                    if pts > 0 or reb > 0:
-                        print(f"[NBA] {name}: using game-log avg — "
-                              f"{pts}pts {reb}reb {ast}ast")
-
-                # Skip players with no real stats from either source
                 if pts == 0 and reb == 0:
-                    print(f"[NBA] {name} (id={pid}, pos={pos}): "
-                          f"no stats from ESPN or game logs — skipping")
+                    print(f"[NBA] {name}: no stats — skipping")
                     return None
+
+                game_logs = get_nba_player_game_logs(pid)
 
                 return {
                     "name":      name,
-                    "pos":       pos,
+                    "pos":       "",   # NBA Stats API player-list has no position column
                     "pts":       pts,
                     "reb":       reb,
-                    "ast":       ast,
-                    "fg3m":      fg3m,
+                    "ast":       float(season_stats.get("ast",  0)),
+                    "fg3m":      float(season_stats.get("fg3m", 0)),
                     "player_id": pid,
                     "_logs":     game_logs,
                 }
             except Exception as _fe:
-                print(f"[NBA] _fetch_one error for {name} (id={pid}): {_fe}")
+                print(f"[NBA] _fetch_one error {name} (id={pid}): {_fe}")
                 return None
 
-        # Parallel fetch all players (ESPN has no rate limit)
-        max_w = min(12, max(1, len(roster)))
-        with ThreadPoolExecutor(max_workers=max_w) as ex:
-            raw_results = list(ex.map(_fetch_one, roster[:18]))
+        # 3 workers + natural HTTP latency avoids hammering stats.nba.com
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            raw_results = list(ex.map(_fetch_one, players[:15]))
 
         enriched = [r for r in raw_results if r is not None]
         enriched.sort(key=lambda p: p["pts"], reverse=True)
 
-        # Build per-player game_logs dict keyed by athlete_id
         game_logs_map = {p["player_id"]: p.pop("_logs", []) for p in enriched}
 
         roster_with_props = _nba_props_from_avgs(enriched[:10], game_logs_map)
@@ -370,7 +353,7 @@ def _build_nba_games(today_str: str) -> list:
             home_abbr = g.get("home_abbr", "")
             away_abbr = g.get("away_abbr", "")
 
-            # Fetch both team rosters in parallel
+            # Fetch both teams in parallel (roster list already loaded above)
             with ThreadPoolExecutor(max_workers=2) as ex:
                 home_fut = ex.submit(_nba_team_roster_with_props, home_id, home_abbr)
                 away_fut = ex.submit(_nba_team_roster_with_props, away_id, away_abbr)
