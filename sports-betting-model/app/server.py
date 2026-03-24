@@ -589,19 +589,24 @@ async def demo_page(request: Request):
 async def today_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    from data.odds_api import build_soccer_props
-    soccer_games = _cached("soccer", build_soccer_props, ttl=600) or []
-    games = (
-        _build_nba_games(today_str)
-        + _build_nfl_games()
-        + soccer_games
-    )
+    try:
+        nba_games = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str), ttl=900) or []
+        mlb_games = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str), ttl=900) or []
+        nhl_games = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str), ttl=900) or []
+    except Exception as _e:
+        print(f"[TODAY] Error building games: {_e}")
+        traceback.print_exc()
+        nba_games = mlb_games = nhl_games = []
+    total = len(nba_games) + len(mlb_games) + len(nhl_games)
     return TEMPLATES.TemplateResponse(request, "today.html", {
-        "games":        games,
+        "nba_games":    nba_games,
+        "mlb_games":    mlb_games,
+        "nhl_games":    nhl_games,
         "today":        today_label,
-        "total":        len(games),
+        "total":        total,
         "refresh_secs": 300,
         "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+        "generated_at": _now_iso(),
     })
 
 

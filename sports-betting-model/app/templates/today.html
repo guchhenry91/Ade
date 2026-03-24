@@ -1,308 +1,239 @@
 {% extends "base.html" %}
-{% block title %}Today's Games – Sports Betting Model{% endblock %}
+{% block title %}Today's Games – BetModel Pro{% endblock %}
 {% block head %}
 <style>
-  .prob-bar-home { background: #6366f1; }
-  .prob-bar-draw { background: #475569; }
-  .prob-bar-away { background: #a855f7; }
-  .winner-glow   { border-left: 3px solid #6366f1; }
-  .book-pill     { background: #1a1a30; border: 1px solid #2e2e52; }
-  .player-tbl th { color:#64748b; font-size:.65rem; text-transform:uppercase;
-                   letter-spacing:.05em; padding:4px 6px;
-                   border-bottom:1px solid #1e2035; }
-  .player-tbl td { font-size:.72rem; padding:5px 6px;
-                   border-bottom:1px solid #181828; }
-  .player-tbl tr:hover td { background:rgba(255,255,255,.03); }
-  .pick-over  { color:#4ade80; font-weight:600; }
-  .pick-under { color:#f87171; font-weight:600; }
-  .pick-fair  { color:#94a3b8; }
-  .team-header { background:#141428; }
-  .sub-row    { background:rgba(0,0,0,.18); }
+/* ── Page header ─────────────────────────────────── */
+.page-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 0 16px; flex-wrap: wrap; gap: 8px;
+}
+.sport-title { font-size: 22px; font-weight: 800; color: #fff; margin: 0; }
+.page-meta { display: flex; align-items: center; gap: 12px; color: #666; font-size: 13px; }
+.refresh-btn {
+  background: #111128; border: 1px solid #2a2a4a; color: #888;
+  padding: 4px 10px; border-radius: 8px; font-size: 12px;
+  cursor: pointer; text-decoration: none;
+}
+.refresh-btn:hover { border-color: #00d4ff; color: #00d4ff; }
+
+/* ── Sport section ───────────────────────────────── */
+.today-sport-section {
+  background: #0d0d1a; border: 1px solid #1e1e3a;
+  border-radius: 12px; margin-bottom: 14px; overflow: hidden;
+}
+.today-sport-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; background: #111128;
+  font-size: 15px; font-weight: 700; color: #fff;
+  border-bottom: 1px solid #1e1e3a;
+}
+.view-all {
+  margin-left: auto; font-size: 12px; color: #00d4ff;
+  text-decoration: none; white-space: nowrap;
+}
+.view-all:hover { color: #00aacc; }
+.prop-count-badge {
+  font-size: 11px; color: #888; font-weight: 400;
+}
+
+/* ── Game row ────────────────────────────────────── */
+.today-game-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid #1a1a2e;
+  text-decoration: none; transition: background 0.15s; cursor: pointer;
+}
+.today-game-row:last-child { border-bottom: none; }
+.today-game-row:hover { background: #1a1a2e; }
+.today-matchup {
+  font-size: 14px; font-weight: 700; color: #fff;
+  min-width: 110px; flex-shrink: 0;
+}
+.today-pick {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px;
+  white-space: nowrap; flex-shrink: 0;
+}
+.badge-strong   { background:#00ff8822; color:#00ff88; border:1px solid #00ff8866; }
+.badge-favoured { background:#00d4ff22; color:#00d4ff; border:1px solid #00d4ff66; }
+.badge-slight   { background:#ff950022; color:#ff9500; border:1px solid #ff950066; }
+.badge-pickem   { background:#88888822; color:#888;    border:1px solid #44444466; }
+.today-top {
+  font-size: 12px; color: #888; margin-left: auto;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.today-top strong { color: #00ff88; }
+.today-time {
+  font-size: 11px; color: #555; flex-shrink: 0; white-space: nowrap;
+}
+
+/* ── Empty state ─────────────────────────────────── */
+.today-empty {
+  padding: 48px 20px; text-align: center;
+}
+.today-empty-icon { font-size: 48px; margin-bottom: 12px; }
+.today-empty h2 { font-size: 18px; color: #fff; margin: 0 0 6px; }
+.today-empty p { color: #666; font-size: 13px; margin: 0; }
+
+/* ── Offseason notice ────────────────────────────── */
+.today-offseason {
+  padding: 14px 16px; text-align: center;
+  color: #555; font-size: 13px; font-style: italic;
+}
 </style>
 {% endblock %}
 
-{# ─── Jinja2 macro: render one team's player table ─── #}
-{% macro player_table(roster, team_label, color_class, tid, sport, wins=0, losses=0) %}
-{% if roster %}
-{% set top_roster = roster[:2] %}
-<div class="mb-4">
-  <div class="team-header rounded-t px-3 py-1.5 flex items-center justify-between">
-    <span class="text-xs font-semibold {{ color_class }}">
-      {{ team_label }}
-      {%- if wins or losses %} <span class="text-slate-500">({{ wins }}-{{ losses }})</span>{% endif %}
-    </span>
-    <span class="text-xs text-slate-600">
-      Top 2 props
-      {%- if sport in ('Basketball','Football') %} · Model O/U{% else %} · Goal probability{% endif %}
-    </span>
-  </div>
-  <div class="overflow-x-auto rounded-b" style="background:#0e0e1e;">
-
-    {% if sport in ('Basketball','Football') %}
-    <table class="player-tbl w-full">
-      <thead><tr>
-        <th class="text-left">Player</th>
-        <th>POS</th>
-        <th>Stat</th><th>Line</th><th>Conf%</th><th>Pick</th>
-      </tr></thead>
-      <tbody id="{{ tid }}">
-      {% for p in top_roster %}
-        {% set pr = p.props[0] if p.props else none %}
-        {% if pr %}
-        {% set conf_p = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
-        <tr>
-          <td class="text-slate-200 font-medium whitespace-nowrap">{{ p.name }}</td>
-          <td class="text-slate-500 text-center">{{ p.pos or '—' }}</td>
-          <td class="text-slate-400 text-center text-xs">{{ pr.stat }}</td>
-          <td class="text-slate-400 text-center">{{ pr.line }}</td>
-          <td class="text-center">
-            <span class="{% if conf_p > 68 %}text-green-400{% elif conf_p > 58 %}text-yellow-400{% elif conf_p < 45 %}text-red-400{% else %}text-slate-500{% endif %} font-medium">
-              {{ conf_p }}%
-            </span>
-          </td>
-          <td class="text-center">
-            <span class="{% if pr.pick=='OVER' %}pick-over{% elif pr.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}">
-              {{ pr.pick }}
-            </span>
-          </td>
-        </tr>
-        {% endif %}
-      {% endfor %}
-      </tbody>
-    </table>
-    <a href="/{{ 'nba' if sport=='Basketball' else 'nfl' }}"
-       class="block text-center text-xs text-indigo-400 hover:text-indigo-300 py-1.5 border-t border-slate-800">
-      Full analysis →
-    </a>
-
-    {% else %}{# Soccer #}
-    <table class="player-tbl w-full">
-      <thead><tr>
-        <th class="text-left">Player</th>
-        <th>Shots/G</th><th>xG/Shot</th><th>Goal%</th><th>Conf</th>
-      </tr></thead>
-      <tbody>
-      {% for p in roster %}
-      <tr>
-        <td class="text-slate-200 font-medium whitespace-nowrap">{{ p.name }}</td>
-        <td class="text-slate-400 text-center">{{ p.shots_pg or '—' }}</td>
-        <td class="text-slate-400 text-center">{{ p.xg_shot  or '—' }}</td>
-        <td class="text-center">
-          <span class="{% if p.goal_prob > 30 %}text-green-400{% elif p.goal_prob > 15 %}text-yellow-400{% else %}text-slate-500{% endif %} font-medium">
-            {{ p.goal_prob }}%
-          </span>
-        </td>
-        <td class="text-center">
-          <span class="text-xs px-1 py-0.5 rounded
-            {% if p.confidence=='HIGH' %}badge-high{% elif p.confidence=='MEDIUM' %}badge-medium{% else %}badge-low{% endif %}">
-            {{ p.confidence }}
-          </span>
-        </td>
-      </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
-
-  </div>
-</div>
-{% endif %}
-{% endmacro %}
-
 {% block content %}
 <!-- Page header -->
-<div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+<div class="page-header">
   <div>
-    <h1 class="text-3xl font-bold text-white">Today's Games</h1>
-    <p class="text-slate-400 mt-1">
+    <h1 class="sport-title">📅 Today's Games</h1>
+    <p style="color:#666;font-size:13px;margin:4px 0 0;">
       {{ today }} ·
-      <span class="text-indigo-400 font-medium">{{ total }}</span>
+      <span style="color:#00d4ff;font-weight:700;">{{ total }}</span>
       game{{ 's' if total != 1 else '' }}
       {% if not has_odds_key %}
-        · <span class="text-yellow-600 text-xs">Set <code>ODDS_API_KEY</code> for FanDuel/Bet365 odds</span>
+        · <span style="color:#ff8800;font-size:11px;">Set <code>ODDS_API_KEY</code> for lines</span>
       {% endif %}
     </p>
   </div>
-  <div class="flex items-center gap-3">
-    <span class="text-xs text-slate-600">Refresh in <span id="countdown" class="text-slate-400 font-mono font-medium">5:00</span></span>
-    <a href="/today" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium">↻ Refresh</a>
+  <div class="page-meta">
+    <span>Refresh in <span id="countdown" style="color:#aaa;font-family:monospace;">5:00</span></span>
+    <a href="/today" class="refresh-btn">↻ Refresh</a>
   </div>
 </div>
 
 {% if total == 0 %}
-<div class="card rounded-xl p-12 text-center">
-  <p class="text-4xl mb-3">😴</p>
-  <p class="text-white font-semibold text-lg">No games today</p>
-  <p class="text-slate-400 mt-1 text-sm">Use the analyzers to run any custom fixture.</p>
-  <div class="flex justify-center gap-3 mt-5">
-    <a href="/nba"    class="btn-primary px-4 py-2 rounded-lg text-sm">NBA</a>
-    <a href="/soccer" class="btn-primary px-4 py-2 rounded-lg text-sm">Soccer</a>
-    <a href="/nfl"    class="btn-primary px-4 py-2 rounded-lg text-sm">NFL</a>
+<div class="card" style="border-radius:12px;">
+  <div class="today-empty">
+    <div class="today-empty-icon">😴</div>
+    <h2>No games today</h2>
+    <p>Check individual sport pages for upcoming schedules.</p>
+    <div style="display:flex;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap;">
+      <a href="/nba"    class="btn btn-accent">🏀 NBA</a>
+      <a href="/mlb"    class="btn btn-accent">⚾ MLB</a>
+      <a href="/nhl"    class="btn btn-accent">🏒 NHL</a>
+      <a href="/soccer" class="btn btn-accent">⚽ Soccer</a>
+    </div>
   </div>
 </div>
+
 {% else %}
 
-{# collect unique leagues in order #}
-{% set seen = namespace(leagues=[]) %}
-{% for g in games %}{% if g.league not in seen.leagues %}{% set _ = seen.leagues.append(g.league) %}{% endif %}{% endfor %}
-
-{% for league in seen.leagues %}
-{% set lg_games = games | selectattr("league","equalto",league) | list %}
-{% set lg0 = lg_games[0] %}
-
-<section class="mb-12">
-  <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-4">
-    {{ lg0.sport_icon }} {{ league }} · {{ lg_games|length }} game{{ 's' if lg_games|length!=1 else '' }}
-  </h2>
-
-  {% for game in lg_games %}
-  {% set gid = loop.index0 ~ league | replace(' ','') %}
-  <div class="card rounded-xl overflow-hidden mb-6">
-
-    <!-- ═══════ GAME HEADER ═══════════════════════════════════════════════ -->
-    <div class="px-5 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
-      <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-        {% if game.kickoff %}
-          <span>{{ game.kickoff[:10] }}</span>
-          {% if game.kickoff|length > 10 %}
-          <span class="local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
-          {% endif %}
-        {% endif %}
-        {% if game.home_xg is defined and game.home_xg %}
-          <span class="book-pill px-2 py-0.5 rounded text-slate-300">
-            xG <b>{{ game.home_xg }}</b> – <b>{{ game.away_xg }}</b>
-          </span>
-        {% endif %}
-        {% if game.bookmaker %}
-          <span class="book-pill px-2 py-0.5 rounded text-slate-400">📚 {{ game.bookmaker }}</span>
-        {% endif %}
-      </div>
-      <span class="text-xs px-2 py-0.5 rounded-full
-        {% if 'FINAL' in (game.status or '') or game.status=='Final' %}bg-slate-700 text-slate-300
-        {% elif 'PROGRESS' in (game.status or '') %}bg-green-900 text-green-300
-        {% else %}bg-indigo-900 text-indigo-300{% endif %}">
-        {% if 'FINAL' in (game.status or '') or game.status=='Final' %}Final
-        {% elif 'PROGRESS' in (game.status or '') %}🔴 Live
-        {% else %}Upcoming{% endif %}
-      </span>
-    </div>
-
-    <div class="p-5 grid grid-cols-1 xl:grid-cols-5 gap-6">
-
-      <!-- ═══════ MATCH PREDICTION ════════════════════════════════════════ -->
-      <div class="xl:col-span-2 space-y-4">
-
-        <!-- Home -->
-        <div class="{% if game.predicted_winner == game.home_team %}winner-glow pl-3{% endif %}">
-          <div class="flex items-center justify-between mb-1.5">
-            <div class="flex items-center gap-2">
-              {% if game.predicted_winner == game.home_team %}<span class="text-yellow-400">★</span>{% endif %}
-              <span class="font-semibold {% if game.predicted_winner == game.home_team %}text-white{% else %}text-slate-400{% endif %}">
-                {{ game.home_team }}
-              </span>
-              <span class="text-xs text-slate-600">(Home)</span>
-            </div>
-            <div class="flex items-center gap-2">
-              {% if game.home_score is not none %}<span class="text-xl font-bold">{{ game.home_score }}</span>{% endif %}
-              {% if game.book_home_ml %}
-                <span class="book-pill text-xs px-1.5 py-0.5 rounded {% if game.book_home_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
-                  {{ game.book_home_ml }}
-                </span>
-              {% endif %}
-              <span class="text-sm font-bold {% if game.predicted_winner == game.home_team %}text-indigo-300{% else %}text-slate-500{% endif %}">
-                {{ game.home_prob }}%
-              </span>
-            </div>
-          </div>
-          <div class="w-full bg-slate-800 rounded-full h-2">
-            <div class="prob-bar-home h-2 rounded-full" style="width:{{ game.home_prob }}%"></div>
-          </div>
-        </div>
-
-        <!-- Draw (soccer only) -->
-        {% if game.draw_prob is not none %}
-        <div class="{% if game.predicted_winner == 'Draw' %}winner-glow pl-3{% endif %}">
-          <div class="flex items-center justify-between mb-1.5">
-            <div class="flex items-center gap-2">
-              {% if game.predicted_winner == 'Draw' %}<span class="text-yellow-400">★</span>{% endif %}
-              <span class="text-sm {% if game.predicted_winner=='Draw' %}text-white font-semibold{% else %}text-slate-500{% endif %}">Draw</span>
-            </div>
-            <span class="text-sm {% if game.predicted_winner=='Draw' %}text-indigo-300 font-bold{% else %}text-slate-500{% endif %}">
-              {{ game.draw_prob }}%
-            </span>
-          </div>
-          <div class="w-full bg-slate-800 rounded-full h-2">
-            <div class="prob-bar-draw h-2 rounded-full" style="width:{{ game.draw_prob }}%"></div>
-          </div>
-        </div>
-        {% endif %}
-
-        <!-- Away -->
-        <div class="{% if game.predicted_winner == game.away_team %}winner-glow pl-3{% endif %}">
-          <div class="flex items-center justify-between mb-1.5">
-            <div class="flex items-center gap-2">
-              {% if game.predicted_winner == game.away_team %}<span class="text-yellow-400">★</span>{% endif %}
-              <span class="font-semibold {% if game.predicted_winner == game.away_team %}text-white{% else %}text-slate-400{% endif %}">
-                {{ game.away_team }}
-              </span>
-              <span class="text-xs text-slate-600">(Away)</span>
-            </div>
-            <div class="flex items-center gap-2">
-              {% if game.away_score is not none %}<span class="text-xl font-bold">{{ game.away_score }}</span>{% endif %}
-              {% if game.book_away_ml %}
-                <span class="book-pill text-xs px-1.5 py-0.5 rounded {% if game.book_away_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
-                  {{ game.book_away_ml }}
-                </span>
-              {% endif %}
-              <span class="text-sm font-bold {% if game.predicted_winner == game.away_team %}text-indigo-300{% else %}text-slate-500{% endif %}">
-                {{ game.away_prob }}%
-              </span>
-            </div>
-          </div>
-          <div class="w-full bg-slate-800 rounded-full h-2">
-            <div class="prob-bar-away h-2 rounded-full" style="width:{{ game.away_prob }}%"></div>
-          </div>
-        </div>
-
-        <!-- Summary -->
-        <div class="flex items-center justify-between pt-2 border-t border-slate-800">
-          <span class="text-sm text-slate-400">
-            Pick: <strong class="text-white">{{ game.predicted_winner }}</strong>
-            <span class="text-slate-600"> · {{ game.win_prob }}%</span>
-            {% if game.spread %}<span class="text-slate-600 ml-2">Spread {{ game.spread }}</span>{% endif %}
-            {% if game.book_total %}<span class="text-slate-600 ml-2">O/U {{ game.book_total }}</span>{% endif %}
-          </span>
-          <span class="text-xs px-2 py-0.5 rounded-full font-medium
-            {% if game.confidence=='HIGH' %}badge-high{% elif game.confidence=='MEDIUM' %}badge-medium{% else %}badge-low{% endif %}">
-            {{ game.confidence }}
-          </span>
-        </div>
-
-        <a href="/{{ 'nba' if game.sport=='Basketball' else ('nfl' if game.sport=='Football' else 'soccer') }}"
-           class="text-xs text-indigo-400 hover:text-indigo-300">Full analysis →</a>
-      </div>
-
-      <!-- ═══════ PLAYER TABLES ════════════════════════════════════════════ -->
-      <div class="xl:col-span-3">
-        {{ player_table(game.home_roster, game.home_team, 'text-indigo-300', 'h-'~gid, game.sport, game.home_wins|default(0), game.home_losses|default(0)) }}
-        {{ player_table(game.away_roster, game.away_team, 'text-purple-300', 'a-'~gid, game.sport, game.away_wins|default(0), game.away_losses|default(0)) }}
-
-        {% if not game.home_roster and not game.away_roster %}
-        <p class="text-xs text-slate-600 italic mt-2">
-          {% if game.sport == 'Soccer' %}
-            Set <code>API_FOOTBALL_KEY</code> for player stats.
-          {% else %}
-            No player data available — check back closer to game time.
-          {% endif %}
-        </p>
-        {% endif %}
-      </div>
-
-    </div>{# end grid #}
-  </div>{# end card #}
+{# ── NBA ─────────────────────────────────────────────────────────────────── #}
+{% set total_props = namespace(n=0) %}
+{% for game in nba_games %}
+  {% for team_roster in [game.home_roster or [], game.away_roster or []] %}
+    {% for p in team_roster %}{% set total_props.n = total_props.n + (p.props|length) %}{% endfor %}
   {% endfor %}
-</section>
 {% endfor %}
+{% if nba_games %}
+<div class="today-sport-section">
+  <div class="today-sport-header">
+    🏀 NBA
+    <span class="prop-count-badge">{{ nba_games|length }} game{{ 's' if nba_games|length != 1 else '' }} · {{ total_props.n }} props</span>
+    <a href="/nba" class="view-all">View all →</a>
+  </div>
+  {% for game in nba_games[:8] %}
+  <a href="/nba?team={{ game.home_abbr }}" class="today-game-row">
+    <span class="today-matchup">{{ game.away_abbr }} @ {{ game.home_abbr }}</span>
+    {% if game.pick_badge_label %}
+    <span class="today-pick {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>
+    {% endif %}
+    {% if game.top_pick %}
+    <span class="today-top">⭐ {{ game.top_pick.player.split()[-1] }} {{ game.top_pick.stat }} <strong>{{ game.top_pick.confidence }}%</strong></span>
+    {% endif %}
+    {% if game.kickoff and game.kickoff|length > 10 %}
+    <span class="today-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+    {% endif %}
+  </a>
+  {% endfor %}
+  {% if nba_games|length > 8 %}
+  <div class="today-offseason">+ {{ nba_games|length - 8 }} more games — <a href="/nba" style="color:#00d4ff;">view all</a></div>
+  {% endif %}
+</div>
+{% else %}
+<div class="today-sport-section">
+  <div class="today-sport-header">🏀 NBA <a href="/nba" class="view-all">View →</a></div>
+  <div class="today-offseason">No NBA games scheduled today.</div>
+</div>
+{% endif %}
+
+{# ── MLB ─────────────────────────────────────────────────────────────────── #}
+{% set total_props = namespace(n=0) %}
+{% for game in mlb_games %}
+  {% for team_roster in [game.home_roster or [], game.away_roster or []] %}
+    {% for p in team_roster %}{% set total_props.n = total_props.n + (p.props|length) %}{% endfor %}
+  {% endfor %}
+{% endfor %}
+{% if mlb_games %}
+<div class="today-sport-section">
+  <div class="today-sport-header">
+    ⚾ MLB
+    <span class="prop-count-badge">{{ mlb_games|length }} game{{ 's' if mlb_games|length != 1 else '' }} · {{ total_props.n }} props</span>
+    <a href="/mlb" class="view-all">View all →</a>
+  </div>
+  {% for game in mlb_games[:8] %}
+  <a href="/mlb?team={{ game.home_abbr }}" class="today-game-row">
+    <span class="today-matchup">{{ game.away_abbr }} @ {{ game.home_abbr }}</span>
+    {% if game.pick_badge_label %}
+    <span class="today-pick {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>
+    {% endif %}
+    {% if game.top_pick %}
+    <span class="today-top">⭐ {{ game.top_pick.player.split()[-1] }} {{ game.top_pick.stat }} <strong>{{ game.top_pick.confidence }}%</strong></span>
+    {% endif %}
+    {% if game.kickoff and game.kickoff|length > 10 %}
+    <span class="today-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+    {% endif %}
+  </a>
+  {% endfor %}
+  {% if mlb_games|length > 8 %}
+  <div class="today-offseason">+ {{ mlb_games|length - 8 }} more games — <a href="/mlb" style="color:#00d4ff;">view all</a></div>
+  {% endif %}
+</div>
+{% else %}
+<div class="today-sport-section">
+  <div class="today-sport-header">⚾ MLB <a href="/mlb" class="view-all">View →</a></div>
+  <div class="today-offseason">No MLB games scheduled today.</div>
+</div>
+{% endif %}
+
+{# ── NHL ─────────────────────────────────────────────────────────────────── #}
+{% set total_props = namespace(n=0) %}
+{% for game in nhl_games %}
+  {% for team_roster in [game.home_roster or [], game.away_roster or []] %}
+    {% for p in team_roster %}{% set total_props.n = total_props.n + (p.props|length) %}{% endfor %}
+  {% endfor %}
+{% endfor %}
+{% if nhl_games %}
+<div class="today-sport-section">
+  <div class="today-sport-header">
+    🏒 NHL
+    <span class="prop-count-badge">{{ nhl_games|length }} game{{ 's' if nhl_games|length != 1 else '' }} · {{ total_props.n }} props</span>
+    <a href="/nhl" class="view-all">View all →</a>
+  </div>
+  {% for game in nhl_games[:8] %}
+  <a href="/nhl?team={{ game.home_abbr }}" class="today-game-row">
+    <span class="today-matchup">{{ game.away_abbr }} @ {{ game.home_abbr }}</span>
+    {% if game.pick_badge_label %}
+    <span class="today-pick {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>
+    {% endif %}
+    {% if game.top_pick %}
+    <span class="today-top">⭐ {{ game.top_pick.player.split()[-1] }} {{ game.top_pick.stat }} <strong>{{ game.top_pick.confidence }}%</strong></span>
+    {% endif %}
+    {% if game.kickoff and game.kickoff|length > 10 %}
+    <span class="today-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+    {% endif %}
+  </a>
+  {% endfor %}
+  {% if nhl_games|length > 8 %}
+  <div class="today-offseason">+ {{ nhl_games|length - 8 }} more games — <a href="/nhl" style="color:#00d4ff;">view all</a></div>
+  {% endif %}
+</div>
+{% else %}
+<div class="today-sport-section">
+  <div class="today-sport-header">🏒 NHL <a href="/nhl" class="view-all">View →</a></div>
+  <div class="today-offseason">No NHL games scheduled today.</div>
+</div>
+{% endif %}
 
 {% endif %}
 {% endblock %}
@@ -311,11 +242,11 @@
 <script>
 // Auto-refresh countdown
 let secs = {{ refresh_secs | default(300) }};
-const el = document.getElementById('countdown');
+const cdEl = document.getElementById('countdown');
 setInterval(() => {
   if (--secs <= 0) { location.reload(); return; }
   const m = Math.floor(secs/60), s = secs % 60;
-  if (el) el.textContent = `${m}:${s.toString().padStart(2,'0')}`;
+  if (cdEl) cdEl.textContent = `${m}:${s.toString().padStart(2,'0')}`;
 }, 1000);
 
 // Convert UTC game times to user's local timezone
@@ -325,12 +256,8 @@ document.querySelectorAll('.local-game-time').forEach(el => {
   try {
     const d = new Date(utc);
     const local = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-    el.textContent = local + (tz ? ' ' + tz.split('/').pop().replace('_',' ') : '');
+    el.textContent = local;
   } catch(e) {}
 });
-
-// Toggle extra player rows (kept for backwards compat)
-function toggleExtra(tid) {}
 </script>
 {% endblock %}

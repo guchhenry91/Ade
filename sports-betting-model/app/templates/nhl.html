@@ -4,317 +4,194 @@
 {% block head %}
 <style>
 .player-card {
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: var(--radius); overflow: hidden;
-  margin-bottom: 14px; transition: box-shadow .15s;
+  background: #111122; border: 1px solid #1e1e3a;
+  border-radius: 10px; margin-bottom: 8px; overflow: hidden;
 }
-.player-card:hover { box-shadow: 0 4px 28px rgba(0,212,255,.13); }
-.player-hdr {
-  background: var(--card2); padding: 10px 14px;
-  display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid var(--border);
+.player-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 14px; background: #16162a; border-bottom: 1px solid #1e1e3a;
 }
-.player-name { font-weight: 700; font-size: 14px; color: var(--txt1); }
-.player-meta { font-size: 11px; color: var(--txt2); margin-top: 2px; }
-.stat-section {
-  padding: 10px 14px;
-  border-bottom: 1px solid rgba(255,255,255,.04);
-}
-.stat-section:last-child { border-bottom: none; }
-.stat-top {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 6px;
-}
-.stat-name { font-size: 12px; font-weight: 700;
-             text-transform: uppercase; letter-spacing: .06em; }
-.stat-name[data-stat="goals"]         { color: #ff6b6b; }
-.stat-name[data-stat="assists"]       { color: #00ff88; }
-.stat-name[data-stat="shots"]         { color: #00d4ff; }
-.stat-name[data-stat="points"]        { color: #bf5af2; }
-.stat-name[data-stat="pp_points"]     { color: #f59e0b; }
-.stat-name[data-stat="blocked_shots"] { color: #64748b; }
-.stat-name[data-stat="saves"]         { color: #ffa500; }
-.stat-name:not([data-stat])           { color: var(--txt2); }
-.stat-line { font-size: 11px; color: var(--txt3); }
-.stat-pick-row {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
-}
-.stat-pct { font-size: 18px; font-weight: 800; }
-.stat-avgs {
-  display: flex; gap: 14px; font-size: 11px; color: var(--txt2);
-  margin-top: 5px; flex-wrap: wrap;
-}
-.avg-item strong { color: var(--txt1); }
-.team-label {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .08em; color: var(--accent);
-  padding: 8px 14px 4px;
-}
-.wp-home { color: #818cf8; font-weight: 700; font-size: 12px; }
-.wp-away { color: #c084fc; font-weight: 700; font-size: 12px; }
-.pick-filter-bar {
-  display: flex; gap: 6px; flex-wrap: wrap; padding: 6px 0 10px;
-}
-.pick-tab {
-  padding: 5px 13px; border-radius: 20px; font-size: 12px;
-  font-weight: 700; cursor: pointer; border: 1px solid var(--border);
-  background: transparent; color: var(--txt2); transition: all .15s;
-  display: inline-flex; align-items: center; gap: 4px;
-}
-.pick-tab:hover { border-color: var(--accent); color: var(--accent); }
-.pick-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
-.pick-tab-over.active  { background: var(--over);  color: #000; border-color: var(--over); }
-.pick-tab-under.active { background: var(--under); color: #fff; border-color: var(--under); }
-.pick-tab-fair.active  { background: #666; color: #fff; border-color: #666; }
-.pick-count { font-size: 10px; opacity: 0.75; }
-.team-tab-bar {
-  display: flex; flex-wrap: wrap; gap: 8px;
-  padding: 12px 0; margin-bottom: 12px;
-  border-bottom: 1px solid var(--border);
-}
-.team-tab {
-  padding: 5px 14px; border-radius: 20px; border: 1px solid #333;
-  background: #1a1a2e; color: #aaa; font-size: 12px; font-weight: 600;
-  cursor: pointer; white-space: nowrap; transition: all 0.15s; letter-spacing: .04em;
-}
-.team-tab:hover { border-color: #00d4ff; color: #00d4ff; }
-.team-tab.active { background: #00d4ff; border-color: #00d4ff; color: #000; }
-@media (max-width: 640px) {
-  .filter-bar { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px;
-                scrollbar-width: none; -webkit-overflow-scrolling: touch; }
-  .filter-bar::-webkit-scrollbar { display: none; }
-  .pick-filter-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .pick-filter-bar::-webkit-scrollbar { display: none; }
-  .team-tab-bar { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px;
-                  scrollbar-width: none; -webkit-overflow-scrolling: touch; }
-  .team-tab-bar::-webkit-scrollbar { display: none; }
-}
-/* ── Game pick badges ── */
-.game-pick-badge { display:inline-flex;align-items:center;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap; }
+.player-name { font-size: 14px; font-weight: 700; color: #fff; flex: 1; }
+.player-team-badge { font-size: 11px; font-weight: 700; color: #00d4ff; background: #00d4ff15; border: 1px solid #00d4ff33; border-radius: 6px; padding: 2px 7px; flex-shrink: 0; }
+.player-top-pick { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; flex-shrink: 0; }
+.player-top-pick.hot   { background:#00ff8822; color:#00ff88; }
+.player-top-pick.solid { background:#00d4ff22; color:#00d4ff; }
+.player-top-pick.lean  { background:#ff950022; color:#ff9500; }
+
+.stat-row { display: flex; align-items: center; padding: 7px 14px; border-bottom: 1px solid #1a1a2e; gap: 8px; transition: background 0.12s; }
+.stat-row:last-child { border-bottom: none; }
+.stat-row:hover { background: #1a1a2e; }
+.sr-name { font-size: 13px; color: #aaa; width: 104px; flex-shrink: 0; }
+.sr-name[data-stat="goals"]         { color: #ff6b6b; }
+.sr-name[data-stat="assists"]       { color: #00ff88; }
+.sr-name[data-stat="shots"]         { color: #00d4ff; }
+.sr-name[data-stat="points"]        { color: #bf5af2; }
+.sr-name[data-stat="pp_points"]     { color: #f59e0b; }
+.sr-name[data-stat="blocked_shots"] { color: #64748b; }
+.sr-name[data-stat="saves"]         { color: #ffa500; }
+.sr-line  { font-size: 14px; font-weight: 700; color: #fff; width: 40px; text-align: center; flex-shrink: 0; }
+.sr-pick  { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; width: 50px; text-align: center; flex-shrink: 0; }
+.sr-pick.over  { background:#00ff8822; color:#00ff88; border:1px solid #00ff8844; }
+.sr-pick.under { background:#ff444422; color:#ff6666; border:1px solid #ff444444; }
+.sr-pick.fair  { background:#88888822; color:#888;    border:1px solid #88888844; }
+.sr-conf { font-size: 13px; font-weight: 600; flex: 1; }
+.sr-conf.high { color: #00ff88; }
+.sr-conf.med  { color: #ff9500; }
+.sr-conf.low  { color: #888; }
+.sr-avg { font-size: 11px; color: #555; flex-shrink: 0; white-space: nowrap; }
+.sr-add { font-size: 11px; padding: 3px 9px; border-radius: 6px; border: 1px solid #333; background: transparent; color: #666; cursor: pointer; flex-shrink: 0; transition: all 0.12s; }
+.sr-add:hover { border-color: #00d4ff; color: #00d4ff; background: #00d4ff11; }
+
+.game-section { margin-bottom: 14px; }
+.game-hdr-compact { background: #0d0d1a; border: 1px solid #1e1e3a; border-radius: 12px; padding: 12px 16px; cursor: pointer; user-select: none; transition: background 0.12s; }
+.game-hdr-compact:hover { background: #111128; }
+.game-section.expanded .game-hdr-compact { border-radius: 12px 12px 0 0; border-bottom-color: #252540; }
+.game-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+.game-matchup { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: 0.3px; }
+.game-time-badge { font-size: 12px; color: #666; margin-left: auto; white-space: nowrap; }
+.chevron { color: #555; font-size: 10px; flex-shrink: 0; }
+.game-meta-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.game-pick-badge { display:inline-flex;align-items:center;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:700;white-space:nowrap; }
 .badge-strong   { background:#00ff8822; color:#00ff88; border:1px solid #00ff88; }
 .badge-favoured { background:#00d4ff22; color:#00d4ff; border:1px solid #00d4ff; }
 .badge-slight   { background:#ff950022; color:#ff9500; border:1px solid #ff9500; }
 .badge-pickem   { background:#88888822; color:#888;    border:1px solid #444; }
-/* ── Smart prop badges ── */
-.smart-badge { display:inline-flex;align-items:center;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap; }
-.badge-hot   { background:#00ff8833; color:#00ff88; }
-.badge-solid { background:#00d4ff33; color:#00d4ff; }
-.badge-lean  { background:#ff950033; color:#ff9500; }
-.badge-fair  { background:#88888833; color:#888; }
-/* ── Top pick banner ── */
-.top-pick-banner { display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;margin:10px 14px 0;background:linear-gradient(135deg,#00ff8811,#00d4ff11);border:1px solid #00ff8844;border-radius:10px; }
-.top-pick-label  { font-size:11px;font-weight:700;color:#00ff88;background:#00ff8822;padding:2px 8px;border-radius:10px; }
-.top-pick-player { font-size:14px;font-weight:700;color:#fff; }
-.top-pick-stat   { font-size:12px;color:#94a3b8; }
-.top-pick-line   { font-size:13px;color:#e2e8f0;font-weight:600; }
-.top-pick-conf   { font-size:16px;font-weight:800;color:#00ff88;margin-left:auto; }
-.top-pick-pick.over  { color:#00ff88; }
-.top-pick-pick.under { color:#ff4444; }
-.top-pick-pick.fair  { color:#888; }
-@media (max-width:640px) { .top-pick-banner { flex-direction:column;align-items:flex-start; } .top-pick-conf { margin-left:0; } }
+.game-top-prop { font-size: 12px; color: #888; }
+.game-top-prop strong { color: #00ff88; }
+.game-players { display: none; background: #0d0d1a; border: 1px solid #1e1e3a; border-top: none; border-radius: 0 0 12px 12px; padding: 14px; }
+.game-section.expanded .game-players { display: block; }
+.team-label-compact { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #00d4ff; padding: 6px 0 8px; }
+
+.team-grid { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0 14px; border-bottom: 1px solid #1e1e3a; margin-bottom: 14px; }
+.team-btn { padding: 3px 11px; border-radius: 14px; border: 1px solid #2a2a4a; background: #111128; color: #888; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.12s; }
+.team-btn:hover  { border-color: #00d4ff; color: #00d4ff; }
+.team-btn.active { background: #00d4ff22; border-color: #00d4ff; color: #00d4ff; }
+@media (max-width: 640px) { .team-grid { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .team-grid::-webkit-scrollbar { display: none; } }
+
+.filter-bar { display: flex; align-items: center; gap: 6px; padding: 10px 0 14px; flex-wrap: wrap; }
+.filter-pills, .pick-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+.fpill, .ppill { padding: 4px 12px; border-radius: 16px; border: 1px solid #2a2a4a; background: #111128; color: #888; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.12s; }
+.fpill.active, .ppill.active { background: #00d4ff22; border-color: #00d4ff; color: #00d4ff; }
+.ppill.over.active  { background:#00ff8822; border-color:#00ff88; color:#00ff88; }
+.ppill.under.active { background:#ff444422; border-color:#ff6666; color:#ff6666; }
+.ppill.fair.active  { background:#88888822; border-color:#888; color:#aaa; }
+.ppill .badge { background:rgba(255,255,255,.1); border-radius:8px; padding:0 5px; font-size:10px; margin-left:3px; }
+.sort-select { margin-left: auto; background: #111128; border: 1px solid #2a2a4a; color: #888; padding: 4px 8px; border-radius: 8px; font-size: 12px; }
+@media (max-width: 640px) { .filter-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .filter-bar::-webkit-scrollbar { display: none; } .filter-pills, .pick-pills { flex-wrap: nowrap; } }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- Page header -->
-<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
+<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
   <div>
     <div class="section-hdr">🏒 NHL Player Props</div>
-    <div class="section-sub">
-      {{ today }} ·
-      <strong style="color:var(--accent)">{{ total }}</strong> game{{ 's' if total != 1 else '' }}
-    </div>
+    <div class="section-sub">{{ today }} · <strong style="color:var(--accent)">{{ total }}</strong> game{{ 's' if total != 1 else '' }}</div>
   </div>
-  <div style="text-align:right;">
+  <div style="display:flex;align-items:center;gap:8px;">
     <a href="/nhl" class="btn btn-accent">↻ Refresh</a>
-    {% if generated_at %}
-    <div class="updated-bar" style="justify-content:flex-end;margin-top:6px;">
-      <span class="dot"></span>
-      <span data-generated-at="{{ generated_at }}"></span>
-    </div>
-    {% endif %}
+    {% if generated_at %}<div class="updated-bar" style="justify-content:flex-end;"><span class="dot"></span><span data-generated-at="{{ generated_at }}"></span></div>{% endif %}
   </div>
-</div>
-
-<!-- Stat filter -->
-<div class="filter-bar" id="nhl-filter-bar">
-  {% for label, val in [('All','all'),('Goals','goals'),('Assists','assists'),('Shots','shots'),('Points','points'),('PP Points','pp_points'),('Blocked','blocked_shots')] %}
-  <button class="filter-btn {% if loop.first %}active{% endif %}"
-          data-group="nhl" data-filter="{{ val }}">{{ label }}</button>
-  {% endfor %}
-</div>
-
-<!-- Pick direction filter -->
-<div class="pick-filter-bar" id="nhl-pick-filter">
-  <button class="pick-tab active" data-pick="all">All <span class="pick-count" id="nhl-cnt-all"></span></button>
-  <button class="pick-tab pick-tab-over" data-pick="OVER">▲ OVER <span class="pick-count" id="nhl-cnt-over"></span></button>
-  <button class="pick-tab pick-tab-under" data-pick="UNDER">▼ UNDER <span class="pick-count" id="nhl-cnt-under"></span></button>
-  <button class="pick-tab pick-tab-fair" data-pick="FAIR">◆ FAIR <span class="pick-count" id="nhl-cnt-fair"></span></button>
 </div>
 
 {% if total == 0 %}
-<div class="card" style="padding:64px;text-align:center;">
+<div class="card" style="padding:56px;text-align:center;">
   <div style="font-size:48px;margin-bottom:12px;">🏒</div>
   <div style="font-size:18px;font-weight:700;color:var(--txt1);">No NHL games today</div>
   <div style="color:var(--txt2);margin-top:6px;font-size:13px;">Check back on a game day for live picks and player props.</div>
 </div>
 {% else %}
 
-<!-- Team filter tabs -->
-<div class="team-tab-bar" id="nhl-team-tabs">
-  <button class="team-tab active" data-team="all">All Teams</button>
+<div class="team-grid" id="nhl-team-grid">
+  <button class="team-btn active" data-team="all">All</button>
   {% for game in games %}
-  <button class="team-tab" data-team="{{ game.home_abbr }}">{{ game.home_abbr }}</button>
-  <button class="team-tab" data-team="{{ game.away_abbr }}">{{ game.away_abbr }}</button>
+  <button class="team-btn" data-team="{{ game.home_abbr }}">{{ game.home_abbr }}</button>
+  <button class="team-btn" data-team="{{ game.away_abbr }}">{{ game.away_abbr }}</button>
   {% endfor %}
+</div>
+
+<div class="filter-bar">
+  <div class="filter-pills" id="nhl-stat-pills">
+    {% for label, val in [('All','all'),('Goals','goals'),('Assists','assists'),('Shots','shots'),('Points','points'),('PP Pts','pp_points'),('Blocked','blocked_shots'),('Saves','saves')] %}
+    <button class="fpill {% if loop.first %}active{% endif %}" data-filter="{{ val }}">{{ label }}</button>
+    {% endfor %}
+  </div>
+  <div class="pick-pills" id="nhl-pick-pills" style="margin-left:8px;">
+    <button class="ppill active" data-pick="all">All <span class="badge" id="nhl-cnt-all"></span></button>
+    <button class="ppill over"   data-pick="OVER">▲ OVER <span class="badge" id="nhl-cnt-over"></span></button>
+    <button class="ppill under"  data-pick="UNDER">▼ UNDER <span class="badge" id="nhl-cnt-under"></span></button>
+    <button class="ppill fair"   data-pick="FAIR">↔ FAIR <span class="badge" id="nhl-cnt-fair"></span></button>
+  </div>
+  <select class="sort-select" id="nhl-sort">
+    <option value="confidence">★ Best picks first</option>
+    <option value="name">A–Z player</option>
+  </select>
 </div>
 
 {% for game in games %}
 {% set gid = loop.index0|string %}
+<div class="game-section {% if loop.first %}expanded{% endif %} game-card"
+     data-teams="{{ game.home_abbr }},{{ game.away_abbr }}">
 
-<div class="card game-card" data-teams="{{ game.home_abbr }},{{ game.away_abbr }}"
-     style="margin-bottom:28px;overflow:hidden;">
-
-  <!-- Game header -->
-  <div class="game-hdr">
-    <div>
-      <div class="matchup">{{ game.sport_icon }} {{ game.away_team }} @ {{ game.home_team }}</div>
-      <div class="game-meta">
-        {% if game.kickoff %}{{ game.kickoff[:10] }}{% if game.kickoff|length > 10 %} · {{ game.kickoff[11:16] }} UTC{% endif %}{% endif %}
-        {% if game.book_total %} · O/U {{ game.book_total }}{% endif %}
-      </div>
+  <div class="game-hdr-compact" onclick="toggleGame(this)">
+    <div class="game-title-row">
+      <span class="game-matchup">{{ game.away_abbr }} @ {{ game.home_abbr }}</span>
+      {% if game.kickoff and game.kickoff|length > 10 %}
+      <span class="game-time-badge local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+      {% endif %}
+      <span class="chevron">▼</span>
     </div>
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <span style="font-size:11px;padding:4px 10px;border-radius:20px;font-weight:600;background:#1a1a3a;color:var(--accent);">
-        ⏰ Upcoming
-      </span>
+    <div class="game-meta-row">
       {% if game.pick_badge_label %}<span class="game-pick-badge {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>{% endif %}
-      <div style="display:flex;gap:6px;">
-        <span class="wp-home">{{ game.home_abbr }} {{ game.home_prob }}%</span>
-        <span style="color:var(--txt3);">vs</span>
-        <span class="wp-away">{{ game.away_abbr }} {{ game.away_prob }}%</span>
-      </div>
+      <span style="font-size:11px;color:#555;">{{ game.home_abbr }} {{ game.home_prob }}% · {{ game.away_abbr }} {{ game.away_prob }}%</span>
+      {% if game.book_total %}<span style="font-size:11px;color:#555;">O/U {{ game.book_total }}</span>{% endif %}
+      {% if game.top_pick %}<span class="game-top-prop">⭐ {{ game.top_pick.player }} {{ game.top_pick.stat }} {{ game.top_pick.line }} {{ game.top_pick.pick }} <strong>{{ game.top_pick.confidence }}%</strong></span>{% endif %}
     </div>
   </div>
 
-  {% if game.top_pick %}
-  <div class="top-pick-banner">
-    <span class="top-pick-label">⭐ TOP PICK</span>
-    <span class="top-pick-player">{{ game.top_pick.player }}</span>
-    <span class="top-pick-stat">{{ game.top_pick.stat }}</span>
-    <span class="top-pick-line">{{ game.top_pick.line }}</span>
-    <span class="top-pick-pick {{ game.top_pick.pick|lower }}">{{ game.top_pick.pick }}</span>
-    <span class="top-pick-conf">{{ game.top_pick.confidence }}%</span>
-    <span style="font-size:11px;color:#94a3b8;">{{ game.top_pick.conf_label }}</span>
-  </div>
-  {% endif %}
-
-  <!-- Players -->
-  <div style="padding:12px 0;">
-  {% for team_label, roster, abbr in [
-      (game.home_team, game.home_roster, game.home_abbr),
-      (game.away_team, game.away_roster, game.away_abbr),
-  ] %}
+  <div class="game-players">
+  {% for team_label, roster, abbr in [(game.home_team, game.home_roster, game.home_abbr),(game.away_team, game.away_roster, game.away_abbr)] %}
   {% if roster %}
-  <div class="team-label">{{ team_label }} · {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}</div>
-  <div style="padding:0 12px;" id="nhl-grid-{{ gid }}-{{ loop.index0 }}">
-    {% for p in roster %}
-    {% set best_conf = namespace(val=0, stars=0) %}
+  <div class="team-label-compact">{{ team_label }} · {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}</div>
+  {% for p in roster %}
+  {% set best = namespace(val=0) %}
+  {% for pr in p.props %}{% set c = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}{% if c > best.val %}{% set best.val = c %}{% endif %}{% endfor %}
+  <div class="player-card" data-group="nhl"
+       data-stats="{% for pr in p.props %}{{ pr.stat|lower }} {% endfor %}"
+       data-conf="{{ best.val }}" data-team="{{ abbr }}">
+    <div class="player-header">
+      <span class="player-name">{{ p.name }}{% if p.get('pos') %}<span style="font-size:10px;color:#555;margin-left:5px;">{{ p.pos }}</span>{% endif %}</span>
+      <span class="player-team-badge">{{ abbr }}</span>
+      {% if best.val >= 75 %}<span class="player-top-pick hot">🔥 HOT</span>
+      {% elif best.val >= 65 %}<span class="player-top-pick solid">✅ SOLID</span>
+      {% elif best.val >= 58 %}<span class="player-top-pick lean">📊 LEAN</span>{% endif %}
+    </div>
     {% for pr in p.props %}
-      {% set c = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
-      {% if c > best_conf.val %}{% set best_conf.val = c %}{% set best_conf.stars = pr.stars %}{% endif %}
-    {% endfor %}
-
-    <div class="player-card"
-         data-group="nhl"
-         data-stats="{% for pr in p.props %}{{ pr.stat|lower }} {% endfor %}"
-         data-conf="{{ best_conf.val }}">
-
-      <div class="player-hdr">
-        <div>
-          <div class="player-name">{{ p.name }}{% if p.get('pos') %}<span style="font-size:10px;color:var(--txt3);margin-left:4px;">{{ p.pos }}</span>{% endif %}</div>
-          <div class="player-meta">{{ abbr }}</div>
-        </div>
-        {% if p.props %}
-        {% set pr0 = p.props[0] %}
-        <div style="text-align:right;">
-          <div class="pick-badge {% if pr0.pick=='OVER' %}pick-over{% elif pr0.pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}">
-            {{ pr0.label or pr0.stat }} {{ pr0.pick }}
-          </div>
-          <div style="font-size:10px;color:var(--txt3);margin-top:2px;">
-            <div class="stars">{% for i in range(5) %}<span {% if i >= best_conf.stars %}class="star-empty"{% endif %}>★</span>{% endfor %}</div>
-            <div class="conf-label">
-              {% if best_conf.val >= 85 %}Elite Pick
-              {% elif best_conf.val >= 78 %}Strong Pick
-              {% elif best_conf.val >= 68 %}Good Pick
-              {% elif best_conf.val >= 58 %}Moderate
-              {% else %}Use Caution{% endif %}
-            </div>
-          </div>
-        </div>
-        {% endif %}
-      </div>
-
-      {% for pr in p.props %}
-      {% set conf_pct = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
-      {% set pick = pr.pick %}
-      <div class="stat-section" data-stat="{{ pr.stat|lower }}" data-pick="{{ pr.pick }}">
-        <div class="stat-top">
-          <div>
-            <span class="stat-name" data-stat="{{ pr.stat|lower }}">{{ pr.label or pr.stat }}</span>
-            <span class="stat-line"> · Line {{ pr.line }}</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:5px;">
-            {% if conf_pct >= 75 %}<span class="smart-badge badge-hot">🔥 HOT</span>
-            {% elif conf_pct >= 65 %}<span class="smart-badge badge-solid">✅ SOLID</span>
-            {% elif conf_pct >= 58 %}<span class="smart-badge badge-lean">📊 LEAN</span>
-            {% elif conf_pct >= 52 %}<span class="smart-badge badge-fair">↔ FAIR</span>
-            {% endif %}
-            <div class="pick-badge {% if pick=='OVER' %}pick-over{% elif pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}"
-                 style="font-size:11px;padding:2px 8px;">{{ pick }}</div>
-          </div>
-        </div>
-        <div class="stat-pick-row">
-          <span class="stat-pct" style="{% if pick=='OVER' %}color:#00ff88{% elif pick=='UNDER' %}color:#ff4444{% else %}color:#888888{% endif %}">
-            {{ conf_pct }}%
-          </span>
-          <div class="pbar-wrap" style="flex:1;height:6px;">
-            <div class="pbar-fill {% if pick=='OVER' %}pbar-over{% elif pick=='UNDER' %}pbar-under{% else %}pbar-fair{% endif %}"
-                 style="width:{{ conf_pct }}%;{% if pick=='OVER' %}background:#00ff88{% elif pick=='UNDER' %}background:#ff4444{% else %}background:#888888{% endif %}"></div>
-          </div>
-        </div>
-        <div class="stat-avgs">
-          <span class="avg-item">Line <strong>{{ pr.line }}</strong></span>
-        </div>
-        <div style="margin-top:7px;display:flex;justify-content:flex-end;">
-          <button class="parlay-add-btn"
-                  data-player="{{ p.name }}"
-                  data-team="{{ abbr }}"
-                  data-sport="NHL"
-                  data-game="{{ game.away_team }} @ {{ game.home_team }}"
-                  data-stat="{{ pr.label or pr.stat }}"
-                  data-line="{{ pr.line }}"
-                  data-pick="{{ pr.pick }}"
-                  data-confidence="{{ conf_pct }}"
-                  data-stars="{{ pr.stars }}"
-                  data-trend=""
-                  data-last5=""
-                  data-avg="{{ pr.line }}"
-                  onclick="parlayState.toggleLeg(this)">+ Add to Parlay</button>
-        </div>
-      </div>
-      {% endfor %}
-
+    {% set cp = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
+    <div class="stat-row" data-stat="{{ pr.stat|lower }}" data-pick="{{ pr.pick }}">
+      <span class="sr-name" data-stat="{{ pr.stat|lower }}">{{ pr.stat }}</span>
+      <span class="sr-line">{{ pr.line }}</span>
+      <span class="sr-pick {{ pr.pick|lower }}">{{ pr.pick }}</span>
+      <span class="sr-conf {% if cp >= 70 %}high{% elif cp >= 58 %}med{% else %}low{% endif %}">{{ cp }}%</span>
+      {% if pr.avg is not none %}<span class="sr-avg">avg {{ pr.avg }}</span>{% endif %}
+      <button class="sr-add parlay-add-btn"
+              data-player="{{ p.name }}" data-team="{{ abbr }}" data-sport="NHL"
+              data-game="{{ game.away_team }} @ {{ game.home_team }}"
+              data-stat="{{ pr.stat }}" data-line="{{ pr.line }}"
+              data-pick="{{ pr.pick }}" data-confidence="{{ cp }}"
+              data-stars="{{ pr.stars }}" data-trend="{{ pr.trend or '' }}"
+              data-last5="{{ pr.last5_avg if pr.last5_avg is not none else '' }}"
+              data-avg="{{ pr.avg or '' }}"
+              onclick="parlayState.toggleLeg(this)">+</button>
     </div>
     {% endfor %}
   </div>
+  {% endfor %}
   {% else %}
-  <div style="padding:12px 16px;color:var(--txt3);font-size:12px;">
-    No props available for {{ abbr }} tonight.
-  </div>
+  <div style="padding:10px 0;font-size:12px;color:#555;">No props for {{ abbr }} tonight.</div>
   {% endif %}
   {% endfor %}
   </div>
+
 </div>
 {% endfor %}
 {% endif %}
@@ -323,75 +200,46 @@
 {% block scripts %}
 <script>
 (function() {
-  let activeStatFilter = 'all';
-  let activePickFilter = 'all';
-
-  function applyNHLFilters() {
-    const sf = activeStatFilter;
-    const pf = activePickFilter;
-    let counts = {all: 0, OVER: 0, UNDER: 0, FAIR: 0};
-
+  let activeStat = 'all', activePick = 'all';
+  function applyFilters() {
+    let counts = {all:0,OVER:0,UNDER:0,FAIR:0};
     document.querySelectorAll('.player-card[data-group="nhl"]').forEach(card => {
-      let visible = 0;
-      card.querySelectorAll('.stat-section').forEach(sec => {
-        const statOk = sf === 'all' || sec.dataset.stat === sf;
-        const pickOk = pf === 'all' || sec.dataset.pick === pf;
-        const show = statOk && pickOk;
-        sec.style.display = show ? '' : 'none';
-        if (show) {
-          visible++;
-          counts.all++;
-          const p = sec.dataset.pick;
-          if (p) counts[p] = (counts[p] || 0) + 1;
-        }
+      let vis = 0;
+      card.querySelectorAll('.stat-row').forEach(row => {
+        const show = (activeStat==='all'||row.dataset.stat===activeStat) && (activePick==='all'||row.dataset.pick===activePick);
+        row.style.display = show ? '' : 'none';
+        if (show) { vis++; counts.all++; const p=row.dataset.pick; if(p) counts[p]=(counts[p]||0)+1; }
       });
-      card.style.display = visible > 0 ? '' : 'none';
+      card.style.display = vis > 0 ? '' : 'none';
     });
-
-    const ids = {all: 'nhl-cnt-all', OVER: 'nhl-cnt-over', UNDER: 'nhl-cnt-under', FAIR: 'nhl-cnt-fair'};
-    Object.entries(ids).forEach(([k, id]) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = `(${counts[k] || 0})`;
-    });
+    ['all','OVER','UNDER','FAIR'].forEach(k => { const el=document.getElementById('nhl-cnt-'+k.toLowerCase()); if(el) el.textContent=counts[k]||0; });
   }
-
   document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('.filter-btn[data-group="nhl"]').forEach(btn => {
+    document.querySelectorAll('#nhl-stat-pills .fpill').forEach(btn => {
+      btn.addEventListener('click', () => { document.querySelectorAll('#nhl-stat-pills .fpill').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); activeStat=btn.dataset.filter; applyFilters(); });
+    });
+    document.querySelectorAll('#nhl-pick-pills .ppill').forEach(btn => {
+      btn.addEventListener('click', () => { document.querySelectorAll('#nhl-pick-pills .ppill').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); activePick=btn.dataset.pick; applyFilters(); });
+    });
+    document.querySelectorAll('#nhl-team-grid .team-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.filter-btn[data-group="nhl"]').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        activeStatFilter = btn.dataset.filter;
-        applyNHLFilters();
+        document.querySelectorAll('#nhl-team-grid .team-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+        const team=btn.dataset.team;
+        document.querySelectorAll('.game-card').forEach(card => { card.style.display=(team==='all'||((card.dataset.teams||'').split(',').includes(team)))?'':'none'; });
       });
     });
-
-    document.querySelectorAll('#nhl-pick-filter .pick-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('#nhl-pick-filter .pick-tab').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        activePickFilter = btn.dataset.pick;
-        applyNHLFilters();
+    document.getElementById('nhl-sort').addEventListener('change', function() {
+      document.querySelectorAll('.game-players').forEach(grid => {
+        const cards=Array.from(grid.querySelectorAll('.player-card'));
+        if(this.value==='confidence') cards.sort((a,b)=>parseFloat(b.dataset.conf||0)-parseFloat(a.dataset.conf||0));
+        else cards.sort((a,b)=>(a.querySelector('.player-name')?.textContent.trim()||'').localeCompare(b.querySelector('.player-name')?.textContent.trim()||''));
+        cards.forEach(c=>grid.appendChild(c));
       });
     });
-
-    document.querySelectorAll('.team-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.team-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        const team = tab.dataset.team;
-        document.querySelectorAll('.game-card').forEach(card => {
-          if (team === 'all') {
-            card.style.display = '';
-          } else {
-            const teams = (card.dataset.teams || '').split(',');
-            card.style.display = teams.includes(team) ? '' : 'none';
-          }
-        });
-      });
-    });
-
-    applyNHLFilters();
+    document.querySelectorAll('.local-game-time').forEach(el => { try { el.textContent=new Date(el.dataset.utc).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); } catch(e){} });
+    applyFilters();
   });
+  window.toggleGame = function(hdr) { hdr.closest('.game-section').classList.toggle('expanded'); };
 })();
 </script>
 {% endblock %}
