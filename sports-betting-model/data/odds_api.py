@@ -369,22 +369,17 @@ def _team_abbr(team_full_name: str) -> str:
 
 
 def _build_prop_card(stat: str, line: float,
-                     stat_labels: Dict[str, str], sport: str) -> Dict:
-    """Build a single prop card from an Odds API line.
+                     stat_labels: Dict[str, str], sport: str,
+                     over_prob: Optional[float] = None) -> Dict:
+    """Build a single prop card from an Odds API line + bookmaker price.
 
-    Confidence is computed from line context (no historical data available).
-    Bookmakers set lines at ~50/50; we lean slightly OVER since lines
-    are typically set just below the player's true average.
+    over_prob: implied probability from American odds (0.0–1.0).
+    If not provided, falls back to a lean-over default.
     """
-    # Special binary events: Poisson estimate
-    if sport == "nhl" and stat == "goals":
-        est_gpg = line * 0.65
-        over_p = max(0.15, min(0.60, 1.0 - math.exp(-est_gpg)))
-    elif sport == "mlb" and stat == "home_runs":
-        est_hrpg = line * 0.55
-        over_p = max(0.10, min(0.48, 1.0 - math.exp(-est_hrpg)))
+    if over_prob is not None:
+        over_p = float(over_prob)
     else:
-        over_p = 0.54  # slight lean to over
+        over_p = 0.52  # neutral fallback
 
     under_p = 1.0 - over_p
     pick    = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
@@ -456,7 +451,7 @@ def _fetch_h2h_probs(sport_key: str) -> Dict[str, Dict[str, float]]:
             for market in bm.get("markets", []):
                 if market.get("key") != "h2h":
                     continue
-                probs: Dict[str, float] = {}
+                raw_probs: Dict[str, float] = {}
                 for outcome in market.get("outcomes", []):
                     team  = outcome.get("name", "")
                     price = float(outcome.get("price", 0) or 0)
@@ -466,8 +461,11 @@ def _fetch_h2h_probs(sport_key: str) -> Dict[str, Dict[str, float]]:
                         prob = abs(price) / (abs(price) + 100)
                     else:
                         prob = 0.5
-                    probs[team] = round(prob * 100, 1)
-                if probs:
+                    raw_probs[team] = prob
+                if raw_probs:
+                    # Normalize to remove bookmaker vig — probs sum to 100%
+                    total = sum(raw_probs.values())
+                    probs = {k: round(v / total * 100, 1) for k, v in raw_probs.items()}
                     result[f"{home}|{away}"] = probs
     return result
 
@@ -548,8 +546,9 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
         if not props_data or not isinstance(props_data, dict):
             continue
 
-        # player_name → {stat: line}  (first bookmaker wins)
-        player_lines: Dict[str, Dict[str, float]] = defaultdict(dict)
+        # player_name → {stat: {"line": float, "over_prob": float}}
+        # over_prob is derived from the American odds price (removes hardcoded 0.54)
+        player_lines: Dict[str, Dict[str, Dict]] = defaultdict(dict)
         for bookmaker in props_data.get("bookmakers", [])[:2]:
             for market in bookmaker.get("markets", []):
                 mk   = market.get("key", "")
@@ -561,8 +560,17 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                         continue
                     player = outcome.get("description", "")
                     line   = outcome.get("point")
+                    price  = float(outcome.get("price", -110) or -110)
                     if player and line is not None and stat not in player_lines[player]:
-                        player_lines[player][stat] = float(line)
+                        # Convert American odds to implied probability
+                        if price > 0:
+                            op = 100.0 / (price + 100.0)
+                        else:
+                            op = abs(price) / (abs(price) + 100.0)
+                        player_lines[player][stat] = {
+                            "line":     float(line),
+                            "over_prob": round(op, 4),
+                        }
 
         if not player_lines:
             print(f"[ODDS] {home_team} vs {away_team}: no props")
@@ -588,15 +596,21 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 home_team, home_abbr, home_roster_names,
                 away_team, away_abbr, away_roster_names,
             )
-            props = [
-                _build_prop_card(stat, line, stat_labels, sport_name)
-                for stat, line in lines.items()
-            ]
-            primary_val = lines.get(primary, 0.0)
+            props = []
+            for stat, stat_data in lines.items():
+                line_val = stat_data["line"]
+                op       = stat_data["over_prob"]
+                props.append(_build_prop_card(stat, line_val, stat_labels,
+                                              sport_name, over_prob=op))
+
+            # Primary stat value used for sort (first available)
+            primary_data = lines.get(primary, {})
+            primary_val  = primary_data.get("line", 0.0) if isinstance(primary_data, dict) else float(primary_data or 0)
+
             card = {
                 "name":  player_name,
                 "pos":   "",
-                "pts":   primary_val,   # used for sort; field name kept for template compat
+                "pts":   primary_val,
                 "props": props,
             }
             if team_abbr == home_abbr:
@@ -604,9 +618,18 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
             else:
                 away_players.append(card)
 
-        # Sort by primary stat descending
+        # Sort by primary stat line descending
         home_players.sort(key=lambda p: p["pts"], reverse=True)
         away_players.sort(key=lambda p: p["pts"], reverse=True)
+
+        # Compute predicted winner for today.html compatibility
+        if home_prob >= away_prob:
+            predicted_winner = home_team
+            win_prob_val     = home_prob
+        else:
+            predicted_winner = away_team
+            win_prob_val     = away_prob
+        conf_str = "HIGH" if win_prob_val >= 65 else "MEDIUM" if win_prob_val >= 55 else "LOW"
 
         games.append({
             "sport":      cfg["sport_label"],
@@ -625,10 +648,21 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
             "spread":     None,
             "over_under": None,
             "bookmaker":  "",
-            "book_home_ml": None,
-            "book_away_ml": None,
+            "book_home_ml":     None,
+            "book_away_ml":     None,
             "book_home_spread": None,
-            "book_total": None,
+            "book_total":       None,
+            # today.html compatibility
+            "predicted_winner": predicted_winner,
+            "win_prob":         win_prob_val,
+            "confidence":       conf_str,
+            "draw_prob":        None,
+            "home_score":       None,
+            "away_score":       None,
+            "home_wins":        0,
+            "home_losses":      0,
+            "away_wins":        0,
+            "away_losses":      0,
         })
 
     print(f"[ODDS] {sport_name}: {len(games)} games with players")

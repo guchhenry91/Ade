@@ -634,6 +634,66 @@ async def nhl_page(request: Request):
     })
 
 
+@app.get("/api/debug/mlb-markets")
+async def debug_mlb_markets():
+    """Diagnostic: test each Odds API market for baseball_mlb to find which return data."""
+    import requests as _req
+    from data.odds_api import ODDS_BASE, _key, fetch
+
+    api_key = _key()
+    if not api_key:
+        return {"error": "ODDS_API_KEY not set"}
+
+    # Step 1: get events
+    events = fetch(
+        f"{ODDS_BASE}/sports/baseball_mlb/events",
+        params={"apiKey": api_key, "dateFormat": "iso"},
+        use_cache=False, timeout=12,
+    )
+    if not events or not isinstance(events, list):
+        return {"error": "no events found", "events_raw": repr(events)[:200]}
+
+    event = events[0]
+    event_id = event.get("id", "")
+    home = event.get("home_team", "")
+    away = event.get("away_team", "")
+
+    markets_to_test = [
+        "batter_hits", "batter_total_bases", "batter_home_runs",
+        "batter_rbis", "batter_runs_scored", "pitcher_strikeouts",
+        "pitcher_innings_pitched", "player_hits", "player_total_bases",
+        "player_home_runs",
+    ]
+
+    results = {}
+    for market in markets_to_test:
+        try:
+            r = _req.get(
+                f"{ODDS_BASE}/sports/baseball_mlb/events/{event_id}/odds",
+                params={"apiKey": api_key, "regions": "us",
+                        "markets": market, "bookmakers": "draftkings",
+                        "oddsFormat": "american"},
+                timeout=8,
+            )
+            bk = r.json().get("bookmakers", []) if r.status_code == 200 else []
+            player_count = sum(
+                len([o for o in m.get("outcomes", []) if o.get("name") == "Over"])
+                for b in bk for m in b.get("markets", [])
+            )
+            results[market] = {"status": r.status_code, "bookmakers": len(bk), "players": player_count}
+        except Exception as e:
+            results[market] = {"error": str(e)}
+
+    working = [m for m, v in results.items() if v.get("players", 0) > 0]
+    return {
+        "total_events": len(events),
+        "tested_game": f"{home} vs {away}",
+        "event_id": event_id,
+        "markets": results,
+        "working_markets": working,
+    }
+
+
 @app.get("/api/debug/nba")
 async def debug_nba():
     """Diagnostic: returns today's NBA games from ESPN scoreboard."""
