@@ -41,8 +41,9 @@
 .stat-name[data-stat="reb"]  { color: #00ff88; }  /* green */
 .stat-name[data-stat="ast"]  { color: #ff9500; }  /* orange */
 .stat-name[data-stat="3pm"]  { color: #bf5af2; }  /* purple */
-.stat-name[data-stat="stl"],
-.stat-name[data-stat="blk"]  { color: #ff6b6b; }  /* red accent */
+.stat-name[data-stat="blocks"] { color: #ff6b6b; }  /* red accent */
+.stat-name[data-stat="steals"] { color: #f472b6; }  /* pink */
+.stat-name[data-stat="pra"]    { color: #fbbf24; }  /* amber */
 .stat-name:not([data-stat])  { color: var(--txt2); }
 .stat-line { font-size: 11px; color: var(--txt3); }
 
@@ -207,7 +208,7 @@
 
 <!-- Filter bar -->
 <div class="filter-bar" id="nba-filter-bar">
-  {% for label, val in [('All','all'),('Points','pts'),('Rebounds','reb'),('Assists','ast'),('3-Pointers','3pm')] %}
+  {% for label, val in [('All','all'),('Points','pts'),('Rebounds','reb'),('Assists','ast'),('3-Pointers','3pm'),('Blocks','blocks'),('Steals','steals'),('PRA','pra')] %}
   <button class="filter-btn {% if loop.first %}active{% endif %}"
           data-group="nba" data-filter="{{ val }}">{{ label }}</button>
   {% endfor %}
