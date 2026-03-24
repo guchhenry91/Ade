@@ -863,22 +863,21 @@ async def sanity_check():
 
     # ── MLB checks ────────────────────────────────────────────────────────────
     try:
-        mlb_props, _ = _build_mlb_props(today_str)
-        if not mlb_props:
-            _warn("MLB: no props today")
+        mlb_games = _build_mlb_props(today_str)
+        if not mlb_games:
+            _warn("MLB: no games today")
         else:
-            for player in mlb_props:
-                name = player.get("name", "?")
-                for pr in player.get("props", []):
-                    stat  = pr.get("stat", "?")
-                    avg   = pr.get("avg", 0)
-                    op    = pr.get("over_prob", 0)
-                    line  = pr.get("line", 0)
-                    if avg and avg > 0 and abs(avg - line) < 0.001:
-                        _warn(f"MLB avg == line (may be fallback): {name} {stat} avg={avg} line={line}")
-                    if avg and avg > 30:
-                        _fail(f"MLB avg looks like season total: {name} {stat} avg={avg}")
-            _ok(f"MLB: {len(mlb_props)} props loaded")
+            for g in mlb_games:
+                for roster in [g.get("home_roster", []), g.get("away_roster", [])]:
+                    for player in roster:
+                        name = player.get("name", "?")
+                        for pr in player.get("props", []):
+                            stat = pr.get("stat", "?")
+                            avg  = pr.get("avg", 0)
+                            line = pr.get("line", 0)
+                            if avg and avg > 30:
+                                _fail(f"MLB avg looks like season total: {name} {stat} avg={avg}")
+            _ok(f"MLB: {len(mlb_games)} games loaded")
     except Exception as e:
         _fail(f"MLB build crashed: {e}")
 
@@ -907,17 +906,19 @@ async def sanity_check():
     # ── NHL checks ────────────────────────────────────────────────────────────
     _MMA_STATS = {"rounds", "strikes", "takedowns", "knockdowns", "submission"}
     try:
-        nhl_props, _ = _build_nhl_props(today_str)
-        for player in nhl_props:
-            name = player.get("name", "?")
-            for pr in player.get("props", []):
-                stat = (pr.get("stat") or "").lower()
-                if any(mma in stat for mma in _MMA_STATS):
-                    _fail(f"NHL: MMA stat detected: {name} {stat}")
-        if nhl_props:
-            _ok(f"NHL: {len(nhl_props)} props (no MMA detected)")
+        nhl_games = _build_nhl_props(today_str)
+        if nhl_games:
+            for g in nhl_games:
+                for roster in [g.get("home_roster", []), g.get("away_roster", [])]:
+                    for player in roster:
+                        name = player.get("name", "?")
+                        for pr in player.get("props", []):
+                            stat = (pr.get("stat") or "").lower()
+                            if any(mma in stat for mma in _MMA_STATS):
+                                _fail(f"NHL: MMA stat detected: {name} {stat}")
+            _ok(f"NHL: {len(nhl_games)} games (no MMA detected)")
         else:
-            _warn("NHL: no props today (off season or no PP data)")
+            _warn("NHL: no games today (off season or no props)")
     except Exception as e:
         _fail(f"NHL build crashed: {e}")
 

@@ -222,20 +222,25 @@ _SPORT_CONFIG: Dict[str, Dict] = {
         "icon": "🏒",
         "espn_path": "hockey/nhl",
         "primary_stat": "shots",
+        # player_anytime_scorer returns Yes/No outcomes (not Over/Under);
+        # handled separately by _ANYTIME_SCORER_MARKETS set below.
         "markets": ["player_points", "player_shots_on_goal",
-                    "player_goals", "player_assists"],
+                    "player_assists", "player_anytime_scorer"],
         "stat_map": {
-            "player_points":        "points",
-            "player_shots_on_goal": "shots",
-            "player_goals":         "goals",
-            "player_assists":       "assists",
+            "player_points":          "points",
+            "player_shots_on_goal":   "shots",
+            "player_assists":         "assists",
+            "player_anytime_scorer":  "goals",
         },
         "stat_labels": {
             "points": "Points", "shots": "Shots on Goal",
-            "goals": "Goals", "assists": "Assists",
+            "goals": "Goals (Anytime Scorer)", "assists": "Assists",
         },
     },
 }
+
+# Markets that use Yes/No outcomes instead of Over/Under
+_ANYTIME_SCORER_MARKETS = {"player_anytime_scorer", "player_first_goal_scorer"}
 
 # Full team name → abbreviation (NBA, MLB, NHL combined)
 _TEAM_ABBR: Dict[str, str] = {
@@ -555,26 +560,29 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 stat = stat_map.get(mk)
                 if not stat:
                     continue
+                is_yes_no = mk in _ANYTIME_SCORER_MARKETS
                 for outcome in market.get("outcomes", []):
-                    if outcome.get("name") != "Over":
-                        continue
-                    player = outcome.get("description", "")
-                    line   = outcome.get("point")
+                    oname = outcome.get("name", "")
+                    # Accept "Over" for standard O/U markets; "Yes" for anytime scorer
+                    if is_yes_no:
+                        if oname != "Yes":
+                            continue
+                        # Anytime scorer: use line=0.5 (binary prop)
+                        player = (outcome.get("description") or "").strip() or oname
+                        line   = 0.5
+                    else:
+                        if oname != "Over":
+                            continue
+                        player = outcome.get("description", "")
+                        line   = outcome.get("point")
+
                     price  = float(outcome.get("price", -110) or -110)
                     if player and line is not None and stat not in player_lines[player]:
-                        # Convert American odds to implied probability
-                        if price > 0:
-                            op = 100.0 / (price + 100.0)
-                        else:
-                            op = abs(price) / (abs(price) + 100.0)
+                        op = _american_to_implied(price)
                         player_lines[player][stat] = {
-                            "line":     float(line),
+                            "line":      float(line),
                             "over_prob": round(op, 4),
                         }
-
-        if not player_lines:
-            print(f"[ODDS] {home_team} vs {away_team}: no props")
-            continue
 
         print(f"[ODDS] {home_team} vs {away_team}: {len(player_lines)} players")
 
@@ -631,6 +639,41 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
             win_prob_val     = away_prob
         conf_str = "HIGH" if win_prob_val >= 65 else "MEDIUM" if win_prob_val >= 55 else "LOW"
 
+        # Best single prop across all players for "TOP PICK" banner
+        all_game_props: list = []
+        for _pl, _abbr in [(home_players, home_abbr), (away_players, away_abbr)]:
+            for _p in _pl:
+                for _pr in _p.get("props", []):
+                    _conf = _pr.get("over_prob" if _pr["pick"] != "UNDER" else "under_prob", 0)
+                    all_game_props.append({
+                        "player":     _p["name"],
+                        "team":       _abbr,
+                        "stat":       _pr.get("label", _pr.get("stat", "")),
+                        "line":       _pr["line"],
+                        "pick":       _pr["pick"],
+                        "confidence": _conf,
+                        "conf_label": _pr.get("conf_label", ""),
+                    })
+        all_game_props.sort(key=lambda x: x["confidence"], reverse=True)
+        top_pick = all_game_props[0] if all_game_props else None
+
+        # Win badge label for game header
+        best_prob = max(home_prob, away_prob)
+        best_team = home_team if home_prob >= away_prob else away_team
+        best_team_short = best_team.split()[-1]
+        if best_prob >= 70:
+            pick_badge_label = f"🔥 Strong Fav · {best_team_short}"
+            pick_badge_class = "badge-strong"
+        elif best_prob >= 60:
+            pick_badge_label = f"✅ Favoured · {best_team_short}"
+            pick_badge_class = "badge-favoured"
+        elif best_prob >= 55:
+            pick_badge_label = f"📊 Slight Edge · {best_team_short}"
+            pick_badge_class = "badge-slight"
+        else:
+            pick_badge_label = "⚖️ Pick'em"
+            pick_badge_class = "badge-pickem"
+
         games.append({
             "sport":      cfg["sport_label"],
             "league":     cfg["league"],
@@ -663,9 +706,13 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
             "home_losses":      0,
             "away_wins":        0,
             "away_losses":      0,
+            # Smart pick badges
+            "top_pick":         top_pick,
+            "pick_badge_label": pick_badge_label,
+            "pick_badge_class": pick_badge_class,
         })
 
-    print(f"[ODDS] {sport_name}: {len(games)} games with players")
+    print(f"[ODDS] {sport_name}: {len(games)} games built")
     return games
 
 
@@ -830,6 +877,20 @@ def build_soccer_props(ttl: int = 900) -> list:
 
             conf_str = "HIGH" if win_prob_val >= 55 else ("MEDIUM" if win_prob_val >= 45 else "LOW")
 
+            # Match pick label
+            if win_prob_val >= 70:
+                match_pick_label = "🔥 Strong Favourite"
+                pick_badge_class = "badge-strong"
+            elif win_prob_val >= 60:
+                match_pick_label = "✅ Favoured"
+                pick_badge_class = "badge-favoured"
+            elif win_prob_val >= 50:
+                match_pick_label = "📊 Slight Edge"
+                pick_badge_class = "badge-slight"
+            else:
+                match_pick_label = "⚖️ Pick'em"
+                pick_badge_class = "badge-pickem"
+
             # Per-event player props
             prop_markets = ("player_goal_scorer,player_first_goal_scorer,"
                             "player_shots_on_target,player_shots")
@@ -942,6 +1003,9 @@ def build_soccer_props(ttl: int = 900) -> list:
                 "predicted_winner": predicted_winner,
                 "win_prob":         win_prob_val,
                 "confidence":       conf_str,
+                # Match pick badge
+                "match_pick_label": match_pick_label,
+                "pick_badge_class": pick_badge_class,
                 # Rich player data for soccer.html
                 "players":      players[:20],
                 # today.html compat

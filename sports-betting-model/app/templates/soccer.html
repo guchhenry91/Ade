@@ -61,6 +61,18 @@
 
   /* ── Hide/show via data-filter ───────────────────── */
   .game-card[data-hidden="true"] { display:none; }
+
+  /* ── Game pick badges ── */
+  .game-pick-badge { display:inline-flex;align-items:center;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap; }
+  .badge-strong   { background:#00ff8822; color:#00ff88; border:1px solid #00ff88; }
+  .badge-favoured { background:#00d4ff22; color:#00d4ff; border:1px solid #00d4ff; }
+  .badge-slight   { background:#ff950022; color:#ff9500; border:1px solid #ff9500; }
+  .badge-pickem   { background:#88888822; color:#888;    border:1px solid #444; }
+  /* ── Smart scorer badges ── */
+  .smart-badge { display:inline-flex;align-items:center;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap; }
+  .badge-hot   { background:#00ff8833; color:#00ff88; }
+  .badge-solid { background:#00d4ff33; color:#00d4ff; }
+  .badge-lean  { background:#ff950033; color:#ff9500; }
 </style>
 {% endblock %}
 
@@ -204,6 +216,11 @@
 
         <!-- Match stats pills -->
         <div class="match-stats">
+          {% if game.match_pick_label %}
+          <div class="stat-pill">
+            <span class="game-pick-badge {{ game.pick_badge_class }}">{{ game.match_pick_label }}</span>
+          </div>
+          {% endif %}
           {% if game.btts_yes_prob is not none %}
           <div class="stat-pill">
             <span class="pill-label">BTTS</span>
@@ -269,6 +286,9 @@
                   <span class="{% if p.goal_scorer_prob >= 35 %}gp-high{% elif p.goal_scorer_prob >= 20 %}gp-medium{% else %}gp-low{% endif %}">
                     {{ p.goal_scorer_prob }}%
                   </span>
+                  {% if p.goal_scorer_prob >= 35 %}<span class="smart-badge badge-hot" style="margin-left:3px;">🔥</span>
+                  {% elif p.goal_scorer_prob >= 22 %}<span class="smart-badge badge-solid" style="margin-left:3px;">✅</span>
+                  {% endif %}
                 {% else %}
                   <span class="text-slate-700">—</span>
                 {% endif %}
@@ -339,8 +359,13 @@
         </div>
 
         {% else %}
-        <div class="flex items-center justify-center h-24 text-xs text-slate-600 italic">
-          No player prop lines available for this fixture.
+        <div style="background:#0e0e1e;border-radius:8px;padding:16px 14px;text-align:center;">
+          <p style="color:#475569;font-size:12px;margin-bottom:8px;">Player props not available for this match</p>
+          <p style="color:#334155;font-size:11px;">
+            Match result: <strong style="color:#e2e8f0;">{{ game.predicted_winner }}</strong>
+            · <span style="color:#6366f1;">{{ game.win_prob }}%</span>
+          </p>
+          {% if game.btts_yes_prob %}<p style="color:#334155;font-size:11px;margin-top:4px;">BTTS: {{ game.btts_yes_prob }}% · Goals O/U: {{ game.book_total or '—' }}</p>{% endif %}
         </div>
         {% endif %}
       </div><!-- end player props -->

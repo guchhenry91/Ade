@@ -111,6 +111,43 @@
   background: rgba(255,165,0,.15); color: #ffa500;
   border: 1px solid rgba(255,165,0,.3); border-radius: 4px;
 }
+/* ── Game pick badges ── */
+.game-pick-badge {
+  display:inline-flex; align-items:center;
+  padding:4px 12px; border-radius:20px; font-size:11px; font-weight:700; white-space:nowrap;
+}
+.badge-strong   { background:#00ff8822; color:#00ff88; border:1px solid #00ff88; }
+.badge-favoured { background:#00d4ff22; color:#00d4ff; border:1px solid #00d4ff; }
+.badge-slight   { background:#ff950022; color:#ff9500; border:1px solid #ff9500; }
+.badge-pickem   { background:#88888822; color:#888;    border:1px solid #444; }
+/* ── Smart prop badges ── */
+.smart-badge {
+  display:inline-flex; align-items:center; padding:2px 7px;
+  border-radius:10px; font-size:10px; font-weight:700; white-space:nowrap;
+}
+.badge-hot   { background:#00ff8833; color:#00ff88; }
+.badge-solid { background:#00d4ff33; color:#00d4ff; }
+.badge-lean  { background:#ff950033; color:#ff9500; }
+.badge-fair  { background:#88888833; color:#888; }
+/* ── Top pick banner ── */
+.top-pick-banner {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:10px 14px; margin:10px 14px 0;
+  background:linear-gradient(135deg,#00ff8811,#00d4ff11);
+  border:1px solid #00ff8844; border-radius:10px;
+}
+.top-pick-label  { font-size:11px; font-weight:700; color:#00ff88; background:#00ff8822; padding:2px 8px; border-radius:10px; }
+.top-pick-player { font-size:14px; font-weight:700; color:#fff; }
+.top-pick-stat   { font-size:12px; color:#94a3b8; }
+.top-pick-line   { font-size:13px; color:#e2e8f0; font-weight:600; }
+.top-pick-conf   { font-size:16px; font-weight:800; color:#00ff88; margin-left:auto; }
+.top-pick-pick.over  { color:#00ff88; }
+.top-pick-pick.under { color:#ff4444; }
+.top-pick-pick.fair  { color:#888; }
+@media (max-width:640px) {
+  .top-pick-banner { flex-direction:column; align-items:flex-start; }
+  .top-pick-conf   { margin-left:0; }
+}
 
 /* ── Team filter tabs ── */
 .team-tab-bar {
@@ -232,13 +269,26 @@
         {% elif 'PROGRESS' in (game.status or '') or 'IN_PROGRESS' in (game.status or '') %}🔴 Live
         {% else %}⏰ Upcoming{% endif %}
       </span>
-      <div style="display:flex;gap:6px;">
+      <div style="display:flex;gap:6px;align-items:center;">
+        {% if game.pick_badge_label %}<span class="game-pick-badge {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>{% endif %}
         <span class="wp-home">{{ game.home_abbr }} {{ game.home_prob }}%</span>
         <span style="color:var(--txt3);">vs</span>
         <span class="wp-away">{{ game.away_abbr }} {{ game.away_prob }}%</span>
       </div>
     </div>
   </div>
+
+  {% if game.top_pick %}
+  <div class="top-pick-banner">
+    <span class="top-pick-label">⭐ TOP PICK</span>
+    <span class="top-pick-player">{{ game.top_pick.player }}</span>
+    <span class="top-pick-stat">{{ game.top_pick.stat }}</span>
+    <span class="top-pick-line">{{ game.top_pick.line }}</span>
+    <span class="top-pick-pick {{ game.top_pick.pick|lower }}">{{ game.top_pick.pick }}</span>
+    <span class="top-pick-conf">{{ game.top_pick.confidence }}%</span>
+    <span style="font-size:11px;color:#94a3b8;">{{ game.top_pick.conf_label }}</span>
+  </div>
+  {% endif %}
 
   <!-- Players -->
   <div style="padding:12px 0;">
@@ -310,9 +360,14 @@
             <span class="stat-name" data-stat="{{ pr.stat|lower }}">{{ pr.stat }}</span>
             <span class="stat-line"> · Line {{ pr.line }}</span>
           </div>
-          <div class="pick-badge {% if pick=='OVER' %}pick-over{% elif pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}"
-               style="font-size:11px;padding:2px 8px;">
-            {{ pick }}
+          <div style="display:flex;align-items:center;gap:5px;">
+            {% if conf_pct >= 75 %}<span class="smart-badge badge-hot">🔥 HOT</span>
+            {% elif conf_pct >= 65 %}<span class="smart-badge badge-solid">✅ SOLID</span>
+            {% elif conf_pct >= 58 %}<span class="smart-badge badge-lean">📊 LEAN</span>
+            {% elif conf_pct >= 52 %}<span class="smart-badge badge-fair">↔ FAIR</span>
+            {% endif %}
+            <div class="pick-badge {% if pick=='OVER' %}pick-over{% elif pick=='UNDER' %}pick-under{% else %}pick-fair{% endif %}"
+                 style="font-size:11px;padding:2px 8px;">{{ pick }}</div>
           </div>
         </div>
 
@@ -325,7 +380,6 @@
             <div class="pbar-fill {% if pick=='OVER' %}pbar-over{% elif pick=='UNDER' %}pbar-under{% else %}pbar-fair{% endif %}"
                  style="width:{{ conf_pct }}%;{% if pick=='OVER' %}background:#00ff88{% elif pick=='UNDER' %}background:#ff4444{% else %}background:#888888{% endif %}"></div>
           </div>
-          <span class="badge-{{ pr.confidence|lower }}" style="font-size:10px;">{{ pr.confidence }}</span>
         </div>
 
         <div class="stat-avgs">
