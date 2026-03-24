@@ -2,20 +2,70 @@
 {% block title %}Soccer Picks – Live Betting Model{% endblock %}
 {% block head %}
 <style>
+  /* ── Probability bars ───────────────────────────── */
   .prob-bar-home { background: #6366f1; }
   .prob-bar-draw { background: #475569; }
   .prob-bar-away { background: #a855f7; }
   .winner-glow   { border-left: 3px solid #6366f1; }
-  .book-pill     { background: #1a1a30; border: 1px solid #2e2e52; }
-  .player-tbl th { color:#64748b; font-size:.65rem; text-transform:uppercase;
-                   letter-spacing:.05em; padding:4px 8px; border-bottom:1px solid #1e2035; }
-  .player-tbl td { font-size:.75rem; padding:5px 8px; border-bottom:1px solid #181828; }
+
+  /* ── Book pill ──────────────────────────────────── */
+  .book-pill { background: #1a1a30; border: 1px solid #2e2e52; }
+
+  /* ── Filter bar ─────────────────────────────────── */
+  .filter-bar { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px; align-items:center; }
+  .filter-btn {
+    padding:4px 12px; border-radius:9999px; font-size:.7rem; font-weight:600;
+    border:1px solid #2e3055; background:#141428; color:#94a3b8; cursor:pointer;
+    transition: all .15s;
+  }
+  .filter-btn.active, .filter-btn:hover {
+    background:#6366f1; color:#fff; border-color:#6366f1;
+  }
+  .filter-label { font-size:.65rem; color:#475569; text-transform:uppercase; letter-spacing:.08em; }
+
+  /* ── Match stats row ─────────────────────────────── */
+  .match-stats { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .stat-pill {
+    background:#141428; border:1px solid #2e3055; border-radius:8px;
+    padding:5px 10px; font-size:.7rem; color:#94a3b8; display:flex; align-items:center; gap:6px;
+  }
+  .stat-pill b { color:#e2e8f0; }
+  .stat-pill .pill-label { color:#475569; font-size:.65rem; }
+
+  /* ── 3-way prob grid ─────────────────────────────── */
+  .prob-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin:10px 0; }
+  .prob-cell {
+    background:#0e0e1e; border:1px solid #1e2035; border-radius:8px;
+    padding:8px 10px; text-align:center;
+  }
+  .prob-cell .prob-label { font-size:.6rem; color:#475569; text-transform:uppercase; letter-spacing:.06em; }
+  .prob-cell .prob-val   { font-size:1.1rem; font-weight:700; margin:2px 0; }
+  .prob-cell .prob-ml    { font-size:.65rem; }
+  .prob-cell.winner      { border-color:#6366f1; background:#0f0f25; }
+
+  /* ── Player table ────────────────────────────────── */
+  .player-tbl th {
+    color:#64748b; font-size:.62rem; text-transform:uppercase;
+    letter-spacing:.05em; padding:4px 8px; border-bottom:1px solid #1e2035;
+  }
+  .player-tbl td { font-size:.72rem; padding:5px 8px; border-bottom:1px solid #181828; }
   .player-tbl tr:hover td { background:rgba(255,255,255,.03); }
-  .xg-badge { background:#1e2035; border:1px solid #2e3055; }
+
+  /* ── Goal% colour coding ─────────────────────────── */
+  .gp-high   { color:#4ade80; font-weight:600; }
+  .gp-medium { color:#facc15; font-weight:500; }
+  .gp-low    { color:#64748b; }
+
+  /* ── Team header stripe ──────────────────────────── */
+  .team-header { background:#141428; border-radius:6px 6px 0 0; padding:5px 10px; }
+
+  /* ── Hide/show via data-filter ───────────────────── */
+  .game-card[data-hidden="true"] { display:none; }
 </style>
 {% endblock %}
 
 {% block content %}
+<!-- Page header -->
 <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
   <div>
     <h1 class="text-3xl font-bold text-white">⚽ Soccer Picks</h1>
@@ -24,18 +74,12 @@
       <span class="text-indigo-400 font-medium">{{ total }}</span>
       fixture{{ 's' if total != 1 else '' }}
       {% if not has_odds_key %}
-        · <span class="text-yellow-600 text-xs">Set <code>ODDS_API_KEY</code> for sportsbook odds</span>
+        · <span class="text-yellow-600 text-xs">Set <code>ODDS_API_KEY</code> for live odds</span>
       {% endif %}
     </p>
   </div>
-  <div style="text-align:right;">
-    <a href="/soccer" class="btn btn-accent">↻ Refresh</a>
-    {% if generated_at %}
-    <div class="updated-bar" style="justify-content:flex-end;margin-top:6px;">
-      <span class="dot"></span>
-      <span data-generated-at="{{ generated_at }}"></span>
-    </div>
-    {% endif %}
+  <div class="flex items-center gap-3">
+    <a href="/soccer" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium">↻ Refresh</a>
   </div>
 </div>
 
@@ -43,9 +87,31 @@
 <div class="card rounded-xl p-12 text-center">
   <p class="text-4xl mb-3">⚽</p>
   <p class="text-white font-semibold text-lg">No soccer fixtures today</p>
-  <p class="text-slate-400 mt-1 text-sm">Check back on match days for EPL, UCL, La Liga, and Ligue 1 picks.</p>
+  <p class="text-slate-400 mt-1 text-sm">
+    Check back on match days — EPL, La Liga, UCL, Serie A, Bundesliga, Ligue 1, MLS.
+  </p>
 </div>
 {% else %}
+
+<!-- ── Filter bar ─────────────────────────────────────────────────────────── -->
+<div class="card rounded-xl p-4 mb-6">
+  <div class="filter-bar">
+    <span class="filter-label">League:</span>
+    <button class="filter-btn active" onclick="setLeagueFilter('all', this)">All</button>
+    {% set seen_lg = namespace(leagues=[]) %}
+    {% for g in games %}{% if g.league not in seen_lg.leagues %}{% set _ = seen_lg.leagues.append(g.league) %}{% endif %}{% endfor %}
+    {% for lg in seen_lg.leagues %}
+      <button class="filter-btn" onclick="setLeagueFilter('{{ lg|replace(' ','_') }}', this)">{{ lg }}</button>
+    {% endfor %}
+  </div>
+  <div class="filter-bar mt-2">
+    <span class="filter-label">Market:</span>
+    <button class="filter-btn active" onclick="setMarketFilter('all', this)">All</button>
+    <button class="filter-btn" onclick="setMarketFilter('scorer', this)">Goal Scorers</button>
+    <button class="filter-btn" onclick="setMarketFilter('shots', this)">Shots</button>
+    <button class="filter-btn" onclick="setMarketFilter('match', this)">Match Result</button>
+  </div>
+</div>
 
 {# Group by league #}
 {% set seen = namespace(leagues=[]) %}
@@ -55,25 +121,24 @@
 {% set lg_games = games | selectattr("league","equalto",league) | list %}
 {% set lg0 = lg_games[0] %}
 
-<section class="mb-10">
+<section class="mb-10" data-league="{{ league|replace(' ','_') }}">
   <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-4">
     {{ lg0.sport_icon }} {{ league }} · {{ lg_games|length }} fixture{{ 's' if lg_games|length!=1 else '' }}
   </h2>
 
   {% for game in lg_games %}
   {% set gid = loop.index0|string ~ league|replace(' ','') %}
-  <div class="card rounded-xl overflow-hidden mb-5">
+  <div class="card rounded-xl overflow-hidden mb-6 game-card"
+       data-league="{{ league|replace(' ','_') }}">
 
+    <!-- ═══ GAME HEADER ════════════════════════════════════════════════════ -->
     <div class="px-5 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
       <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
         {% if game.kickoff %}
           <span>{{ game.kickoff[:10] }}</span>
-          {% if game.kickoff|length > 10 %}<span>{{ game.kickoff[11:16] }} UTC</span>{% endif %}
-        {% endif %}
-        {% if game.home_xg is defined and game.home_xg %}
-          <span class="xg-badge px-2 py-0.5 rounded text-slate-300">
-            xG <b>{{ game.home_xg }}</b> – <b>{{ game.away_xg }}</b>
-          </span>
+          {% if game.kickoff|length > 10 %}
+            <span class="local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+          {% endif %}
         {% endif %}
         {% if game.bookmaker %}
           <span class="book-pill px-2 py-0.5 rounded text-slate-400">📚 {{ game.bookmaker }}</span>
@@ -91,189 +156,264 @@
 
     <div class="p-5 grid grid-cols-1 xl:grid-cols-5 gap-6">
 
-      <!-- Predictions -->
-      <div class="xl:col-span-2 space-y-3">
+      <!-- ═══ MATCH PREDICTION (left 2 cols) ═════════════════════════════ -->
+      <div class="xl:col-span-2 match-section">
 
-        <!-- Home -->
-        <div class="{% if game.predicted_winner == game.home_team %}winner-glow pl-3{% endif %}">
-          <div class="flex items-center justify-between mb-1.5">
-            <div class="flex items-center gap-2">
-              {% if game.predicted_winner == game.home_team %}<span class="text-yellow-400">★</span>{% endif %}
-              <span class="font-semibold {% if game.predicted_winner == game.home_team %}text-white{% else %}text-slate-400{% endif %}">
-                {{ game.home_team }}
-              </span>
-              <span class="text-xs text-slate-600">(Home)</span>
+        <!-- 3-way prob grid -->
+        <div class="prob-grid mb-3">
+          <!-- Home -->
+          <div class="prob-cell {% if game.predicted_winner == game.home_team %}winner{% endif %}">
+            <div class="prob-label">Home</div>
+            <div class="prob-val {% if game.predicted_winner == game.home_team %}text-indigo-300{% else %}text-slate-400{% endif %}">
+              {{ game.home_prob }}%
             </div>
-            <div class="flex items-center gap-2">
-              {% if game.home_score is not none %}<span class="text-xl font-bold text-white">{{ game.home_score }}</span>{% endif %}
-              {% if game.book_home_ml %}
-                <span class="book-pill text-xs px-1.5 py-0.5 rounded {% if game.book_home_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
-                  {{ game.book_home_ml }}
-                </span>
-              {% endif %}
-              <span class="text-sm font-bold {% if game.predicted_winner == game.home_team %}text-indigo-300{% else %}text-slate-500{% endif %}">
-                {{ game.home_prob }}%
-              </span>
-            </div>
+            {% if game.book_home_ml %}
+              <div class="prob-ml {% if game.book_home_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
+                {{ game.book_home_ml }}
+              </div>
+            {% endif %}
+            <div class="text-xs text-slate-400 mt-1 truncate font-medium">{{ game.home_team.split()[-1] }}</div>
           </div>
-          <div class="w-full bg-slate-800 rounded-full h-2">
-            <div class="prob-bar-home h-2 rounded-full" style="width:{{ game.home_prob }}%"></div>
+          <!-- Draw -->
+          <div class="prob-cell {% if game.predicted_winner == 'Draw' %}winner{% endif %}">
+            <div class="prob-label">Draw</div>
+            <div class="prob-val {% if game.predicted_winner == 'Draw' %}text-indigo-300{% else %}text-slate-500{% endif %}">
+              {{ game.draw_prob }}%
+            </div>
+            {% if game.book_draw_ml %}
+              <div class="prob-ml {% if game.book_draw_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
+                {{ game.book_draw_ml }}
+              </div>
+            {% endif %}
+            <div class="text-xs text-slate-600 mt-1">—</div>
+          </div>
+          <!-- Away -->
+          <div class="prob-cell {% if game.predicted_winner == game.away_team %}winner{% endif %}">
+            <div class="prob-label">Away</div>
+            <div class="prob-val {% if game.predicted_winner == game.away_team %}text-indigo-300{% else %}text-slate-400{% endif %}">
+              {{ game.away_prob }}%
+            </div>
+            {% if game.book_away_ml %}
+              <div class="prob-ml {% if game.book_away_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
+                {{ game.book_away_ml }}
+              </div>
+            {% endif %}
+            <div class="text-xs text-slate-400 mt-1 truncate font-medium">{{ game.away_team.split()[-1] }}</div>
           </div>
         </div>
 
-        <!-- Draw -->
-        {% if game.draw_prob is not none %}
-        <div class="{% if game.predicted_winner == 'Draw' %}winner-glow pl-3{% endif %}">
-          <div class="flex items-center justify-between mb-1.5">
-            <div class="flex items-center gap-2">
-              {% if game.predicted_winner == 'Draw' %}<span class="text-yellow-400">★</span>{% endif %}
-              <span class="text-sm {% if game.predicted_winner=='Draw' %}text-white font-semibold{% else %}text-slate-500{% endif %}">Draw</span>
-            </div>
-            <div class="flex items-center gap-2">
-              {% if game.book_draw_ml %}
-                <span class="book-pill text-xs px-1.5 py-0.5 rounded {% if game.book_draw_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
-                  {{ game.book_draw_ml }}
-                </span>
-              {% endif %}
-              <span class="text-sm {% if game.predicted_winner=='Draw' %}text-indigo-300 font-bold{% else %}text-slate-500{% endif %}">
-                {{ game.draw_prob }}%
-              </span>
-            </div>
-          </div>
-          <div class="w-full bg-slate-800 rounded-full h-2">
-            <div class="prob-bar-draw h-2 rounded-full" style="width:{{ game.draw_prob }}%"></div>
-          </div>
-        </div>
-        {% endif %}
-
-        <!-- Away -->
-        <div class="{% if game.predicted_winner == game.away_team %}winner-glow pl-3{% endif %}">
-          <div class="flex items-center justify-between mb-1.5">
-            <div class="flex items-center gap-2">
-              {% if game.predicted_winner == game.away_team %}<span class="text-yellow-400">★</span>{% endif %}
-              <span class="font-semibold {% if game.predicted_winner == game.away_team %}text-white{% else %}text-slate-400{% endif %}">
-                {{ game.away_team }}
-              </span>
-              <span class="text-xs text-slate-600">(Away)</span>
-            </div>
-            <div class="flex items-center gap-2">
-              {% if game.away_score is not none %}<span class="text-xl font-bold text-white">{{ game.away_score }}</span>{% endif %}
-              {% if game.book_away_ml %}
-                <span class="book-pill text-xs px-1.5 py-0.5 rounded {% if game.book_away_ml.startswith('+') %}text-green-400{% else %}text-red-400{% endif %}">
-                  {{ game.book_away_ml }}
-                </span>
-              {% endif %}
-              <span class="text-sm font-bold {% if game.predicted_winner == game.away_team %}text-indigo-300{% else %}text-slate-500{% endif %}">
-                {{ game.away_prob }}%
-              </span>
-            </div>
-          </div>
-          <div class="w-full bg-slate-800 rounded-full h-2">
-            <div class="prob-bar-away h-2 rounded-full" style="width:{{ game.away_prob }}%"></div>
-          </div>
-        </div>
-
-        <!-- Summary box -->
-        <div class="bg-slate-900/60 rounded-lg px-4 py-3 space-y-1 text-sm">
-          <div class="flex items-center justify-between">
-            <span class="text-slate-400">🏆 Pick</span>
-            <span class="text-white font-semibold">{{ game.predicted_winner }}
-              <span class="text-slate-500 font-normal">({{ game.win_prob }}%)</span>
-            </span>
-          </div>
-          {% if game.book_total %}
-          <div class="flex items-center justify-between">
-            <span class="text-slate-400">🎯 Goals O/U</span>
-            <span class="text-slate-300">{{ game.book_total }}</span>
+        <!-- Match stats pills -->
+        <div class="match-stats">
+          {% if game.btts_yes_prob is not none %}
+          <div class="stat-pill">
+            <span class="pill-label">BTTS</span>
+            <b class="{% if game.btts_yes_prob >= 55 %}text-green-400{% elif game.btts_yes_prob >= 45 %}text-yellow-400{% else %}text-slate-400{% endif %}">
+              {{ game.btts_yes_prob }}%
+            </b>
           </div>
           {% endif %}
-          <div class="flex items-center justify-between">
-            <span class="text-slate-400">📈 Confidence</span>
-            <span class="text-xs px-2 py-0.5 rounded-full font-medium
+          {% if game.book_total %}
+          <div class="stat-pill">
+            <span class="pill-label">Goals O/U</span>
+            <b>{{ game.book_total }}</b>
+          </div>
+          {% endif %}
+          <div class="stat-pill">
+            <span class="pill-label">Confidence</span>
+            <span class="text-xs px-1.5 py-0.5 rounded font-medium
               {% if game.confidence=='HIGH' %}badge-high{% elif game.confidence=='MEDIUM' %}badge-medium{% else %}badge-low{% endif %}">
               {{ game.confidence }}
             </span>
           </div>
         </div>
+
+        <!-- Summary pick row -->
+        <div class="text-sm text-slate-400 pt-2 border-t border-slate-800">
+          Pick: <strong class="text-white">{{ game.predicted_winner }}</strong>
+          <span class="text-slate-600"> · {{ game.win_prob }}%</span>
+        </div>
       </div>
 
-      <!-- Player scorer probabilities -->
-      <div class="xl:col-span-3 space-y-4">
-        {% for team_label, roster, color in [
-            (game.home_team, game.home_roster, 'text-indigo-300'),
-            (game.away_team, game.away_roster, 'text-purple-300'),
-        ] %}
-        {% if roster %}
-        <div>
-          <div class="flex items-center justify-between px-1 mb-1">
-            <span class="text-xs font-semibold uppercase tracking-wider {{ color }}">{{ team_label }}</span>
-            <span class="text-xs text-slate-600">Anytime scorer · {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}</span>
-          </div>
-          <div class="overflow-x-auto rounded" style="background:#0e0e1e;">
-            <table class="player-tbl w-full">
-              <thead><tr>
-                <th class="text-left">Player</th>
-                <th class="text-center">Shots/G</th>
-                <th class="text-center">xG/Shot</th>
-                <th class="text-center">Goal%</th>
-                <th class="text-center">Confidence</th>
-                <th class="text-center">Parlay</th>
-              </tr></thead>
-              <tbody>
-              {% for p in roster %}
-              <tr>
-                <td class="text-slate-200 font-medium">{{ p.name }}</td>
-                <td class="text-slate-400 text-center">{{ p.shots_pg or '—' }}</td>
-                <td class="text-slate-400 text-center">{{ p.xg_shot or '—' }}</td>
-                <td class="text-center">
-                  <span class="{% if p.goal_prob > 30 %}text-green-400{% elif p.goal_prob > 15 %}text-yellow-400{% else %}text-slate-500{% endif %} font-medium">
-                    {{ p.goal_prob }}%
+      <!-- ═══ PLAYER PROPS (right 3 cols) ═════════════════════════════════ -->
+      <div class="xl:col-span-3 scorer-section shots-section">
+        {% if game.players %}
+
+        <!-- Team headers -->
+        <div class="flex items-center justify-between px-1 mb-2">
+          <span class="text-xs font-semibold text-indigo-300 uppercase tracking-wider">
+            {{ game.home_team }} vs {{ game.away_team }} — Player Props
+          </span>
+          <span class="text-xs text-slate-600">{{ game.players|length }} player{{ 's' if game.players|length != 1 else '' }}</span>
+        </div>
+
+        <div class="overflow-x-auto rounded" style="background:#0e0e1e;">
+          <table class="player-tbl w-full">
+            <thead><tr>
+              <th class="text-left">Player</th>
+              <th class="text-center scorer-col">Anytime Scorer%</th>
+              <th class="text-center scorer-col">1st Scorer%</th>
+              <th class="text-center shots-col">SOT Line</th>
+              <th class="text-center shots-col">SOT O%</th>
+              <th class="text-center shots-col">Shots Line</th>
+              <th class="text-center shots-col">Shots O%</th>
+              <th class="text-center">Parlay</th>
+            </tr></thead>
+            <tbody>
+            {% for p in game.players %}
+            <tr>
+              <td class="text-slate-200 font-medium whitespace-nowrap">{{ p.name }}</td>
+
+              <!-- Anytime scorer % -->
+              <td class="text-center scorer-col">
+                {% if p.goal_scorer_prob is not none %}
+                  <span class="{% if p.goal_scorer_prob >= 35 %}gp-high{% elif p.goal_scorer_prob >= 20 %}gp-medium{% else %}gp-low{% endif %}">
+                    {{ p.goal_scorer_prob }}%
                   </span>
-                </td>
-                <td class="text-center">
-                  <span class="text-xs px-1.5 py-0.5 rounded
-                    {% if p.confidence=='HIGH' %}badge-high{% elif p.confidence=='MEDIUM' %}badge-medium{% else %}badge-low{% endif %}">
-                    {{ p.confidence }}
+                {% else %}
+                  <span class="text-slate-700">—</span>
+                {% endif %}
+              </td>
+
+              <!-- 1st scorer % -->
+              <td class="text-center scorer-col">
+                {% if p.first_scorer_prob is not none %}
+                  <span class="{% if p.first_scorer_prob >= 15 %}gp-high{% elif p.first_scorer_prob >= 8 %}gp-medium{% else %}gp-low{% endif %}">
+                    {{ p.first_scorer_prob }}%
                   </span>
-                </td>
-                <td class="text-center">
-                  <button class="parlay-add-btn"
-                          style="padding:3px 7px;font-size:10px;"
-                          data-player="{{ p.name }}"
-                          data-team="{{ team_label }}"
-                          data-sport="Soccer"
-                          data-game="{{ game.home_team }} vs {{ game.away_team }}"
-                          data-stat="Anytime Scorer"
-                          data-line="0.5"
-                          data-pick="OVER"
-                          data-confidence="{{ p.goal_prob }}"
-                          data-stars="{{ 5 if p.goal_prob > 35 else (4 if p.goal_prob > 25 else (3 if p.goal_prob > 15 else 2)) }}"
-                          data-trend=""
-                          data-last5=""
-                          data-avg="{{ p.shots_pg or '' }}"
-                          onclick="parlayState.toggleLeg(this)">+ Add</button>
-                </td>
-              </tr>
-              {% endfor %}
-              </tbody>
-            </table>
-          </div>
+                {% else %}
+                  <span class="text-slate-700">—</span>
+                {% endif %}
+              </td>
+
+              <!-- Shots on target line + O% -->
+              <td class="text-center shots-col text-slate-400">
+                {{ p.shots_on_target_line if p.shots_on_target_line is not none else '—' }}
+              </td>
+              <td class="text-center shots-col">
+                {% if p.shots_on_target_prob is not none %}
+                  <span class="{% if p.shots_on_target_prob >= 55 %}text-green-400{% elif p.shots_on_target_prob >= 45 %}text-yellow-400{% else %}text-slate-500{% endif %} font-medium">
+                    {{ p.shots_on_target_prob }}%
+                  </span>
+                {% else %}
+                  <span class="text-slate-700">—</span>
+                {% endif %}
+              </td>
+
+              <!-- Total shots line + O% -->
+              <td class="text-center shots-col text-slate-400">
+                {{ p.shots_line if p.shots_line is not none else '—' }}
+              </td>
+              <td class="text-center shots-col">
+                {% if p.shots_prob is not none %}
+                  <span class="{% if p.shots_prob >= 55 %}text-green-400{% elif p.shots_prob >= 45 %}text-yellow-400{% else %}text-slate-500{% endif %} font-medium">
+                    {{ p.shots_prob }}%
+                  </span>
+                {% else %}
+                  <span class="text-slate-700">—</span>
+                {% endif %}
+              </td>
+
+              <!-- Parlay button -->
+              <td class="text-center">
+                {% if p.goal_scorer_prob is not none %}
+                <button class="parlay-add-btn"
+                        style="padding:3px 7px;font-size:10px;"
+                        data-player="{{ p.name }}"
+                        data-sport="Soccer"
+                        data-game="{{ game.home_team }} vs {{ game.away_team }}"
+                        data-stat="Anytime Scorer"
+                        data-line="0.5"
+                        data-pick="OVER"
+                        data-confidence="{{ p.goal_scorer_prob }}"
+                        data-stars="{{ 5 if p.goal_scorer_prob >= 35 else (4 if p.goal_scorer_prob >= 25 else (3 if p.goal_scorer_prob >= 15 else 2)) }}"
+                        data-trend=""
+                        data-last5=""
+                        data-avg=""
+                        onclick="parlayState.toggleLeg(this)">+ Add</button>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% else %}
+        <div class="flex items-center justify-center h-24 text-xs text-slate-600 italic">
+          No player prop lines available for this fixture.
         </div>
         {% endif %}
-        {% endfor %}
+      </div><!-- end player props -->
 
-        {% if not game.home_roster and not game.away_roster %}
-        <p class="text-xs text-slate-600 italic">
-          Set <code>API_FOOTBALL_KEY</code> for player scorer stats.
-        </p>
-        {% endif %}
-      </div>
-
-    </div>
-  </div>
+    </div><!-- end grid -->
+  </div><!-- end game card -->
   {% endfor %}
 </section>
 {% endfor %}
 
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Active filter state ────────────────────────────────────────────────────
+let activeLeague = 'all';
+let activeMarket = 'all';
+
+function setLeagueFilter(league, btn) {
+  activeLeague = league;
+  document.querySelectorAll('.filter-bar .filter-btn').forEach(b => {
+    if (b.textContent.trim() === btn.textContent.trim() ||
+        (league === 'all' && b.textContent.trim() === 'All' && b.closest('.filter-bar') === btn.closest('.filter-bar'))) {
+      b.classList.add('active');
+    } else if (b.closest('.filter-bar') === btn.closest('.filter-bar')) {
+      b.classList.remove('active');
+    }
+  });
+  applyFilters();
+}
+
+function setMarketFilter(market, btn) {
+  activeMarket = market;
+  btn.closest('.filter-bar').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  // Show/hide columns based on market
+  document.querySelectorAll('.scorer-col').forEach(el => {
+    el.style.display = (market === 'all' || market === 'scorer') ? '' : 'none';
+  });
+  document.querySelectorAll('.shots-col').forEach(el => {
+    el.style.display = (market === 'all' || market === 'shots') ? '' : 'none';
+  });
+  document.querySelectorAll('.scorer-section').forEach(el => {
+    el.style.display = (market === 'match') ? 'none' : '';
+  });
+  document.querySelectorAll('.match-section').forEach(el => {
+    // Always show match section
+    el.style.display = '';
+  });
+
+  applyFilters();
+}
+
+function applyFilters() {
+  document.querySelectorAll('section[data-league]').forEach(sec => {
+    const lg = sec.dataset.league;
+    const show = (activeLeague === 'all' || activeLeague === lg);
+    sec.style.display = show ? '' : 'none';
+  });
+}
+
+// ── Convert UTC times to local ─────────────────────────────────────────────
+document.querySelectorAll('.local-game-time').forEach(el => {
+  const utc = el.dataset.utc;
+  if (!utc) return;
+  try {
+    const d = new Date(utc);
+    const local = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    el.textContent = local + (tz ? ' ' + tz.split('/').pop().replace('_',' ') : '');
+  } catch(e) {}
+});
+</script>
 {% endblock %}

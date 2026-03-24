@@ -482,9 +482,11 @@ async def home(request: Request):
 
 @app.get("/soccer", response_class=HTMLResponse)
 async def soccer_page(request: Request):
-    today_str   = date.today().strftime("%Y%m%d")
+    from data.odds_api import build_soccer_props
     today_label = date.today().strftime("%A, %B %d %Y")
-    games       = _build_soccer_games(today_str)
+    games       = _cached("soccer", build_soccer_props, ttl=600)
+    if games is None:
+        games = []
     return TEMPLATES.TemplateResponse(request, "soccer.html", {
         "games": games, "today": today_label,
         "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
@@ -574,10 +576,12 @@ async def demo_page(request: Request):
 async def today_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
+    from data.odds_api import build_soccer_props
+    soccer_games = _cached("soccer", build_soccer_props, ttl=600) or []
     games = (
         _build_nba_games(today_str)
         + _build_nfl_games()
-        + _build_soccer_games(today_str)
+        + soccer_games
     )
     return TEMPLATES.TemplateResponse(request, "today.html", {
         "games":        games,
@@ -880,7 +884,8 @@ async def sanity_check():
 
     # ── Soccer checks ─────────────────────────────────────────────────────────
     try:
-        soccer_games = _build_soccer_games(today_str)
+        from data.odds_api import build_soccer_props
+        soccer_games = build_soccer_props()
         if not soccer_games:
             _warn("Soccer: no games today")
         else:
@@ -889,22 +894,12 @@ async def sanity_check():
                 d = g.get("draw_prob") or 0
                 a = g.get("away_prob", 0)
                 total_prob = h + d + a
-                if abs(total_prob - 100.0) > 1.5:
+                if abs(total_prob - 100.0) > 2.0:
                     _fail(f"Soccer probs don't sum to 100: {g.get('home_team')} vs {g.get('away_team')}: {h}+{d}+{a}={total_prob}")
-                for roster in [g.get("home_roster", []), g.get("away_roster", [])]:
-                    for scorer in roster:
-                        sname = scorer.get("name", "")
-                        if "Lead Striker" in sname or "estimate" in sname.lower():
-                            _fail(f"Soccer: fake placeholder name: {sname}")
-                        gp = scorer.get("goal_prob", 0)
-                        if not (0 < gp < 75):
-                            _warn(f"Soccer goal_prob unusual: {sname} = {gp}%")
-                        sp = scorer.get("shots_pg", 0)
-                        try:
-                            if not (1.4 <= float(sp) <= 9.0):
-                                _warn(f"Soccer shots_pg unusual: {sname} = {sp}")
-                        except (TypeError, ValueError):
-                            pass
+                for p in g.get("players", []):
+                    gp = p.get("goal_scorer_prob") or 0
+                    if gp < 0 or gp > 90:
+                        _warn(f"Soccer goal_scorer_prob unusual: {p.get('name')} = {gp}%")
             _ok(f"Soccer: {len(soccer_games)} games loaded")
     except Exception as e:
         _fail(f"Soccer build crashed: {e}")

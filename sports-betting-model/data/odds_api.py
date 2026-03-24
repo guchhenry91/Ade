@@ -669,6 +669,294 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
     return games
 
 
+SOCCER_LEAGUES: Dict[str, Dict] = {
+    "epl":        {"sport_key": "soccer_epl",                "league": "Premier League",   "icon": "🏴󠁧󠁢󠁥󠁮󠁧󠁿"},
+    "laliga":     {"sport_key": "soccer_spain_la_liga",      "league": "La Liga",          "icon": "🇪🇸"},
+    "ucl":        {"sport_key": "soccer_uefa_champs_league", "league": "Champions League", "icon": "⭐"},
+    "seriea":     {"sport_key": "soccer_italy_serie_a",      "league": "Serie A",          "icon": "🇮🇹"},
+    "bundesliga": {"sport_key": "soccer_germany_bundesliga", "league": "Bundesliga",       "icon": "🇩🇪"},
+    "ligue1":     {"sport_key": "soccer_france_ligue_one",   "league": "Ligue 1",          "icon": "🇫🇷"},
+    "mls":        {"sport_key": "soccer_usa_mls",            "league": "MLS",              "icon": "🇺🇸"},
+}
+
+_SOCCER_CACHE: Dict[str, Tuple] = {}
+_SOCCER_LOCK = threading.Lock()
+
+
+def _american_to_implied(price: float) -> float:
+    """Convert American odds price to implied probability (0.0–1.0)."""
+    if price > 0:
+        return 100.0 / (price + 100.0)
+    elif price < 0:
+        return abs(price) / (abs(price) + 100.0)
+    return 0.5
+
+
+def _fmt_american(price: float) -> str:
+    """Format American odds price as string (+150, -110)."""
+    if price >= 0:
+        return f"+{round(price)}"
+    return str(round(price))
+
+
+def build_soccer_props(ttl: int = 900) -> list:
+    """Build soccer match data for all leagues from Odds API only.
+
+    Returns list of game dicts with:
+        home_team, away_team, home_prob, away_prob, draw_prob,
+        btts_yes_prob, book_total, predicted_winner, win_prob, confidence,
+        players (list of {name, goal_scorer_prob, first_scorer_prob,
+                           shots_on_target_line, shots_on_target_prob,
+                           shots_line, shots_prob}),
+        home_roster / away_roster (today.html compatible format).
+    """
+    api_key = _key()
+    if not api_key:
+        logger.warning("[SOCCER] ODDS_API_KEY not set — no soccer props")
+        return []
+
+    cache_key = "soccer_all"
+    now = time.time()
+    with _SOCCER_LOCK:
+        cached = _SOCCER_CACHE.get(cache_key)
+        if cached:
+            data, expires = cached
+            if now < expires:
+                return data
+
+    all_games: list = []
+
+    for league_slug, league_cfg in SOCCER_LEAGUES.items():
+        sport_key   = league_cfg["sport_key"]
+        league_name = league_cfg["league"]
+        icon        = league_cfg["icon"]
+
+        # Events list
+        events = fetch(
+            f"{ODDS_BASE}/sports/{sport_key}/events",
+            params={"apiKey": api_key, "dateFormat": "iso"},
+            use_cache=False, timeout=12,
+        )
+        if not events or not isinstance(events, list):
+            continue
+        print(f"[SOCCER] {league_name}: {len(events)} events")
+
+        # Match odds: h2h (3-way) + btts + totals in one bulk call
+        match_odds_resp = fetch(
+            f"{ODDS_BASE}/sports/{sport_key}/odds",
+            params={
+                "apiKey":     api_key,
+                "regions":    "us,uk",
+                "markets":    "h2h,btts,totals",
+                "oddsFormat": "american",
+            },
+            use_cache=False, timeout=12,
+        )
+        match_odds_map: Dict[str, dict] = {}
+        if match_odds_resp and isinstance(match_odds_resp, list):
+            for mo in match_odds_resp:
+                h = mo.get("home_team", "")
+                a = mo.get("away_team", "")
+                match_odds_map[f"{h}|{a}"] = mo
+
+        for event in events[:10]:
+            event_id  = event.get("id", "")
+            home_team = event.get("home_team", "")
+            away_team = event.get("away_team", "")
+            if not home_team or not away_team:
+                continue
+
+            mo = match_odds_map.get(f"{home_team}|{away_team}", {})
+
+            home_prob = draw_prob = away_prob = None
+            btts_yes_prob = None
+            total_goals_line = None
+            book_home_ml = book_draw_ml = book_away_ml = None
+            bookmaker_name = ""
+
+            for bm in mo.get("bookmakers", [])[:1]:
+                bookmaker_name = bm.get("title", "")
+                for market in bm.get("markets", []):
+                    mk       = market.get("key", "")
+                    outcomes = market.get("outcomes", [])
+
+                    if mk == "h2h":
+                        raw: Dict[str, float] = {}
+                        for o in outcomes:
+                            name  = o.get("name", "")
+                            price = float(o.get("price", 0) or 0)
+                            raw[name] = _american_to_implied(price)
+                            if name == home_team:
+                                book_home_ml = _fmt_american(price)
+                            elif name == away_team:
+                                book_away_ml = _fmt_american(price)
+                            elif name.lower() == "draw":
+                                book_draw_ml = _fmt_american(price)
+                        if raw:
+                            total = sum(raw.values())
+                            norm  = {k: round(v / total * 100, 1) for k, v in raw.items()}
+                            home_prob = norm.get(home_team, 33.3)
+                            away_prob = norm.get(away_team, 33.3)
+                            draw_prob = norm.get("Draw", round(100.0 - home_prob - away_prob, 1))
+
+                    elif mk == "btts":
+                        raw_btts: Dict[str, float] = {}
+                        for o in outcomes:
+                            name  = o.get("name", "").lower()
+                            price = float(o.get("price", 0) or 0)
+                            raw_btts[name] = _american_to_implied(price)
+                        if raw_btts:
+                            btotal = sum(raw_btts.values())
+                            bnorm  = {k: round(v / btotal * 100, 1) for k, v in raw_btts.items()}
+                            btts_yes_prob = bnorm.get("yes")
+
+                    elif mk == "totals":
+                        for o in outcomes:
+                            if o.get("name") == "Over":
+                                total_goals_line = o.get("point")
+                                break
+
+            # Default if no odds available
+            if home_prob is None:
+                home_prob, draw_prob, away_prob = 40.0, 25.0, 35.0
+
+            # Predicted winner
+            if home_prob >= draw_prob and home_prob >= away_prob:
+                predicted_winner, win_prob_val = home_team, home_prob
+            elif draw_prob >= away_prob:
+                predicted_winner, win_prob_val = "Draw", draw_prob
+            else:
+                predicted_winner, win_prob_val = away_team, away_prob
+
+            conf_str = "HIGH" if win_prob_val >= 55 else ("MEDIUM" if win_prob_val >= 45 else "LOW")
+
+            # Per-event player props
+            prop_markets = ("player_goal_scorer,player_first_goal_scorer,"
+                            "player_shots_on_target,player_shots")
+            props_resp = fetch(
+                f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
+                params={
+                    "apiKey":     api_key,
+                    "regions":    "us,uk",
+                    "markets":    prop_markets,
+                    "bookmakers": "draftkings,fanduel,betmgm,bet365",
+                    "oddsFormat": "american",
+                },
+                use_cache=False, timeout=10,
+            )
+
+            player_data: Dict[str, Dict] = defaultdict(dict)
+            if props_resp and isinstance(props_resp, dict):
+                for bm in props_resp.get("bookmakers", [])[:1]:
+                    for market in bm.get("markets", []):
+                        mk       = market.get("key", "")
+                        for outcome in market.get("outcomes", []):
+                            # Player name: prefer description field
+                            player = (outcome.get("description") or "").strip()
+                            if not player:
+                                # For shots markets 'name' IS the player
+                                if mk in ("player_shots_on_target", "player_shots"):
+                                    continue
+                                player = outcome.get("name", "").strip()
+                            if not player:
+                                continue
+
+                            price  = float(outcome.get("price", -110) or -110)
+                            op     = round(_american_to_implied(price) * 100, 1)
+                            oname  = outcome.get("name", "")
+                            line   = outcome.get("point")
+
+                            if mk == "player_goal_scorer" and oname == "Yes":
+                                if "goal_scorer_prob" not in player_data[player]:
+                                    player_data[player]["goal_scorer_prob"] = op
+                            elif mk == "player_first_goal_scorer" and oname == "Yes":
+                                if "first_scorer_prob" not in player_data[player]:
+                                    player_data[player]["first_scorer_prob"] = op
+                            elif mk == "player_shots_on_target" and oname == "Over" and line is not None:
+                                if "shots_on_target_line" not in player_data[player]:
+                                    player_data[player]["shots_on_target_line"] = float(line)
+                                    player_data[player]["shots_on_target_prob"] = op
+                            elif mk == "player_shots" and oname == "Over" and line is not None:
+                                if "shots_line" not in player_data[player]:
+                                    player_data[player]["shots_line"] = float(line)
+                                    player_data[player]["shots_prob"] = op
+
+            # Build sorted player list
+            players = []
+            for pname, pdata in player_data.items():
+                if not pdata:
+                    continue
+                players.append({
+                    "name":                 pname,
+                    "goal_scorer_prob":     pdata.get("goal_scorer_prob"),
+                    "first_scorer_prob":    pdata.get("first_scorer_prob"),
+                    "shots_on_target_line": pdata.get("shots_on_target_line"),
+                    "shots_on_target_prob": pdata.get("shots_on_target_prob"),
+                    "shots_line":           pdata.get("shots_line"),
+                    "shots_prob":           pdata.get("shots_prob"),
+                })
+            players.sort(key=lambda p: p.get("goal_scorer_prob") or 0, reverse=True)
+
+            # today.html compat: convert to goal_prob roster format
+            def _to_today_roster(plist):
+                out = []
+                for p in plist:
+                    gp = p.get("goal_scorer_prob") or 0
+                    out.append({
+                        "name":       p["name"],
+                        "shots_pg":   None,
+                        "xg_shot":    None,
+                        "goal_prob":  gp,
+                        "confidence": "HIGH" if gp > 35 else ("MEDIUM" if gp > 20 else "LOW"),
+                    })
+                return out
+
+            half = max(len(players) // 2, 1)
+            home_roster_td = _to_today_roster(players[:half])
+            away_roster_td = _to_today_roster(players[half:])
+
+            print(f"[SOCCER] {home_team} vs {away_team}: {len(players)} players")
+
+            all_games.append({
+                "sport":      "Soccer",
+                "league":     league_name,
+                "sport_icon": icon,
+                "is_soccer":  True,
+                "home_team":  home_team,
+                "away_team":  away_team,
+                "home_prob":  home_prob,
+                "away_prob":  away_prob,
+                "draw_prob":  draw_prob,
+                "kickoff":    event.get("commence_time", ""),
+                "status":     "STATUS_SCHEDULED",
+                "home_score": None,
+                "away_score": None,
+                "spread":     None,
+                "over_under": total_goals_line,
+                "bookmaker":  bookmaker_name,
+                "book_home_ml": book_home_ml,
+                "book_away_ml": book_away_ml,
+                "book_draw_ml": book_draw_ml,
+                "book_total":   total_goals_line,
+                "btts_yes_prob": btts_yes_prob,
+                "predicted_winner": predicted_winner,
+                "win_prob":         win_prob_val,
+                "confidence":       conf_str,
+                # Rich player data for soccer.html
+                "players":      players[:20],
+                # today.html compat
+                "home_roster":  home_roster_td,
+                "away_roster":  away_roster_td,
+                "home_wins":    0, "home_losses": 0,
+                "away_wins":    0, "away_losses": 0,
+            })
+
+    print(f"[SOCCER] Total: {len(all_games)} games across all leagues")
+    with _SOCCER_LOCK:
+        _SOCCER_CACHE[cache_key] = (all_games, now + ttl)
+    return all_games
+
+
 def get_sport_odds(sport: str, regions: str = "us,uk") -> List[Dict]:
     """
     Fetch upcoming game odds for a sport from The Odds API.
