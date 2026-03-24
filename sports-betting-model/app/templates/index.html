@@ -1,144 +1,511 @@
 {% extends "base.html" %}
-{% block title %}Dashboard – Sports Betting Model{% endblock %}
+{% block title %}BetModel Pro – Real-time Sports Betting Model{% endblock %}
+
+{% block head %}
+<style>
+/* ── Hero ──────────────────────────────────────────── */
+.hero {
+  padding: var(--space-2xl) var(--space-lg);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -100px; left: 50%;
+  transform: translateX(-50%);
+  width: 700px; height: 700px;
+  background: radial-gradient(circle, rgba(0,212,255,.07) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero-inner {
+  max-width: 740px;
+  margin: 0 auto;
+  position: relative;
+}
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-light);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  margin-bottom: var(--space-lg);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.hero-badge-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--over);
+  box-shadow: 0 0 8px var(--over);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--over); }
+  50%       { opacity: 0.45; box-shadow: 0 0 2px var(--over); }
+}
+.hero-title {
+  font-size: clamp(30px, 5vw, 56px);
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -1.5px;
+  color: var(--text-primary);
+  margin-bottom: var(--space-md);
+}
+.hero-accent {
+  background: linear-gradient(135deg, var(--accent), var(--over));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero-sub {
+  font-size: var(--text-lg);
+  color: var(--text-secondary);
+  max-width: 520px;
+  margin: 0 auto var(--space-xl);
+  line-height: 1.7;
+}
+.hero-ctas {
+  display: flex;
+  gap: var(--space-md);
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-xl);
+}
+
+/* ── Trust strip ───────────────────────────────────── */
+.trust-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+  margin-top: var(--space-md);
+}
+.trust-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.trust-num {
+  font-size: var(--text-xl);
+  font-weight: 800;
+  color: var(--text-primary);
+}
+.trust-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.trust-divider {
+  width: 1px; height: 32px;
+  background: var(--border);
+}
+@media (max-width: 600px) {
+  .trust-divider { display: none; }
+  .hero-title { letter-spacing: -1px; }
+}
+
+/* ── Sport cards ───────────────────────────────────── */
+.sport-cards-section {
+  padding: var(--space-xl) 0 0;
+}
+.sport-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+}
+.sport-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  cursor: pointer;
+}
+.sport-card:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 32px rgba(0,212,255,.12);
+}
+.sport-card-muted { opacity: 0.6; }
+.sport-card-muted:hover { opacity: 0.85; }
+.sport-card-icon { font-size: 30px; flex-shrink: 0; }
+.sport-card-body { flex: 1; min-width: 0; }
+.sport-card-body h3 {
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.sport-card-body p {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.sport-card-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  background: var(--over-dim);
+  color: var(--over);
+  margin-top: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sport-card-tag.offseason {
+  background: var(--fair-dim);
+  color: var(--fair);
+}
+.sport-card-arrow {
+  font-size: 18px;
+  color: var(--text-muted);
+  transition: transform 0.18s ease, color 0.18s ease;
+  flex-shrink: 0;
+}
+.sport-card:hover .sport-card-arrow {
+  color: var(--accent);
+  transform: translateX(4px);
+}
+
+/* ── How it works ──────────────────────────────────── */
+.how-section {
+  margin-top: var(--space-xl);
+  padding: var(--space-xl) 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  margin-left: calc(-50vw + 50%);
+  margin-right: calc(-50vw + 50%);
+  padding-left: var(--space-lg);
+  padding-right: var(--space-lg);
+}
+.how-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: var(--space-md);
+  max-width: 1200px;
+  margin: var(--space-lg) auto 0;
+}
+.how-card {
+  padding: var(--space-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.how-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.how-num {
+  font-size: 36px;
+  font-weight: 900;
+  color: var(--accent);
+  opacity: 0.3;
+  margin-bottom: var(--space-sm);
+  line-height: 1;
+}
+.how-card h3 {
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--space-xs);
+}
+.how-card p {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* ── Parlay preview ────────────────────────────────── */
+.parlay-preview-section {
+  margin-top: var(--space-xl);
+  padding-bottom: var(--space-xl);
+}
+.parlay-preview-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-xl);
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  padding: var(--space-xl);
+}
+@media (max-width: 768px) {
+  .parlay-preview-card { grid-template-columns: 1fr; }
+}
+.parlay-preview-left h2 {
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+  margin-bottom: var(--space-sm);
+}
+.parlay-preview-left p {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-lg);
+  line-height: 1.7;
+}
+.parlay-mock {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.parlay-mock-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+.mock-over {
+  font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: var(--radius-full);
+  background: var(--over-dim); color: var(--over);
+  flex-shrink: 0;
+}
+.mock-under {
+  font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: var(--radius-full);
+  background: var(--under-dim); color: var(--under);
+  flex-shrink: 0;
+}
+.mock-team {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mock-conf {
+  margin-left: auto;
+  color: var(--over);
+  font-weight: 700;
+  font-size: var(--text-sm);
+}
+.parlay-mock-footer {
+  padding: 12px 16px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: center;
+  font-weight: 500;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 
-<div class="mb-8">
-  <h1 class="text-3xl font-bold text-white">Sports Betting Model</h1>
-  <p class="text-slate-400 mt-1">Probability-based signals for NBA · NFL · EPL · UCL · La Liga · Ligue 1</p>
-</div>
+<!-- ══════════════════════════════════════════════════
+     HERO
+══════════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="hero-inner">
 
-<!-- Today's Games Banner -->
-<a href="/today" class="block card rounded-xl p-5 mb-6 hover:border-indigo-500 transition-colors group border-indigo-800">
-  <div class="flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <span class="text-3xl">📅</span>
-      <div>
-        <h2 class="font-bold text-white text-lg group-hover:text-indigo-400">Today's Games</h2>
-        <p class="text-sm text-slate-400">Live predictions for every game being played today — winner pick + confidence</p>
+    <div class="hero-badge">
+      <span class="hero-badge-dot"></span>
+      Live model · Updated every 15 min
+    </div>
+
+    <h1 class="hero-title">
+      Sharper sports signals,<br>
+      <span class="hero-accent">ranked by confidence</span>
+    </h1>
+
+    <p class="hero-sub">
+      Real-time prop picks across NBA, NHL, MLB, NFL and Soccer.
+      Powered by live bookmaker odds. No guesswork.
+    </p>
+
+    <div class="hero-ctas">
+      <a href="/today" class="btn btn-primary btn-lg">
+        📅 View Today's Best Picks
+      </a>
+      <a href="/nba" class="btn btn-secondary btn-lg">
+        Explore NBA Props →
+      </a>
+    </div>
+
+    <!-- Trust strip -->
+    <div class="trust-strip">
+      <div class="trust-item">
+        <span class="trust-num">5</span>
+        <span class="trust-label">Sports covered</span>
+      </div>
+      <div class="trust-divider"></div>
+      <div class="trust-item">
+        <span class="trust-num">1000+</span>
+        <span class="trust-label">Props daily</span>
+      </div>
+      <div class="trust-divider"></div>
+      <div class="trust-item">
+        <span class="trust-num">Real</span>
+        <span class="trust-label">Bookmaker odds</span>
+      </div>
+      <div class="trust-divider"></div>
+      <div class="trust-item">
+        <span class="trust-num">Live</span>
+        <span class="trust-label">Updated data</span>
       </div>
     </div>
-    <span class="text-indigo-400 text-lg font-bold">→</span>
+
   </div>
-</a>
+</section>
 
-<!-- Quick-access cards -->
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+<!-- ══════════════════════════════════════════════════
+     SPORT CARDS
+══════════════════════════════════════════════════ -->
+<section class="sport-cards-section">
+  <h2 class="section-title">Pick your sport</h2>
+  <div class="sport-cards">
 
-  <!-- Soccer -->
-  <a href="/soccer" class="card rounded-xl p-5 hover:border-indigo-500 transition-colors group">
-    <div class="flex items-center gap-3 mb-3">
-      <span class="text-3xl">⚽</span>
-      <div>
-        <h2 class="font-semibold text-white group-hover:text-indigo-400">Soccer</h2>
-        <p class="text-xs text-slate-500">EPL · UCL · La Liga · Ligue 1</p>
+    <a href="/nba" class="sport-card">
+      <div class="sport-card-icon">🏀</div>
+      <div class="sport-card-body">
+        <h3>NBA</h3>
+        <p>Points, rebounds, assists, PRA, blocks, steals</p>
+        <span class="sport-card-tag">In season</span>
       </div>
-    </div>
-    <ul class="text-sm text-slate-400 space-y-1">
-      <li>✓ Match Winner (1X2)</li>
-      <li>✓ Over / Under Goals</li>
-      <li>✓ Correct Score (top 10)</li>
-      <li>✓ BTTS · Player Shots · Anytime Scorer</li>
-    </ul>
-  </a>
+      <div class="sport-card-arrow">→</div>
+    </a>
 
-  <!-- NBA -->
-  <a href="/nba" class="card rounded-xl p-5 hover:border-indigo-500 transition-colors group">
-    <div class="flex items-center gap-3 mb-3">
-      <span class="text-3xl">🏀</span>
-      <div>
-        <h2 class="font-semibold text-white group-hover:text-indigo-400">NBA</h2>
-        <p class="text-xs text-slate-500">2025-26 Season</p>
+    <a href="/mlb" class="sport-card">
+      <div class="sport-card-icon">⚾</div>
+      <div class="sport-card-body">
+        <h3>MLB</h3>
+        <p>Hits, HRs, RBIs, total bases, strikeouts</p>
+        <span class="sport-card-tag">In season</span>
       </div>
-    </div>
-    <ul class="text-sm text-slate-400 space-y-1">
-      <li>✓ Game Winner (moneyline)</li>
-      <li>✓ Total Points O/U</li>
-      <li>✓ Points · Rebounds · Assists O/U</li>
-      <li>✓ Three-Pointers Made O/U</li>
-    </ul>
-  </a>
+      <div class="sport-card-arrow">→</div>
+    </a>
 
-  <!-- NFL -->
-  <a href="/nfl" class="card rounded-xl p-5 hover:border-indigo-500 transition-colors group">
-    <div class="flex items-center gap-3 mb-3">
-      <span class="text-3xl">🏈</span>
-      <div>
-        <h2 class="font-semibold text-white group-hover:text-indigo-400">NFL</h2>
-        <p class="text-xs text-slate-500">2025 Regular Season Stats</p>
+    <a href="/nhl" class="sport-card">
+      <div class="sport-card-icon">🏒</div>
+      <div class="sport-card-body">
+        <h3>NHL</h3>
+        <p>Goals, assists, shots, points, PP points</p>
+        <span class="sport-card-tag">In season</span>
       </div>
-    </div>
-    <ul class="text-sm text-slate-400 space-y-1">
-      <li>✓ Game Winner · Spread</li>
-      <li>✓ Total Points O/U</li>
-      <li>✓ Anytime TD Scorer</li>
-      <li>✓ Rush · Rec · Pass Yards O/U</li>
-    </ul>
-  </a>
+      <div class="sport-card-arrow">→</div>
+    </a>
 
-  <!-- Live Demo -->
-  <a href="/demo" class="card rounded-xl p-5 hover:border-yellow-500 transition-colors group">
-    <div class="flex items-center gap-3 mb-3">
-      <span class="text-3xl">⚡</span>
-      <div>
-        <h2 class="font-semibold text-white group-hover:text-yellow-400">Live Demo</h2>
-        <p class="text-xs text-slate-500">All 2025-26 real stats — one click</p>
+    <a href="/soccer" class="sport-card">
+      <div class="sport-card-icon">⚽</div>
+      <div class="sport-card-body">
+        <h3>Soccer</h3>
+        <p>Match winner, correct score, BTTS, goals</p>
+        <span class="sport-card-tag">EPL · La Liga · UCL</span>
       </div>
-    </div>
-    <p class="text-sm text-slate-400">Runs all leagues with real current season data. Generates 400+ signals instantly.</p>
-  </a>
+      <div class="sport-card-arrow">→</div>
+    </a>
 
-  <!-- Reports -->
-  <a href="/reports" class="card rounded-xl p-5 hover:border-indigo-500 transition-colors group">
-    <div class="flex items-center gap-3 mb-3">
-      <span class="text-3xl">📊</span>
-      <div>
-        <h2 class="font-semibold text-white group-hover:text-indigo-400">Reports</h2>
-        <p class="text-xs text-slate-500">Saved markdown reports</p>
+    <a href="/nfl" class="sport-card sport-card-muted">
+      <div class="sport-card-icon">🏈</div>
+      <div class="sport-card-body">
+        <h3>NFL</h3>
+        <p>Pass yards, rush yards, TDs, receptions</p>
+        <span class="sport-card-tag offseason">Offseason · Sep 2026</span>
       </div>
-    </div>
-    <p class="text-sm text-slate-400">View all previously generated analysis reports.</p>
-  </a>
+      <div class="sport-card-arrow">→</div>
+    </a>
 
-  <!-- How it works -->
-  <div class="card rounded-xl p-5">
-    <div class="flex items-center gap-3 mb-3">
-      <span class="text-3xl">🧮</span>
-      <div>
-        <h2 class="font-semibold text-white">How it works</h2>
-        <p class="text-xs text-slate-500">Statistical models</p>
-      </div>
-    </div>
-    <ul class="text-sm text-slate-400 space-y-1">
-      <li>⚽ Poisson xG · Dixon-Coles</li>
-      <li>🏀 Net-rating logistic model</li>
-      <li>🏈 Normal CDF spread model</li>
-      <li>📈 Quarter-Kelly bet sizing</li>
-    </ul>
   </div>
+</section>
 
-</div>
+<!-- ══════════════════════════════════════════════════
+     HOW IT WORKS
+══════════════════════════════════════════════════ -->
+<section class="how-section">
+  <div style="max-width:1200px;margin:0 auto;">
+    <h2 class="section-title">How it works</h2>
+    <div class="how-cards">
 
-<!-- Stats banner -->
-<div class="card rounded-xl p-6">
-  <h2 class="text-lg font-semibold text-white mb-4">2025-26 Season Highlights</h2>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-    <div>
-      <p class="text-2xl font-bold text-indigo-400">35.3</p>
-      <p class="text-xs text-slate-500 mt-1">Luka Doncic PPG<br/>(NBA scoring leader)</p>
-    </div>
-    <div>
-      <p class="text-2xl font-bold text-indigo-400">22</p>
-      <p class="text-xs text-slate-500 mt-1">Haaland EPL goals<br/>(Golden Boot leader)</p>
-    </div>
-    <div>
-      <p class="text-2xl font-bold text-indigo-400">46</p>
-      <p class="text-xs text-slate-500 mt-1">Stafford NFL TDs<br/>(2025 NFL MVP)</p>
-    </div>
-    <div>
-      <p class="text-2xl font-bold text-indigo-400">13</p>
-      <p class="text-xs text-slate-500 mt-1">Mbappé UCL goals<br/>(League phase record)</p>
+      <div class="how-card">
+        <div class="how-num">01</div>
+        <h3>Real bookmaker odds</h3>
+        <p>We pull live lines from DraftKings, FanDuel, and 10+ bookmakers via the Odds API — updated every 15 minutes.</p>
+      </div>
+
+      <div class="how-card">
+        <div class="how-num">02</div>
+        <h3>Implied probability</h3>
+        <p>American odds are converted to true win probability, with the vig removed automatically for each market.</p>
+      </div>
+
+      <div class="how-card">
+        <div class="how-num">03</div>
+        <h3>Confidence ranking</h3>
+        <p>Props are ranked 🔥 HOT / ✅ SOLID / 📊 LEAN / ↔ FAIR so you can spot the best bets at a glance.</p>
+      </div>
+
+      <div class="how-card">
+        <div class="how-num">04</div>
+        <h3>Build your parlay</h3>
+        <p>Add any prop to the Parlay Builder, get AI analysis of your combined edge, then copy it to your sportsbook.</p>
+      </div>
+
     </div>
   </div>
-</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════
+     PARLAY BUILDER PREVIEW
+══════════════════════════════════════════════════ -->
+<section class="parlay-preview-section">
+  <div class="parlay-preview-card">
+
+    <div class="parlay-preview-left">
+      <h2>Parlay Builder</h2>
+      <p>Tap <strong style="color:var(--text-primary)">+</strong> on any prop to add it.
+         Get instant AI analysis of your combined confidence, estimated payout,
+         and model edge — then copy it straight to your sportsbook.</p>
+      <a href="/today" class="btn btn-primary">
+        Start building →
+      </a>
+    </div>
+
+    <div class="parlay-preview-right">
+      <div class="parlay-mock">
+        <div class="parlay-mock-item">
+          <span class="mock-over">OVER</span>
+          <span>LaMelo Ball PTS 20.5</span>
+          <span class="mock-conf">55%</span>
+        </div>
+        <div class="parlay-mock-item">
+          <span class="mock-over">OVER</span>
+          <span>Jokić AST 10.5</span>
+          <span class="mock-conf">57%</span>
+        </div>
+        <div class="parlay-mock-item">
+          <span class="mock-under">UNDER</span>
+          <span>Pastrňák PP 0.5</span>
+          <span class="mock-conf">67%</span>
+        </div>
+        <div class="parlay-mock-footer">
+          3-leg parlay · Est. +550
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
 
 {% endblock %}

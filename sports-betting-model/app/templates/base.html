@@ -5,98 +5,267 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta name="description" content="BetModel Pro — real-time sports betting model with NBA, MLB, NHL, NFL and Soccer player props, win probabilities, and statistical edge analysis."/>
   <title>{% block title %}BetModel Pro{% endblock %}</title>
-  <!-- Emoji favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>"/>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/parlay.css">
-  <!-- canvas-confetti for 5-star parlay celebration -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Tailwind CDN (supports legacy templates that use utility classes) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = { darkMode: 'class', theme: { extend: { colors: {
       brand: { DEFAULT: '#00d4ff', dark: '#00b8d9' },
-      surface: '#1a1a2e', card: '#1a1a2e', border: '#2a2a4e',
+      surface: '#111130', card: '#111130', border: '#1e1e3f',
     }}}}
   </script>
   <style>
-    /* ── Design tokens ── */
+    /* ════════════════════════════════════════════════════
+       DESIGN SYSTEM — CSS VARIABLES
+    ════════════════════════════════════════════════════ */
     :root {
-      --bg:       #0d0d0d;
-      --card:     #1a1a2e;
-      --card2:    #16213e;
-      --border:   #2a2a4e;
-      --accent:   #00d4ff;
-      --over:     #00ff88;
-      --under:    #ff4444;
-      --fair:     #888888;
-      --txt1:     #ffffff;
-      --txt2:     #aaaaaa;
-      --txt3:     #555577;
-      --star:     #f59e0b;
-      --radius:   12px;
-      --shadow:   0 4px 24px rgba(0,212,255,.08);
+      /* Backgrounds */
+      --bg-base:     #07071a;
+      --bg-elevated: #0d0d24;
+      --bg-card:     #111130;
+      --bg-hover:    #16163a;
+      --bg-input:    #0d0d24;
+
+      /* Brand accent */
+      --accent:      #00d4ff;
+      --accent-dim:  #00d4ff18;
+      --accent-glow: 0 0 20px #00d4ff33;
+
+      /* Semantic colors */
+      --over:        #00ff88;
+      --over-dim:    #00ff8818;
+      --under:       #ff4455;
+      --under-dim:   #ff445518;
+      --fair:        #888899;
+      --fair-dim:    #88889918;
+      --hot:         #ff9500;
+      --hot-dim:     #ff950018;
+
+      /* Text */
+      --text-primary:   #f0f0ff;
+      --text-secondary: #9999bb;
+      --text-muted:     #555577;
+
+      /* Borders */
+      --border:       #1e1e3f;
+      --border-light: #2a2a4f;
+
+      /* Spacing */
+      --space-xs: 4px;  --space-sm: 8px;  --space-md: 16px;
+      --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
+
+      /* Radius */
+      --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px;
+      --radius-xl: 24px; --radius-full: 9999px;
+
+      /* Typography */
+      --font-sans: 'Inter', -apple-system, sans-serif;
+      --text-xs: 11px; --text-sm: 13px; --text-md: 15px;
+      --text-lg: 18px; --text-xl: 24px; --text-2xl: 32px; --text-3xl: 48px;
+
+      /* Shadows */
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
+      --shadow-md: 0 4px 16px rgba(0,0,0,.5);
+      --shadow-lg: 0 8px 32px rgba(0,0,0,.6);
+
+      /* Transitions */
+      --transition: all 0.18s ease;
+
+      /* ── Legacy aliases (keep old templates working) ── */
+      --bg:     #07071a;
+      --card:   #111130;
+      --card2:  #0d0d24;
+      --txt1:   #f0f0ff;
+      --txt2:   #9999bb;
+      --txt3:   #555577;
+      --star:   #f59e0b;
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0,212,255,.08);
     }
 
+    /* ════════════════════════════════════════════════════
+       GLOBAL RESET
+    ════════════════════════════════════════════════════ */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
 
     body {
-      font-family: 'Inter', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--txt1);
+      font-family: var(--font-sans);
+      background: var(--bg-base);
+      color: var(--text-primary);
       min-height: 100vh;
       font-size: 14px;
       line-height: 1.5;
     }
 
-    /* ── Nav ── */
-    .top-nav {
-      background: var(--card);
+    /* ════════════════════════════════════════════════════
+       PREMIUM NAVBAR
+    ════════════════════════════════════════════════════ */
+    .navbar {
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      background: rgba(7, 7, 26, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       border-bottom: 1px solid var(--border);
-      position: sticky; top: 0; z-index: 100;
-      padding: 0 16px;
     }
     .nav-inner {
-      max-width: 1280px; margin: 0 auto;
-      display: flex; align-items: center; gap: 4px;
-      height: 56px; overflow-x: auto;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 var(--space-lg);
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
     }
-    .nav-brand {
-      font-weight: 800; font-size: 18px; color: var(--accent);
-      text-decoration: none; white-space: nowrap;
-      margin-right: 12px; letter-spacing: -.3px;
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      flex-shrink: 0;
+      margin-right: var(--space-sm);
     }
-    .nav-link {
-      display: flex; align-items: center; gap: 5px;
-      padding: 6px 12px; border-radius: 8px;
-      color: var(--txt2); text-decoration: none;
-      font-weight: 500; font-size: 13px;
-      white-space: nowrap; transition: all .15s;
+    .logo-icon { font-size: 20px; }
+    .logo-text {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.5px;
     }
-    .nav-link:hover { background: rgba(255,255,255,.06); color: var(--txt1); }
-    .nav-link.active { background: rgba(0,212,255,.12); color: var(--accent); }
+    .logo-badge {
+      font-size: 10px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), #7b61ff);
+      color: #000;
+      padding: 1px 6px;
+      border-radius: var(--radius-full);
+    }
+    .nav-sports {
+      display: flex;
+      gap: 2px;
+      flex: 1;
+      justify-content: center;
+    }
+    .nav-tab {
+      padding: 6px 14px;
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      color: var(--text-secondary);
+      font-size: var(--text-sm);
+      font-weight: 600;
+      transition: var(--transition);
+      white-space: nowrap;
+    }
+    .nav-tab:hover {
+      color: var(--text-primary);
+      background: var(--bg-hover);
+    }
+    .nav-tab.active {
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+    .nav-right {
+      display: flex;
+      gap: var(--space-xs);
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .nav-utility {
+      padding: 6px 12px;
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      color: var(--text-secondary);
+      font-size: var(--text-sm);
+      font-weight: 600;
+      transition: var(--transition);
+      white-space: nowrap;
+    }
+    .nav-utility:hover {
+      color: var(--text-primary);
+      background: var(--bg-hover);
+    }
+    .nav-hamburger {
+      display: none;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 5px 10px;
+      border-radius: var(--radius-sm);
+      margin-left: var(--space-sm);
+      transition: var(--transition);
+    }
+    .nav-hamburger:hover { border-color: var(--accent); color: var(--accent); }
 
-    /* ── Layout ── */
-    .page { max-width: 1280px; margin: 0 auto; padding: 24px 16px 64px; }
+    /* Mobile menu */
+    .nav-mobile {
+      display: none;
+      flex-direction: column;
+      padding: var(--space-sm) var(--space-lg);
+      border-top: 1px solid var(--border);
+      gap: 2px;
+      background: rgba(7, 7, 26, 0.98);
+    }
+    .nav-mobile.open { display: flex; }
+    .nav-mobile a {
+      padding: 10px 12px;
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      color: var(--text-secondary);
+      font-size: var(--text-md);
+      font-weight: 600;
+      transition: var(--transition);
+    }
+    .nav-mobile a:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
 
-    /* ── Cards ── */
+    @media (max-width: 768px) {
+      .nav-sports { display: none; }
+      .nav-right { display: none; }
+      .nav-hamburger { display: block; }
+    }
+
+    /* ════════════════════════════════════════════════════
+       LAYOUT
+    ════════════════════════════════════════════════════ */
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px 16px 80px;
+    }
+    .section-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 var(--space-lg);
+    }
+
+    /* ════════════════════════════════════════════════════
+       CARDS
+    ════════════════════════════════════════════════════ */
     .card {
-      background: var(--card);
+      background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
     }
     .card:hover { box-shadow: 0 4px 32px rgba(0,212,255,.12); }
 
-    /* ── Prop cards ── */
     .prop-card {
-      background: var(--card);
+      background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 16px;
-      transition: transform .15s, box-shadow .15s;
+      transition: transform .18s ease, box-shadow .18s ease;
     }
     .prop-card:hover {
       transform: translateY(-2px);
@@ -107,194 +276,345 @@
     .prop-card.under-card { border-left: 3px solid var(--under); }
     .prop-card.fair-card  { border-left: 3px solid var(--fair); }
 
-    /* ── Pick badges ── */
+    /* Player + game cards lift on hover */
+    .player-card,
+    .game-section {
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+
+    /* ════════════════════════════════════════════════════
+       BUTTON SYSTEM
+    ════════════════════════════════════════════════════ */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: var(--radius-md); font-size: var(--text-sm);
+      font-weight: 700; cursor: pointer; border: none;
+      text-decoration: none; transition: var(--transition); white-space: nowrap;
+    }
+    .btn:active { transform: translateY(1px) !important; }
+    .btn-lg { padding: 14px 28px; font-size: var(--text-md); border-radius: var(--radius-lg); }
+    .btn-sm { padding: 5px 11px; font-size: var(--text-xs); border-radius: var(--radius-sm); }
+
+    /* Primary — bright accent */
+    .btn-primary {
+      background: var(--accent);
+      color: #000;
+      box-shadow: 0 0 20px rgba(0,212,255,.25);
+    }
+    .btn-primary:hover {
+      background: #33ddff;
+      transform: translateY(-1px);
+      box-shadow: 0 0 30px rgba(0,212,255,.45);
+    }
+    /* Secondary — outlined */
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border-light);
+    }
+    .btn-secondary:hover {
+      background: var(--bg-hover);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    /* Accent (legacy alias) */
+    .btn-accent { background: var(--accent); color: #000; }
+    .btn-accent:hover { background: #33ddff; }
+    /* Ghost */
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+    /* ════════════════════════════════════════════════════
+       PICK BADGES
+    ════════════════════════════════════════════════════ */
     .pick-badge {
       display: inline-flex; align-items: center;
       font-weight: 700; font-size: 13px; letter-spacing: .05em;
       padding: 3px 10px; border-radius: 6px;
     }
-    .pick-over  { color: var(--over);  background: rgba(0,255,136,.1); }
-    .pick-under { color: var(--under); background: rgba(255,68,68,.1); }
-    .pick-fair  { color: var(--fair);  background: rgba(136,136,136,.1); }
+    .pick-over  { color: var(--over);  background: var(--over-dim); }
+    .pick-under { color: var(--under); background: var(--under-dim); }
+    .pick-fair  { color: var(--fair);  background: var(--fair-dim); }
 
-    /* ── Stars ── */
-    .stars { color: var(--star); letter-spacing: 1px; font-size: 13px; }
-    .star-empty { color: #333355; }
-
-    /* ── Progress bars ── */
-    .pbar-wrap { height: 8px; background: #1f1f3a; border-radius: 4px; overflow: hidden; }
-    .pbar-fill  { height: 100%; border-radius: 4px; transition: width .4s; }
-    .pbar-over  { background: linear-gradient(90deg, #00ff88, #00d4ff); }
-    .pbar-under { background: linear-gradient(90deg, #ff4444, #ff8800); }
-    .pbar-fair  { background: #444466; }
-
-    /* ── Stat rows ── */
-    .stat-row {
-      display: flex; justify-content: space-between;
-      padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,.04);
-      font-size: 12px;
-    }
-    .stat-label { color: var(--txt2); }
-    .stat-val   { color: var(--txt1); font-weight: 600; font-variant-numeric: tabular-nums; }
-    .trend-up   { color: var(--over);  }
-    .trend-down { color: var(--under); }
-    .trend-flat { color: var(--txt2);  }
-
-    /* ── Filter bar ── */
+    /* ════════════════════════════════════════════════════
+       FILTER BAR
+    ════════════════════════════════════════════════════ */
     .filter-bar {
-      display: flex; gap: 6px; flex-wrap: wrap;
-      padding: 12px 0;
+      display: flex; gap: 6px; flex-wrap: wrap; padding: 12px 0;
     }
     .filter-btn {
       padding: 6px 14px; border-radius: 20px; font-size: 12px;
       font-weight: 600; cursor: pointer; border: 1px solid var(--border);
-      background: transparent; color: var(--txt2); transition: all .15s;
+      background: transparent; color: var(--text-secondary); transition: var(--transition);
     }
     .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
     .filter-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
 
-    /* ── Confidence badges ── */
-    .badge-high   { background:#063; color:#00ff88; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
-    .badge-medium { background:#630; color:#ffa500; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
-    .badge-low    { background:#222; color:#888;    padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+    /* ════════════════════════════════════════════════════
+       STARS / STARS EMPTY
+    ════════════════════════════════════════════════════ */
+    .stars { color: var(--star); letter-spacing: 1px; font-size: 13px; }
+    .star-empty { color: #333355; }
 
-    /* ── Section header ── */
+    /* ════════════════════════════════════════════════════
+       PROGRESS BARS
+    ════════════════════════════════════════════════════ */
+    .pbar-wrap { height: 8px; background: #1f1f3a; border-radius: 4px; overflow: hidden; }
+    .pbar-fill  { height: 100%; border-radius: 4px; transition: width .4s; }
+    .pbar-over  { background: linear-gradient(90deg, var(--over), var(--accent)); }
+    .pbar-under { background: linear-gradient(90deg, var(--under), #ff8800); }
+    .pbar-fair  { background: #444466; }
+
+    /* ════════════════════════════════════════════════════
+       SECTION HEADERS
+    ════════════════════════════════════════════════════ */
     .section-hdr {
-      font-size: 22px; font-weight: 800; color: var(--txt1);
-      display: flex; align-items: center; gap: 10px;
-      margin-bottom: 6px;
+      font-size: 22px; font-weight: 800; color: var(--text-primary);
+      display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
     }
-    .section-sub { font-size: 13px; color: var(--txt2); margin-bottom: 16px; }
+    .section-sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+    .section-title {
+      font-size: var(--text-2xl); font-weight: 800; color: var(--text-primary);
+      margin-bottom: var(--space-lg); letter-spacing: -0.5px;
+    }
 
-    /* ── Game header ── */
+    /* ════════════════════════════════════════════════════
+       GAME HEADER (legacy)
+    ════════════════════════════════════════════════════ */
     .game-hdr {
-      background: var(--card2); border-radius: 10px 10px 0 0;
+      background: var(--bg-elevated); border-radius: 10px 10px 0 0;
       padding: 12px 16px; border-bottom: 1px solid var(--border);
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
     }
     .matchup { font-weight: 700; font-size: 15px; }
-    .game-meta { font-size: 11px; color: var(--txt2); }
+    .game-meta { font-size: 11px; color: var(--text-secondary); }
 
-    /* ── Grid ── */
+    /* ════════════════════════════════════════════════════
+       GRID
+    ════════════════════════════════════════════════════ */
     .props-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
       gap: 14px;
     }
 
-    /* ── Divider ── */
-    .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
-
-    /* ── Buttons ── */
-    .btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 8px 16px; border-radius: 8px; font-size: 13px;
-      font-weight: 600; cursor: pointer; border: none;
-      text-decoration: none; transition: all .15s;
+    /* ════════════════════════════════════════════════════
+       CONFIDENCE BADGES
+    ════════════════════════════════════════════════════ */
+    .badge-high   { background:#063; color:#00ff88; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+    .badge-medium { background:#630; color:#ffa500; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+    .badge-low    { background:#222; color:#888;    padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+    .conf-label {
+      font-size:9px; font-weight:700; text-transform:uppercase;
+      letter-spacing:.06em; color:var(--text-muted); margin-top:2px;
     }
-    .btn-accent { background: var(--accent); color: #000; }
-    .btn-accent:hover { background: #00b8d9; }
-    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--txt2); }
-    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
-
-    /* ── Data quality badge ── */
     .data-warn {
       font-size: 10px; color: #ff8800;
       background: rgba(255,136,0,.1); border: 1px solid rgba(255,136,0,.25);
       border-radius: 4px; padding: 2px 6px;
     }
 
-    /* ── Footer ── */
-    footer {
-      text-align: center; font-size: 11px; color: var(--txt3);
-      padding: 24px 16px 12px; border-top: 1px solid var(--border);
-      line-height: 1.8;
+    /* ════════════════════════════════════════════════════
+       SMOOTH GAME SECTION COLLAPSE
+    ════════════════════════════════════════════════════ */
+    .game-players {
+      overflow: hidden;
+      transition: max-height 0.28s cubic-bezier(0.4,0,0.2,1);
     }
-    footer .disclaimer {
-      color: #444466; font-size: 10px; margin-top: 6px;
-    }
+    /* NOTE: max-height values set via JS; default display:none handles collapsed state */
 
-    /* ── Loading skeleton ── */
+    /* ════════════════════════════════════════════════════
+       LOADING SKELETON
+    ════════════════════════════════════════════════════ */
     .skeleton {
-      background: linear-gradient(90deg, #1a1a2e 25%, #22223a 50%, #1a1a2e 75%);
+      background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-hover) 50%, var(--bg-card) 75%);
       background-size: 200% 100%;
       animation: shimmer 1.5s infinite;
-      border-radius: 6px;
+      border-radius: var(--radius-sm);
     }
-    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    @keyframes shimmer {
+      from { background-position: 200% 0; }
+      to   { background-position: -200% 0; }
+    }
 
-    /* ── Page loading overlay ── */
+    /* ════════════════════════════════════════════════════
+       TOAST NOTIFICATION
+    ════════════════════════════════════════════════════ */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-md);
+      padding: 12px 20px;
+      font-size: var(--text-sm);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-lg);
+      z-index: 9999;
+      animation: toastIn 0.25s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 320px;
+    }
+    @keyframes toastIn {
+      from { transform: translateY(20px); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+
+    /* ════════════════════════════════════════════════════
+       PAGE LOADING OVERLAY
+    ════════════════════════════════════════════════════ */
     #page-loader {
-      position:fixed; inset:0; background:rgba(13,13,13,.85);
-      display:flex; align-items:center; justify-content:center;
-      z-index:9999; transition:opacity .3s;
+      position: fixed; inset: 0; background: rgba(7,7,26,.85);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999; transition: opacity .3s;
     }
-    #page-loader.hidden { opacity:0; pointer-events:none; }
+    #page-loader.hidden { opacity: 0; pointer-events: none; }
     .spinner {
-      width:40px; height:40px; border:3px solid #2a2a4e;
-      border-top-color:var(--accent); border-radius:50%;
-      animation:spin .7s linear infinite;
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
     }
-    @keyframes spin { to { transform:rotate(360deg); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── "Last updated" bar ── */
+    /* ════════════════════════════════════════════════════
+       "LAST UPDATED" BAR
+    ════════════════════════════════════════════════════ */
     .updated-bar {
-      font-size:11px; color:var(--txt3);
-      padding:6px 0 2px; display:flex; align-items:center; gap:8px;
+      font-size: 11px; color: var(--text-muted);
+      padding: 6px 0 2px; display: flex; align-items: center; gap: 8px;
     }
-    .updated-bar .dot { width:6px; height:6px; border-radius:50%; background:var(--over); }
-
-    /* ── Confidence label ── */
-    .conf-label {
-      font-size:9px; font-weight:700; text-transform:uppercase;
-      letter-spacing:.06em; color:var(--txt3); margin-top:2px;
+    .updated-bar .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--over); box-shadow: 0 0 4px var(--over);
     }
 
-    /* ── Mobile ── */
+    /* ════════════════════════════════════════════════════
+       FOOTER
+    ════════════════════════════════════════════════════ */
+    .site-footer {
+      margin-top: var(--space-xl);
+      border-top: 1px solid var(--border);
+      padding: var(--space-xl) var(--space-lg) var(--space-lg);
+    }
+    .footer-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-xl);
+      margin-bottom: var(--space-lg);
+      flex-wrap: wrap;
+    }
+    .footer-logo-text {
+      font-size: var(--text-lg);
+      font-weight: 800;
+      color: var(--text-primary);
+      display: block;
+      margin-bottom: var(--space-sm);
+    }
+    .footer-brand p {
+      font-size: var(--text-sm);
+      color: var(--text-muted);
+      max-width: 300px;
+      line-height: 1.6;
+    }
+    .footer-links {
+      display: flex;
+      gap: var(--space-md);
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+    .footer-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: var(--text-sm);
+      transition: var(--transition);
+    }
+    .footer-links a:hover { color: var(--accent); }
+    .footer-bottom {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: var(--space-md);
+      border-top: 1px solid var(--border);
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+    }
+
+    /* ════════════════════════════════════════════════════
+       DIVIDER / MISC
+    ════════════════════════════════════════════════════ */
+    .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+    /* ════════════════════════════════════════════════════
+       MOBILE — legacy bottom nav replaced by hamburger
+    ════════════════════════════════════════════════════ */
+    .bottom-nav { display: none; }  /* disabled — hamburger replaces it */
+
     @media (max-width: 640px) {
-      .page { padding: 16px 12px 80px; }
-      .nav-brand { font-size: 15px; }
+      .page { padding: 16px 12px 32px; }
       .props-grid { grid-template-columns: 1fr; }
-      .top-nav { padding: 0 8px; }
-      /* Bottom nav on mobile */
-      .bottom-nav {
-        display: flex; position: fixed; bottom: 0; left: 0; right: 0;
-        background: var(--card); border-top: 1px solid var(--border);
-        z-index: 100; justify-content: space-around; padding: 6px 0 8px;
-      }
-      .top-nav .nav-link { display: none; }
-      .top-nav .nav-brand { display: flex; }
-    }
-    @media (min-width: 641px) {
-      .bottom-nav { display: none; }
+      .toast { left: 16px; right: 16px; bottom: 16px; }
     }
   </style>
   {% block head %}{% endblock %}
 </head>
 <body>
 
-<!-- TOP NAV -->
-<nav class="top-nav">
+<!-- ════════════════════════════════════════════════════
+     PREMIUM NAVBAR
+════════════════════════════════════════════════════ -->
+{% set _cur = request.url.path %}
+<nav class="navbar">
   <div class="nav-inner">
-    <a href="/" class="nav-brand">🎯 BetModel</a>
-    {% set cur = request.url.path %}
-    {% for href, icon, label in [
-        ('/',       '🏠', 'Home'),
-        ('/nba',    '🏀', 'NBA'),
-        ('/mlb',    '⚾', 'MLB'),
-        ('/nhl',    '🏒', 'NHL'),
-        ('/nfl',    '🏈', 'NFL'),
-        ('/soccer', '⚽', 'Soccer'),
-        ('/today',  '📅', "Today"),
-        ('/demo',   '⚡', 'Demo'),
-        ('/reports','📊', 'Reports'),
-    ] %}
-    <a href="{{ href }}" class="nav-link {% if cur == href %}active{% endif %}">
-      {{ icon }} {{ label }}
+
+    <!-- Logo -->
+    <a href="/" class="nav-logo">
+      <span class="logo-icon">🎯</span>
+      <span class="logo-text">BetModel</span>
+      <span class="logo-badge">Pro</span>
     </a>
-    {% endfor %}
-    <!-- Parlay counter badge (shown in real time by parlay.js) -->
-    <button id="parlay-nav-btn" onclick="parlayState.openPanel()" aria-label="Open Parlay Builder"></button>
+
+    <!-- Sport tabs (desktop) -->
+    <div class="nav-sports">
+      <a href="/nba"    class="nav-tab {% if _cur=='/nba' %}active{% endif %}">🏀 NBA</a>
+      <a href="/mlb"    class="nav-tab {% if _cur=='/mlb' %}active{% endif %}">⚾ MLB</a>
+      <a href="/nhl"    class="nav-tab {% if _cur=='/nhl' %}active{% endif %}">🏒 NHL</a>
+      <a href="/nfl"    class="nav-tab {% if _cur=='/nfl' %}active{% endif %}">🏈 NFL</a>
+      <a href="/soccer" class="nav-tab {% if _cur=='/soccer' %}active{% endif %}">⚽ Soccer</a>
+    </div>
+
+    <!-- Right side -->
+    <div class="nav-right">
+      <a href="/today"   class="nav-utility {% if _cur=='/today' %}active{% endif %}">📅 Today</a>
+      <a href="/reports" class="nav-utility {% if _cur=='/reports' %}active{% endif %}">📊 Reports</a>
+      <!-- Parlay counter badge -->
+      <button id="parlay-nav-btn" onclick="parlayState.openPanel()" aria-label="Open Parlay Builder"></button>
+    </div>
+
+    <!-- Mobile hamburger -->
+    <button class="nav-hamburger" onclick="toggleMobileNav()" aria-label="Menu">☰</button>
+  </div>
+
+  <!-- Mobile menu -->
+  <div class="nav-mobile" id="nav-mobile">
+    <a href="/nba">🏀 NBA</a>
+    <a href="/mlb">⚾ MLB</a>
+    <a href="/nhl">🏒 NHL</a>
+    <a href="/nfl">🏈 NFL</a>
+    <a href="/soccer">⚽ Soccer</a>
+    <a href="/today">📅 Today</a>
+    <a href="/reports">📊 Reports</a>
   </div>
 </nav>
 
@@ -303,35 +623,94 @@
   {% block content %}{% endblock %}
 </main>
 
-<!-- BOTTOM NAV (mobile) -->
-<div class="bottom-nav">
-  {% for href, icon, label in [
-      ('/',    '🏠','Home'),
-      ('/nba', '🏀','NBA'),
-      ('/mlb', '⚾','MLB'),
-      ('/nhl', '🏒','NHL'),
-      ('/nfl', '🏈','NFL'),
-  ] %}
-  <a href="{{ href }}" style="display:flex;flex-direction:column;align-items:center;gap:2px;color:{% if request.url.path==href %}var(--accent){% else %}var(--txt2){% endif %};text-decoration:none;font-size:10px;font-weight:600;">
-    <span style="font-size:18px;">{{ icon }}</span>{{ label }}
-  </a>
-  {% endfor %}
-</div>
-
 <!-- PAGE LOADER (hidden after page fully loads) -->
 <div id="page-loader" class="hidden">
   <div class="spinner"></div>
 </div>
 
-<footer>
-  <div>🎯 BetModel Pro · Statistical model probabilities only</div>
-  <div class="disclaimer">
-    Not financial advice. These are statistical estimates, not guarantees.
-    Please gamble responsibly. If gambling is a problem, call 1-800-GAMBLER.
+<!-- ════════════════════════════════════════════════════
+     PREMIUM FOOTER
+════════════════════════════════════════════════════ -->
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <span class="footer-logo-text">🎯 BetModel Pro</span>
+      <p>Statistical model probabilities only. Not financial advice. Gamble responsibly.</p>
+    </div>
+    <div class="footer-links">
+      <a href="/nba">🏀 NBA</a>
+      <a href="/mlb">⚾ MLB</a>
+      <a href="/nhl">🏒 NHL</a>
+      <a href="/nfl">🏈 NFL</a>
+      <a href="/soccer">⚽ Soccer</a>
+      <a href="/today">📅 Today</a>
+      <a href="/reports">📊 Reports</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 BetModel Pro</span>
+    <span>If gambling is a problem, call 1-800-GAMBLER</span>
   </div>
 </footer>
 
+<!-- ════════════════════════════════════════════════════
+     PARLAY BUILDER PANEL
+════════════════════════════════════════════════════ -->
+<div id="parlay-panel">
+  <div class="parlay-hdr">
+    <div>
+      <div class="parlay-hdr-title">🎯 Parlay Builder</div>
+      <div class="parlay-hdr-sub">Build your parlay</div>
+    </div>
+    <button class="parlay-close-btn" onclick="parlayState.closePanel()" aria-label="Close">✕</button>
+  </div>
+  <div class="parlay-tabs">
+    <button class="parlay-tab active" data-tab="builder">🏗 Builder</button>
+    <button class="parlay-tab" data-tab="saved">💾 Saved</button>
+  </div>
+  <div class="parlay-body">
+    <div class="parlay-tab-content active" data-tab="builder">
+      <div id="parlay-legs"></div>
+      <div id="parlay-summary" class="parlay-summary" style="display:none;"></div>
+      <div id="parlay-actions">
+        <button class="parlay-btn parlay-btn-primary" onclick="parlayState.analyzeParlay()">🤖 Analyze Parlay</button>
+        <button class="parlay-btn parlay-btn-ghost"   id="parlay-copy-btn" onclick="parlayState.copyParlay()">📋 Copy Parlay</button>
+        <button class="parlay-btn parlay-btn-ghost"   id="parlay-save-btn" onclick="parlayState.saveParlay()">💾 Save Parlay</button>
+        <button class="parlay-btn parlay-btn-danger"  onclick="parlayState.clearAll()">🗑️ Clear All</button>
+      </div>
+    </div>
+    <div class="parlay-tab-content" data-tab="saved">
+      <div id="parlay-saved-list"></div>
+    </div>
+  </div>
+</div>
+<button id="parlay-badge" onclick="parlayState.openPanel()" aria-label="Open Parlay Builder"></button>
+
+<script src="/static/parlay.js"></script>
+
 <script>
+/* ── Mobile nav toggle ── */
+function toggleMobileNav() {
+  const m = document.getElementById('nav-mobile');
+  if (m) m.classList.toggle('open');
+}
+// Close on outside click
+document.addEventListener('click', e => {
+  const m = document.getElementById('nav-mobile');
+  if (m && m.classList.contains('open') && !m.contains(e.target) && !e.target.closest('.nav-hamburger')) {
+    m.classList.remove('open');
+  }
+});
+
+/* ── Toast notification ── */
+window.showToast = function(msg, type = 'success') {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<span>${type === 'success' ? '✅' : 'ℹ️'}</span><span>${msg}</span>`;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.animation = 'toastIn 0.2s ease reverse'; setTimeout(() => t.remove(), 200); }, 2500);
+};
+
 /* ── Page-load spinner: show on navigation, hide on load ── */
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('a:not([target])').forEach(a => {
@@ -354,7 +733,7 @@ function initTimestamps() {
     function update() {
       const diffS = Math.floor((Date.now() - genMs) / 1000);
       let label;
-      if (diffS < 60)       label = 'Just now';
+      if (diffS < 60)        label = 'Just now';
       else if (diffS < 3600) label = `${Math.floor(diffS/60)} min ago`;
       else                   label = `${Math.floor(diffS/3600)}h ago`;
       el.textContent = `Last updated: ${label}`;
@@ -365,7 +744,7 @@ function initTimestamps() {
 }
 document.addEventListener('DOMContentLoaded', initTimestamps);
 
-/* ── Filter button logic ── */
+/* ── Filter button logic (legacy) ── */
 function initFilters(groupClass) {
   document.querySelectorAll(`.filter-btn[data-group="${groupClass}"]`).forEach(btn => {
     btn.addEventListener('click', () => {
@@ -374,8 +753,7 @@ function initFilters(groupClass) {
       document.querySelectorAll(`.filter-btn[data-group="${group}"]`).forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       document.querySelectorAll(`.prop-card[data-group="${group}"]`).forEach(card => {
-        const show = filter === 'all' || card.dataset.stat === filter;
-        card.style.display = show ? '' : 'none';
+        card.style.display = (filter === 'all' || card.dataset.stat === filter) ? '' : 'none';
       });
     });
   });
@@ -386,64 +764,10 @@ function sortProps(gridId, key) {
   const grid  = document.getElementById(gridId);
   if (!grid) return;
   const cards = Array.from(grid.querySelectorAll('.prop-card'));
-  cards.sort((a, b) => {
-    const av = parseFloat(a.dataset[key] || 0);
-    const bv = parseFloat(b.dataset[key] || 0);
-    return bv - av;
-  });
+  cards.sort((a, b) => parseFloat(b.dataset[key] || 0) - parseFloat(a.dataset[key] || 0));
   cards.forEach(c => grid.appendChild(c));
 }
 </script>
 {% block scripts %}{% endblock %}
-
-<!-- ════════════════════════════════════════════════════
-     PARLAY BUILDER PANEL
-════════════════════════════════════════════════════ -->
-<div id="parlay-panel">
-  <!-- Header -->
-  <div class="parlay-hdr">
-    <div>
-      <div class="parlay-hdr-title">🎯 Parlay Builder</div>
-      <div class="parlay-hdr-sub">Build your parlay</div>
-    </div>
-    <button class="parlay-close-btn" onclick="parlayState.closePanel()" aria-label="Close">✕</button>
-  </div>
-
-  <!-- Tabs -->
-  <div class="parlay-tabs">
-    <button class="parlay-tab active" data-tab="builder">🏗 Builder</button>
-    <button class="parlay-tab" data-tab="saved">💾 Saved</button>
-  </div>
-
-  <!-- Body -->
-  <div class="parlay-body">
-
-    <!-- Builder tab -->
-    <div class="parlay-tab-content active" data-tab="builder">
-      <!-- Legs list -->
-      <div id="parlay-legs"></div>
-      <!-- Summary (hidden until ≥2 legs) -->
-      <div id="parlay-summary" class="parlay-summary" style="display:none;"></div>
-      <!-- Action buttons (hidden until ≥2 legs) -->
-      <div id="parlay-actions">
-        <button class="parlay-btn parlay-btn-primary" onclick="parlayState.analyzeParlay()">🤖 Analyze Parlay</button>
-        <button class="parlay-btn parlay-btn-ghost"   id="parlay-copy-btn" onclick="parlayState.copyParlay()">📋 Copy Parlay</button>
-        <button class="parlay-btn parlay-btn-ghost"   id="parlay-save-btn" onclick="parlayState.saveParlay()">💾 Save Parlay</button>
-        <button class="parlay-btn parlay-btn-danger"  onclick="parlayState.clearAll()">🗑️ Clear All</button>
-      </div>
-    </div>
-
-    <!-- Saved parlays tab -->
-    <div class="parlay-tab-content" data-tab="saved">
-      <div id="parlay-saved-list"></div>
-    </div>
-
-  </div><!-- /parlay-body -->
-</div><!-- /parlay-panel -->
-
-<!-- Floating badge (shown when panel closed + has legs) -->
-<button id="parlay-badge" onclick="parlayState.openPanel()" aria-label="Open Parlay Builder"></button>
-
-<script src="/static/parlay.js"></script>
 </body>
 </html>
