@@ -185,51 +185,118 @@ def get_espn_athlete_id(player_name: str) -> Optional[str]:
 def get_espn_player_stats(athlete_id: str) -> Dict[str, float]:
     """Fetch season per-game averages for an ESPN NBA athlete.
 
-    Parses ESPN's splits.categories looking for the per-game average category.
+    Handles two ESPN response formats:
+      Format A — stats is list of {name, value} dicts
+      Format B — stats is list of raw values aligned to top-level labels[]
     Returns dict with keys: pts, reb, ast, fg3m, stl, blk.
     """
     data = espn_fetch("basketball", "nba", f"athletes/{athlete_id}/stats")
     if not data:
+        print(f"[NBA STATS] No response for athlete {athlete_id}")
         return {}
 
-    stat_values: Dict[str, float] = {}
-    # ESPN returns stats under splits.categories or directly under categories
-    categories = (data.get("splits", {}).get("categories", [])
-                  or data.get("categories", []))
-    # Broad match: any category name containing a per-game keyword
+    # Top-level labels array present in Format B
+    labels: List[str] = data.get("labels", [])
+
+    # Stats live under splits.categories or directly under categories
+    splits     = data.get("splits", {})
+    categories = splits.get("categories", []) or data.get("categories", [])
+
+    if not categories:
+        print(f"[NBA STATS] No categories for {athlete_id} — keys={list(data.keys())}")
+        return {}
+
+    # Prefer a per-game average category; fall back to first available
     _PG_KEYWORDS = ("avg", "per", "game", "average")
+    avg_cat = None
     for cat in categories:
-        cat_name = (cat.get("name") or "").lower()
-        if not any(k in cat_name for k in _PG_KEYWORDS):
-            continue
-        for s in cat.get("stats", []):
-            stat_values[s.get("name", "")] = float(s.get("value", 0) or 0)
-        if stat_values:
-            break  # stop at first matching category
+        if any(k in (cat.get("name") or "").lower() for k in _PG_KEYWORDS):
+            avg_cat = cat
+            break
+    if avg_cat is None:
+        avg_cat = categories[0]
+        print(f"[NBA STATS] {athlete_id}: no avg category — using '{avg_cat.get('name')}'")
 
-    if not stat_values:
+    cat_stats = avg_cat.get("stats", [])
+    if not cat_stats:
+        print(f"[NBA STATS] Empty stats for {athlete_id} (cat='{avg_cat.get('name')}')")
         return {}
 
-    return {
-        "pts":  float(stat_values.get("avgPoints",
-                stat_values.get("pts",
-                stat_values.get("points", 0)))),
-        "reb":  float(stat_values.get("avgRebounds",
-                stat_values.get("reb",
-                stat_values.get("rebounds", 0)))),
-        "ast":  float(stat_values.get("avgAssists",
-                stat_values.get("ast",
-                stat_values.get("assists", 0)))),
-        "fg3m": float(stat_values.get("avgThreePointFieldGoalsMade",
-                stat_values.get("fg3m",
-                stat_values.get("threePointFieldGoalsMade", 0)))),
-        "stl":  float(stat_values.get("avgSteals",
-                stat_values.get("stl",
-                stat_values.get("steals", 0)))),
-        "blk":  float(stat_values.get("avgBlocks",
-                stat_values.get("blk",
-                stat_values.get("blocks", 0)))),
+    # ── Detect format ────────────────────────────────────────────────────────
+    first = cat_stats[0]
+    if isinstance(first, dict):
+        # FORMAT A: [{name: "avgPoints", value: 30.3}, ...]
+        stats_map: Dict[str, float] = {
+            s.get("name", ""): float(s.get("value", 0) or 0)
+            for s in cat_stats if isinstance(s, dict)
+        }
+        pts  = float(stats_map.get("avgPoints",
+               stats_map.get("pts", stats_map.get("points", 0))))
+        reb  = float(stats_map.get("avgRebounds",
+               stats_map.get("reb", stats_map.get("rebounds", 0))))
+        ast  = float(stats_map.get("avgAssists",
+               stats_map.get("ast", stats_map.get("assists", 0))))
+        fg3m = float(stats_map.get("avgThreePointFieldGoalsMade",
+               stats_map.get("fg3m",
+               stats_map.get("threePointFieldGoalsMade",
+               stats_map.get("3pm", 0)))))
+        stl  = float(stats_map.get("avgSteals",
+               stats_map.get("stl", stats_map.get("steals", 0))))
+        blk  = float(stats_map.get("avgBlocks",
+               stats_map.get("blk", stats_map.get("blocks", 0))))
+    else:
+        # FORMAT B: ["65", "34.2", ".463", ...] — values aligned to labels[]
+        col_labels = labels  # top-level labels
+
+        def _find_val(keywords: List[str]) -> float:
+            """Exact-match first, then substring — returns first hit."""
+            # Pass 1: exact match (avoids "3P" matching "3PA")
+            for kw in keywords:
+                kw_up = kw.upper()
+                for i, lbl in enumerate(col_labels):
+                    if kw_up == str(lbl).upper() and i < len(cat_stats):
+                        try:
+                            return float(cat_stats[i])
+                        except (ValueError, TypeError):
+                            pass
+            # Pass 2: substring
+            for kw in keywords:
+                kw_up = kw.upper()
+                for i, lbl in enumerate(col_labels):
+                    if kw_up in str(lbl).upper() and i < len(cat_stats):
+                        try:
+                            return float(cat_stats[i])
+                        except (ValueError, TypeError):
+                            pass
+            return 0.0
+
+        pts  = _find_val(["PTS", "AVGPOINTS", "POINTS"])
+        reb  = _find_val(["REB", "AVGREBOUNDS", "REBOUNDS", "TRB"])
+        ast  = _find_val(["AST", "AVGASSISTS", "ASSISTS"])
+        fg3m = _find_val(["3PM", "3P"])   # exact "3PM" or exact "3P" before "3PA"/"3P%"
+        stl  = _find_val(["STL", "AVGSTEALS", "STEALS"])
+        blk  = _find_val(["BLK", "AVGBLOCKS", "BLOCKS"])
+
+    result = {
+        "pts":  float(pts  or 0),
+        "reb":  float(reb  or 0),
+        "ast":  float(ast  or 0),
+        "fg3m": float(fg3m or 0),
+        "stl":  float(stl  or 0),
+        "blk":  float(blk  or 0),
     }
+
+    if pts == 0 and reb == 0:
+        sample_stats = cat_stats[:5]
+        print(f"[NBA STATS] ALL ZEROS for {athlete_id} "
+              f"(cat='{avg_cat.get('name')}', fmt={'A' if isinstance(first, dict) else 'B'}, "
+              f"labels={col_labels[:5] if not isinstance(first, dict) else '—'}, "
+              f"stats_sample={sample_stats})")
+    else:
+        print(f"[NBA STATS] {athlete_id}: "
+              f"{result['pts']}pts {result['reb']}reb {result['ast']}ast {result['fg3m']}3pm")
+
+    return result
 
 
 def get_espn_player_logs(athlete_id: str, num_games: int = 10) -> List[Dict]:
@@ -242,23 +309,36 @@ def get_espn_player_logs(athlete_id: str, num_games: int = 10) -> List[Dict]:
     if not data:
         return []
 
-    labels = data.get("labels", [])
+    labels: List[str] = data.get("labels", [])
 
     def _find_col(keywords: List[str]) -> Optional[int]:
-        """Find column index where label matches any keyword (case-insensitive)."""
-        for i, lbl in enumerate(labels):
-            lbl_up = lbl.upper()
-            if any(k.upper() in lbl_up for k in keywords):
-                return i
+        """Exact match first (avoids '3P' matching '3PA'), then substring."""
+        for kw in keywords:
+            kw_up = kw.upper()
+            for i, lbl in enumerate(labels):
+                if kw_up == str(lbl).upper():
+                    return i
+        for kw in keywords:
+            kw_up = kw.upper()
+            for i, lbl in enumerate(labels):
+                if kw_up in str(lbl).upper():
+                    return i
         return None
 
-    pts_col  = _find_col(["PTS", "POINT"])
-    reb_col  = _find_col(["REB", "TRB"])
-    ast_col  = _find_col(["AST"])
-    fg3m_col = _find_col(["3PM", "3P", "THREE", "FG3M"])
+    pts_col  = _find_col(["PTS", "POINTS"])
+    reb_col  = _find_col(["REB", "REBOUNDS", "TRB"])
+    ast_col  = _find_col(["AST", "ASSISTS"])
+    fg3m_col = _find_col(["3PM", "3P"])  # exact "3PM" or exact "3P" first
+
+    print(f"[NBA LOGS] {athlete_id} labels={labels[:6]} "
+          f"cols: PTS={pts_col} REB={reb_col} AST={ast_col} 3PM={fg3m_col}")
 
     events = data.get("events", {})
     event_list: list = list(events.values()) if isinstance(events, dict) else (events or [])
+
+    if not event_list:
+        print(f"[NBA LOGS] {athlete_id}: 0 events in response")
+        return []
 
     logs: List[Dict] = []
     for event in event_list:
@@ -270,13 +350,19 @@ def get_espn_player_logs(athlete_id: str, num_games: int = 10) -> List[Dict]:
                             ("ast", ast_col),  ("fg3m", fg3m_col)]:
             if col is not None and col < len(stats_arr):
                 try:
-                    entry[field] = float(stats_arr[col])
+                    val = stats_arr[col]
+                    entry[field] = float(val) if val not in ("--", "", None) else 0.0
                 except (TypeError, ValueError):
                     entry[field] = 0.0
-        if entry:
-            logs.append(entry)
+            else:
+                entry[field] = 0.0
+        logs.append(entry)
 
-    return logs[-num_games:] if logs else []
+    last_n = logs[-num_games:] if logs else []
+    if last_n:
+        print(f"[NBA LOGS] {athlete_id}: {len(last_n)} games, "
+              f"last game: {last_n[-1]}")
+    return last_n
 
 
 def get_espn_team_roster(team_id: str) -> List[Dict]:

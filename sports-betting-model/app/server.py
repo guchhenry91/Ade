@@ -294,13 +294,6 @@ def _build_nba_games(today_str: str) -> list:
 
         print(f"[NBA] {team_abbr}: {len(roster)} players on ESPN roster")
 
-        # Position-based per-game defaults when ESPN stats unavailable
-        _POS_DEFAULTS = {
-            "PG": (10.0, 3.0, 4.5, 1.5), "SG": (10.0, 3.0, 2.5, 1.5),
-            "SF": (9.0,  4.5, 2.0, 1.0), "PF": (8.5,  5.5, 1.5, 0.5),
-            "C":  (8.0,  7.0, 1.5, 0.2),
-        }
-
         def _fetch_one(player: dict) -> dict | None:
             pid  = player.get("id", "")
             name = player.get("name", "")
@@ -316,17 +309,22 @@ def _build_nba_games(today_str: str) -> list:
                 ast  = float(season_stats.get("ast",  0))
                 fg3m = float(season_stats.get("fg3m", 0))
 
-                # If ESPN stats returned empty, compute from game logs
+                # If season stats empty, compute averages from game logs instead
                 if pts == 0 and reb == 0 and game_logs:
                     n = len(game_logs)
-                    pts  = round(sum(g.get("pts",  0) for g in game_logs) / n, 1)
-                    reb  = round(sum(g.get("reb",  0) for g in game_logs) / n, 1)
-                    ast  = round(sum(g.get("ast",  0) for g in game_logs) / n, 1)
-                    fg3m = round(sum(g.get("fg3m", 0) for g in game_logs) / n, 1)
+                    pts  = round(sum(float(g.get("pts",  0) or 0) for g in game_logs) / n, 1)
+                    reb  = round(sum(float(g.get("reb",  0) or 0) for g in game_logs) / n, 1)
+                    ast  = round(sum(float(g.get("ast",  0) or 0) for g in game_logs) / n, 1)
+                    fg3m = round(sum(float(g.get("fg3m", 0) or 0) for g in game_logs) / n, 1)
+                    if pts > 0 or reb > 0:
+                        print(f"[NBA] {name}: using game-log avg — "
+                              f"{pts}pts {reb}reb {ast}ast")
 
-                # Last resort: position-based defaults so roster players always show
+                # Skip players with no real stats from either source
                 if pts == 0 and reb == 0:
-                    pts, reb, ast, fg3m = _POS_DEFAULTS.get(pos.upper(), (8.0, 4.0, 2.0, 1.0))
+                    print(f"[NBA] {name} (id={pid}, pos={pos}): "
+                          f"no stats from ESPN or game logs — skipping")
+                    return None
 
                 return {
                     "name":      name,
@@ -339,6 +337,7 @@ def _build_nba_games(today_str: str) -> list:
                     "_logs":     game_logs,
                 }
             except Exception as _fe:
+                print(f"[NBA] _fetch_one error for {name} (id={pid}): {_fe}")
                 return None
 
         # Parallel fetch all players (ESPN has no rate limit)
