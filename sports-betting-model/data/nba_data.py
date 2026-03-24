@@ -646,6 +646,125 @@ def fetch_all_player_stats(player_names: List[str]) -> Dict[str, Dict]:
     return results
 
 
+# ── ESPN game summary (per-game boxscore stats) ───────────────────────────────
+
+def get_espn_game_summary(event_id: str) -> Dict[str, List[Dict]]:
+    """Fetch ESPN game summary boxscore — returns players with their game stats.
+
+    For pre-game events this may be empty; for live/completed it has full boxscore.
+    Returns {team_abbr: [{"id", "name", "pos", "stats": {LABEL: float}}]}.
+    """
+    data = fetch(
+        "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary",
+        params={"event": event_id},
+        use_cache=True,
+        timeout=10,
+    )
+    if not data:
+        return {}
+
+    team_players: Dict[str, List[Dict]] = {}
+    boxscore = data.get("boxscore", {})
+
+    for team_section in boxscore.get("players", []):
+        team_info = team_section.get("team", {})
+        team_abbr = team_info.get("abbreviation", "")
+        if not team_abbr:
+            continue
+
+        players_seen: Dict[str, Dict] = {}
+        for stat_group in team_section.get("statistics", []):
+            labels = [str(l).upper() for l in stat_group.get("labels", [])]
+            for athlete_data in stat_group.get("athletes", []):
+                athlete = athlete_data.get("athlete", {})
+                stats   = athlete_data.get("stats", [])
+                name    = athlete.get("displayName", "")
+                pid     = str(athlete.get("id", ""))
+                pos_obj = athlete.get("position", {})
+                pos     = pos_obj.get("abbreviation", "") if isinstance(pos_obj, dict) else ""
+                if not name or not pid:
+                    continue
+                stats_map: Dict[str, float] = {}
+                for i, label in enumerate(labels):
+                    if i < len(stats):
+                        try:
+                            stats_map[label] = float(stats[i])
+                        except (TypeError, ValueError):
+                            pass
+                if pid not in players_seen:
+                    players_seen[pid] = {"id": pid, "name": name, "pos": pos, "stats": {}}
+                players_seen[pid]["stats"].update(stats_map)
+
+        if players_seen:
+            team_players[team_abbr] = list(players_seen.values())
+            print(f"[NBA] Summary {team_abbr}: {len(team_players[team_abbr])} players")
+
+    return team_players
+
+
+# ── BallDontLie v1 season averages (free, no auth) ────────────────────────────
+
+_bdl_player_cache: Dict[str, Tuple[Dict, float]] = {}
+_BDL_TTL = 43200  # 12 hours
+
+
+def get_bdl_player_avgs(player_name: str) -> Dict[str, float]:
+    """Search BallDontLie v1 (free, no API key) for NBA season averages.
+
+    Returns {pts, reb, ast, fg3m} or {} on failure.
+    Cached for 12 h to avoid hammering the free endpoint.
+    """
+    import requests as _req
+    cache_key = player_name.lower().strip()
+    now = time.time()
+    cached = _bdl_player_cache.get(cache_key)
+    if cached:
+        data, expires = cached
+        if now < expires:
+            return data
+
+    result: Dict[str, float] = {}
+    try:
+        r = _req.get(
+            "https://www.balldontlie.io/api/v1/players",
+            params={"search": player_name, "per_page": 5},
+            timeout=8,
+        )
+        if r.status_code != 200:
+            _bdl_player_cache[cache_key] = (result, now + 3600)
+            return result
+
+        players = r.json().get("data", [])
+        if not players:
+            _bdl_player_cache[cache_key] = (result, now + 3600)
+            return result
+
+        bdl_id = players[0]["id"]
+
+        avg_r = _req.get(
+            "https://www.balldontlie.io/api/v1/season_averages",
+            params={"season": 2025, "player_ids[]": bdl_id},
+            timeout=8,
+        )
+        if avg_r.status_code == 200:
+            avgs = avg_r.json().get("data", [])
+            if avgs:
+                a = avgs[0]
+                result = {
+                    "pts":  float(a.get("pts",  0) or 0),
+                    "reb":  float(a.get("reb",  0) or 0),
+                    "ast":  float(a.get("ast",  0) or 0),
+                    "fg3m": float(a.get("fg3m", 0) or 0),
+                }
+                print(f"[BDL] {player_name}: "
+                      f"{result['pts']}pts {result['reb']}reb {result['ast']}ast")
+    except Exception as e:
+        print(f"[BDL] Failed for {player_name}: {e}")
+
+    _bdl_player_cache[cache_key] = (result, now + _BDL_TTL)
+    return result
+
+
 # ── Standings (win% per team) ─────────────────────────────────────────────────
 
 _standings_cache: dict = {}

@@ -91,13 +91,18 @@ def _nhl_over_prob(stat_label: str, avg: float, line: float, std: float) -> Tupl
 
 
 def build_skater_props(player: Dict) -> List[Dict]:
-    """Build prop cards for a skater using real NHL per-game averages."""
+    """Build prop cards for a skater using real NHL per-game averages.
+    If player dict contains a '<stat>_line' key, uses that as the market line.
+    """
     props: List[Dict] = []
     for label, key, std, min_avg in _SKATER_MARKETS:
         avg = float(player.get(key, 0) or 0)
         if avg < min_avg:
             continue
-        line = max(0.5, round(avg * 2) / 2 - 0.5)
+        # Check for Odds API line override: "pts_pg" → "pts_line", "goals_pg" → "goals_line"
+        line_key = key.replace("_pg", "_line")
+        raw_line = player.get(line_key)
+        line = float(raw_line) if raw_line else max(0.5, round(avg * 2) / 2 - 0.5)
         over_p, under_p = _nhl_over_prob(label, avg, line, std)
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
         props.append({
@@ -114,13 +119,17 @@ def build_skater_props(player: Dict) -> List[Dict]:
 
 
 def build_goalie_props(player: Dict) -> List[Dict]:
-    """Build prop cards for a goalie."""
+    """Build prop cards for a goalie.
+    If player dict contains a '<stat>_line' key, uses that as the market line.
+    """
     props: List[Dict] = []
     for label, key, std, min_avg in _GOALIE_MARKETS:
         avg = float(player.get(key, 0) or 0)
         if avg < min_avg:
             continue
-        line = max(0.5, round(avg * 2) / 2 - 0.5)
+        line_key = key.replace("_pg", "_line")
+        raw_line = player.get(line_key)
+        line = float(raw_line) if raw_line else max(0.5, round(avg * 2) / 2 - 0.5)
         over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
         props.append({

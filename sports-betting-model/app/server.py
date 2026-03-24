@@ -166,9 +166,9 @@ def _ml_to_prob(ml) -> float:
 
 def _build_nba_games(today_str: str) -> list:
     from data.nba_data   import (get_games as nba_get_games, get_nba_win_pcts,
-                                  get_all_nba_players, get_nba_player_season_stats,
-                                  get_nba_player_game_logs, ESPN_TO_NBA)
-    from data.odds_api   import build_odds_lookup, find_game_odds, decimal_to_american
+                                  get_espn_game_summary, get_bdl_player_avgs)
+    from data.odds_api   import (build_odds_lookup, find_game_odds, decimal_to_american,
+                                  fetch_player_props, NBA_PROP_MARKETS)
     from utils.stats     import confidence_label, shot_attempt_over_under, threept_made_ou
 
     # NBA per-game stat caps to reject ESPN fantasy composites / season totals
@@ -179,21 +179,24 @@ def _build_nba_games(today_str: str) -> list:
                    "stl": "stl", "blk": "blk"}
 
     def _make_prop(stat_label: str, avg: float, std, player_name: str, stat_key: str,
-                   player_id=None, game_logs=None):
+                   player_id=None, game_logs=None, odds_line=None):
         """
         Build one prop dict using:
-          1. Real ESPN season avg for normal-distribution base
-          2. Generated line from season avg (rounded to nearest 0.5, slightly below avg)
-          3. Hit-rate from last 5 / last 10 ESPN game logs
+          1. Real season avg for normal-distribution base
+          2. Real Odds API line if available; else generated from season avg
+          3. Hit-rate from last 5 / last 10 game logs
           Weighted formula: 35% L5 hit-rate + 35% L10 hit-rate + 30% season-avg model
           Clamped [0.30, 0.82] so result always varies by player.
         """
         if avg < 0.5:
             return None
-        # Generate realistic line: round avg to nearest 0.5, then subtract 0.5 for high scorers
-        line = max(0.5, round(avg * 2) / 2)
-        if avg > 20:
-            line = max(0.5, line - 0.5)
+        # Use real bookmaker line if available, else generate
+        if odds_line and float(odds_line) > 0:
+            line = float(odds_line)
+        else:
+            line = max(0.5, round(avg * 2) / 2)
+            if avg > 20:
+                line = max(0.5, line - 0.5)
 
         # Season-avg model probability
         if std is None:
@@ -249,7 +252,9 @@ def _build_nba_games(today_str: str) -> list:
     _PG_MAX = {"pts": 45.0, "reb": 20.0, "ast": 15.0, "3pm": 7.0}
 
     def _nba_props_from_avgs(players: list, game_logs: dict = None) -> list:
-        """Build props from player dicts with real BDL per-game averages."""
+        """Build props from player dicts with per-game averages.
+        Player dicts may contain '_odds_pts', '_odds_reb', etc. for real bookmaker lines.
+        """
         out = []
         for p in players:
             name      = p.get("name", "")
@@ -261,12 +266,14 @@ def _build_nba_games(today_str: str) -> list:
                 ("AST", "ast",  "ast",  0.35),
                 ("3PM", "fg3m", "3pm",  None),
             ]:
-                avg_val = float(p.get(avg_key) or p.get(sk) or 0)
+                avg_val   = float(p.get(avg_key) or p.get(sk) or 0)
+                odds_line = p.get(f"_odds_{avg_key}")  # injected by _with_odds()
                 # Reject impossible per-game values (season totals / fantasy composites)
                 if avg_val > _PG_MAX.get(sk, 45.0):
                     avg_val = 0.0
-                prop    = _make_prop(stat_label, avg_val, std, name, sk,
-                                     player_id=player_id, game_logs=game_logs)
+                prop = _make_prop(stat_label, avg_val, std, name, sk,
+                                  player_id=player_id, game_logs=game_logs,
+                                  odds_line=odds_line)
                 if prop:
                     props.append(prop)
             if props:
@@ -274,69 +281,79 @@ def _build_nba_games(today_str: str) -> list:
                             "pts": p.get("pts", 0), "props": props})
         return out
 
-    # Load all active NBA players once (cached 24 h) — avoids per-team roster calls
-    all_nba_players = get_all_nba_players()   # {NBA_abbr: [{id, name, team}]}
+    # Fetch Odds API NBA player prop lines once (cached 15 min)
+    nba_odds_props = fetch_player_props("NBA", NBA_PROP_MARKETS)
 
-    def _nba_team_roster_with_props(team_id: str, team_abbr: str) -> list:
-        """Fetch NBA Stats API roster for a team and generate prop cards.
+    # ESPN scoreboard stat-name → our key (for leaders fallback)
+    _ESPN_STAT_MAP = {
+        "points":                   "pts",
+        "rebounds":                 "reb",
+        "assists":                  "ast",
+        "threePointFieldGoalsMade": "fg3m",
+    }
+    # Our stat key → Odds API stat label (for prop line lookup)
+    _STAT_TO_ODDS = {"pts": "PTS", "reb": "REB", "ast": "AST", "fg3m": "3PM"}
 
-        team_id is the ESPN team ID (kept for signature compatibility but unused).
-        team_abbr is the ESPN abbreviation; translated to NBA Stats API abbr if needed.
+    def _nba_roster_from_summary(event_id: str, team_abbr: str) -> list:
+        """Build player prop list from ESPN game summary + BDL fallback.
+
+        1. ESPN summary boxscore → players with game-stat columns
+        2. Map PTS/REB/AST/3PM columns to season-avg proxy
+        3. For players with no stats → call BDL v1 for season avgs
+        4. Apply Odds API line where available
+        Returns list compatible with _nba_props_from_avgs.
         """
-        # Translate ESPN abbr → NBA Stats API abbr (e.g. "GS" → "GSW")
-        nba_abbr = ESPN_TO_NBA.get(team_abbr, team_abbr)
-        players  = (all_nba_players.get(nba_abbr)
-                    or all_nba_players.get(team_abbr)
-                    or [])
+        summary = get_espn_game_summary(event_id)
+        team_data = summary.get(team_abbr, [])
+        print(f"[NBA] Summary {team_abbr}: {len(team_data)} players from ESPN")
 
-        if not players:
-            avail = sorted(all_nba_players)[:12]
-            print(f"[NBA] {team_abbr}/{nba_abbr}: no players — "
-                  f"available abbrs: {avail}")
-            return []
+        # Summary stats are GAME stats (PTS, REB, etc.).
+        # We use them as the best available approximation; BDL fills season avgs.
+        out = []
+        for p in team_data[:15]:
+            name    = p.get("name", "")
+            pos     = p.get("pos", "")
+            stats   = p.get("stats", {})
+            if not name:
+                continue
 
-        print(f"[NBA] {team_abbr}: {len(players)} players from NBA Stats API")
+            pts  = stats.get("PTS",  0.0)
+            reb  = stats.get("REB",  0.0)
+            ast  = stats.get("AST",  0.0)
+            fg3m = stats.get("3PM",  stats.get("3P", 0.0))
 
-        def _fetch_one(player: dict) -> dict | None:
-            pid  = player["id"]
-            name = player["name"]
-            try:
-                season_stats = get_nba_player_season_stats(pid) or {}
-                pts  = float(season_stats.get("pts",  0))
-                reb  = float(season_stats.get("reb",  0))
+            # If game hasn't started, summary stats will all be 0 → use BDL
+            if pts == 0 and reb == 0:
+                bdl = get_bdl_player_avgs(name)
+                if bdl:
+                    pts  = bdl.get("pts",  0.0)
+                    reb  = bdl.get("reb",  0.0)
+                    ast  = bdl.get("ast",  0.0)
+                    fg3m = bdl.get("fg3m", 0.0)
 
-                if pts == 0 and reb == 0:
-                    print(f"[NBA] {name}: no stats — skipping")
-                    return None
+            if pts < 1.0 and reb < 1.0:
+                continue  # not enough data
 
-                game_logs = get_nba_player_game_logs(pid)
+            out.append({"name": name, "pos": pos,
+                        "pts": pts, "reb": reb, "ast": ast, "fg3m": fg3m})
 
-                return {
-                    "name":      name,
-                    "pos":       "",   # NBA Stats API player-list has no position column
-                    "pts":       pts,
-                    "reb":       reb,
-                    "ast":       float(season_stats.get("ast",  0)),
-                    "fg3m":      float(season_stats.get("fg3m", 0)),
-                    "player_id": pid,
-                    "_logs":     game_logs,
-                }
-            except Exception as _fe:
-                print(f"[NBA] _fetch_one error {name} (id={pid}): {_fe}")
-                return None
+        return out
 
-        # 3 workers + natural HTTP latency avoids hammering stats.nba.com
-        with ThreadPoolExecutor(max_workers=3) as ex:
-            raw_results = list(ex.map(_fetch_one, players[:15]))
-
-        enriched = [r for r in raw_results if r is not None]
-        enriched.sort(key=lambda p: p["pts"], reverse=True)
-
-        game_logs_map = {p["player_id"]: p.pop("_logs", []) for p in enriched}
-
-        roster_with_props = _nba_props_from_avgs(enriched[:10], game_logs_map)
-        print(f"[NBA] {team_abbr}: {len(roster_with_props)} players with props")
-        return roster_with_props
+    def _nba_leaders_to_players(leaders: list, team_id: str) -> list:
+        """Build player stat dicts from ESPN scoreboard season-leader data."""
+        players: dict = {}
+        for ldr in leaders:
+            name  = ldr.get("name", "")
+            tid   = str(ldr.get("team_id", ""))
+            stat  = ldr.get("stat", "")
+            value = float(ldr.get("value", 0) or 0)
+            if not name or stat not in _ESPN_STAT_MAP or tid != team_id:
+                continue
+            if name not in players:
+                players[name] = {"name": name, "pos": "",
+                                 "pts": 0.0, "reb": 0.0, "ast": 0.0, "fg3m": 0.0}
+            players[name][_ESPN_STAT_MAP[stat]] = value
+        return sorted(players.values(), key=lambda p: p["pts"], reverse=True)
 
     games = []
     try:
@@ -352,13 +369,34 @@ def _build_nba_games(today_str: str) -> list:
             away_id   = str(g.get("away_id", ""))
             home_abbr = g.get("home_abbr", "")
             away_abbr = g.get("away_abbr", "")
+            event_id  = str(g.get("id", ""))
 
-            # Fetch both teams in parallel (roster list already loaded above)
-            with ThreadPoolExecutor(max_workers=2) as ex:
-                home_fut = ex.submit(_nba_team_roster_with_props, home_id, home_abbr)
-                away_fut = ex.submit(_nba_team_roster_with_props, away_id, away_abbr)
-                home_roster = home_fut.result()
-                away_roster = away_fut.result()
+            # Primary: ESPN summary boxscore → BDL fallback per player
+            home_players = _nba_roster_from_summary(event_id, home_abbr)
+            away_players = _nba_roster_from_summary(event_id, away_abbr)
+
+            # If summary gave nothing (pregame + BDL also empty), fall back to leaders
+            if not home_players:
+                home_players = _nba_leaders_to_players(g.get("leaders", []), home_id)
+                if home_players:
+                    print(f"[NBA] {home_abbr}: leaders fallback ({len(home_players)} players)")
+            if not away_players:
+                away_players = _nba_leaders_to_players(g.get("leaders", []), away_id)
+                if away_players:
+                    print(f"[NBA] {away_abbr}: leaders fallback ({len(away_players)} players)")
+
+            # Build prop cards, injecting Odds API lines when available
+            def _with_odds(players, abbr):
+                for p in players:
+                    for sk, odds_label in _STAT_TO_ODDS.items():
+                        key = f"{p['name']}_{odds_label}"
+                        line = nba_odds_props.get(key)
+                        if line:
+                            p[f"_odds_{sk}"] = line  # passed into _make_prop via closure
+                return players
+
+            home_roster = _nba_props_from_avgs(_with_odds(home_players, home_abbr))
+            away_roster = _nba_props_from_avgs(_with_odds(away_players, away_abbr))
 
             print(f"[NBA] {home_abbr}={len(home_roster)} {away_abbr}={len(away_roster)}")
 
@@ -848,7 +886,28 @@ def _build_mlb_props(today_str: str) -> tuple[list, int]:
     from data.mlb_data    import (get_games as mlb_get_games, get_espn_team_roster,
                                    search_mlb_player, get_pitcher_season_stats,
                                    get_batter_season_stats)
+    from data.odds_api    import fetch_player_props, MLB_PROP_MARKETS
     from models.mlb_model import build_pitcher_props, build_batter_props
+
+    # Odds API MLB market_key → stat _line key used by mlb_model
+    _MLB_ODDS_LINE_MAP = {
+        "pitcher_strikeouts": "so_line",
+        "batter_hits":        "hits_line",
+        "batter_total_bases": "tb_line",
+        "batter_home_runs":   "hr_line",
+        "batter_rbis":        "rbi_line",
+    }
+
+    mlb_odds_props = fetch_player_props("MLB", MLB_PROP_MARKETS)
+
+    def _inject_mlb_lines(player_name: str, season_stats: dict) -> dict:
+        """Inject Odds API lines into season_stats dict for mlb_model to use."""
+        for market_key, line_key in _MLB_ODDS_LINE_MAP.items():
+            k = f"{player_name}_{market_key}"
+            line = mlb_odds_props.get(k)
+            if line:
+                season_stats[line_key] = float(line)
+        return season_stats
 
     all_props: list = []
     total_games = 0
@@ -912,6 +971,9 @@ def _build_mlb_props(today_str: str) -> tuple[list, int]:
                     if not season_stats:
                         continue
 
+                    # Inject real Odds API lines before model builds props
+                    season_stats = _inject_mlb_lines(player_name, season_stats)
+
                     if is_pitcher:
                         props = build_pitcher_props(season_stats)
                     else:
@@ -945,8 +1007,29 @@ def _build_nhl_props(today_str: str) -> tuple[list, int]:
     Source: NHL Stats API team rosters (api-web.nhle.com/v1).
     No PrizePicks needed — Poisson model for goals/assists, normal dist for shots/saves.
     """
+    import time as _time_nhl
     from data.nhl_data    import get_games as nhl_get_games, get_team_roster_stats
+    from data.odds_api    import fetch_player_props, NHL_PROP_MARKETS
     from models.nhl_model import build_skater_props, build_goalie_props
+
+    # Odds API NHL market_key → player dict _line key used by nhl_model
+    _NHL_ODDS_LINE_MAP = {
+        "player_points":        "pts_line",
+        "player_goals":         "goals_line",
+        "player_assists":       "assists_line",
+        "player_shots_on_goal": "shots_line",
+    }
+
+    nhl_odds_props = fetch_player_props("NHL", NHL_PROP_MARKETS)
+
+    def _inject_nhl_lines(player_name: str, player: dict) -> dict:
+        """Inject Odds API lines into player dict so nhl_model uses real lines."""
+        for market_key, line_key in _NHL_ODDS_LINE_MAP.items():
+            k = f"{player_name}_{market_key}"
+            line = nhl_odds_props.get(k)
+            if line:
+                player[line_key] = float(line)
+        return player
 
     all_props: list = []
     total_games = 0
@@ -963,6 +1046,8 @@ def _build_nhl_props(today_str: str) -> tuple[list, int]:
                 if not abbr or abbr in seen_teams:
                     continue
                 seen_teams.add(abbr)
+                # Rate-limit protection: small delay between each team fetch
+                _time_nhl.sleep(0.3)
                 try:
                     players = get_team_roster_stats(abbr)
                 except Exception as _re:
@@ -976,6 +1061,8 @@ def _build_nhl_props(today_str: str) -> tuple[list, int]:
                     if not pname or pname in seen_players:
                         continue
                     seen_players.add(pname)
+                    # Inject real lines before building props
+                    p = _inject_nhl_lines(pname, p)
                     if p.get("is_goalie"):
                         props = build_goalie_props(p)
                     else:

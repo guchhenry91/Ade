@@ -5,13 +5,18 @@ Secondary: NHL Stats API    (api-web.nhle.com/v1, free, no key)
 """
 from __future__ import annotations
 import logging
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 from data.fetcher import espn_fetch, fetch
 
 logger = logging.getLogger(__name__)
 
 _NHL_API_BASE = "https://api-web.nhle.com/v1"
+
+# In-memory roster cache — survives request bursts within a single process lifetime
+_nhl_roster_cache: Dict[str, Tuple[List[Dict], float]] = {}
+_NHL_ROSTER_TTL = 43200  # 12 hours
 
 
 # ── Scoreboard ───────────────────────────────────────────────────────────────
@@ -86,14 +91,22 @@ def get_team_roster_stats(team_abbr: str) -> List[Dict]:
     """
     Fetch team roster + season stats from the NHL public API.
     Returns list sorted by points/game (skaters) or saves/game (goalies).
+    Uses in-memory cache (12 h) to survive redeployments and rate limiting.
     """
+    now = time.time()
+    cached = _nhl_roster_cache.get(team_abbr)
+    if cached:
+        data, expires = cached
+        if now < expires:
+            return data
+
     try:
         roster_data = fetch(f"{_NHL_API_BASE}/roster/{team_abbr}/current")
         if not roster_data:
-            return []
+            return _nhl_roster_cache.get(team_abbr, ([], 0))[0]  # stale OK
     except Exception as e:
         logger.debug("NHL roster fetch error %s: %s", team_abbr, e)
-        return []
+        return _nhl_roster_cache.get(team_abbr, ([], 0))[0]
 
     result: List[Dict] = []
 
@@ -110,6 +123,7 @@ def get_team_roster_stats(team_abbr: str) -> List[Dict]:
             name  = f"{first} {last}".strip()
 
             try:
+                time.sleep(0.1)  # 100 ms between player calls to avoid 429
                 landing = fetch(f"{_NHL_API_BASE}/player/{pid}/landing")
                 if not landing:
                     continue
@@ -157,4 +171,6 @@ def get_team_roster_stats(team_abbr: str) -> List[Dict]:
                       key=lambda x: x.get("pts_pg", 0), reverse=True)
     goalies  = sorted([p for p in result if p["is_goalie"]],
                       key=lambda x: x.get("saves_pg", 0), reverse=True)
-    return skaters + goalies
+    final = skaters + goalies
+    _nhl_roster_cache[team_abbr] = (final, time.time() + _NHL_ROSTER_TTL)
+    return final
