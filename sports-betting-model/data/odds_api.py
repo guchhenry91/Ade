@@ -196,9 +196,11 @@ _SPORT_CONFIG: Dict[str, Dict] = {
         "icon": "⚾",
         "espn_path": "baseball/mlb",
         "primary_stat": "hits",
-        "markets": ["batter_hits", "batter_total_bases", "batter_home_runs",
-                    "batter_rbis", "batter_runs_scored", "pitcher_strikeouts",
-                    "pitcher_innings_pitched"],
+        "markets": [
+            "batter_hits", "batter_total_bases", "batter_home_runs",
+            "batter_rbis", "batter_runs_scored", "pitcher_strikeouts",
+            "batter_hits_runs_rbis", "batter_singles",
+        ],
         "stat_map": {
             "batter_hits":             "hits",
             "batter_total_bases":      "total_bases",
@@ -206,13 +208,14 @@ _SPORT_CONFIG: Dict[str, Dict] = {
             "batter_rbis":             "rbi",
             "batter_runs_scored":      "runs",
             "pitcher_strikeouts":      "strikeouts",
-            "pitcher_innings_pitched": "innings",
+            "batter_hits_runs_rbis":   "hits_runs_rbis",
+            "batter_singles":          "singles",
         },
         "stat_labels": {
             "hits": "Hits", "total_bases": "Total Bases",
             "home_runs": "Home Runs", "rbi": "RBI",
             "runs": "Runs", "strikeouts": "Strikeouts",
-            "innings": "Innings Pitched",
+            "hits_runs_rbis": "Hits + Runs + RBI", "singles": "Singles",
         },
     },
     "nhl": {
@@ -222,25 +225,35 @@ _SPORT_CONFIG: Dict[str, Dict] = {
         "icon": "🏒",
         "espn_path": "hockey/nhl",
         "primary_stat": "shots",
-        # player_anytime_scorer returns Yes/No outcomes (not Over/Under);
-        # handled separately by _ANYTIME_SCORER_MARKETS set below.
-        "markets": ["player_points", "player_shots_on_goal",
-                    "player_assists", "player_anytime_scorer"],
+        # player_goals returns Yes/No outcomes — handled by _YES_NO_MARKETS below.
+        "markets": [
+            "player_points", "player_shots_on_goal", "player_assists",
+            "player_goals", "player_power_play_points", "player_blocked_shots",
+        ],
         "stat_map": {
-            "player_points":          "points",
-            "player_shots_on_goal":   "shots",
-            "player_assists":         "assists",
-            "player_anytime_scorer":  "goals",
+            "player_points":            "points",
+            "player_shots_on_goal":     "shots",
+            "player_assists":           "assists",
+            "player_goals":             "goals",
+            "player_power_play_points": "pp_points",
+            "player_blocked_shots":     "blocked_shots",
         },
         "stat_labels": {
             "points": "Points", "shots": "Shots on Goal",
-            "goals": "Goals (Anytime Scorer)", "assists": "Assists",
+            "goals": "Goals", "assists": "Assists",
+            "pp_points": "Power Play Points", "blocked_shots": "Blocked Shots",
         },
     },
 }
 
 # Markets that use Yes/No outcomes instead of Over/Under
-_ANYTIME_SCORER_MARKETS = {"player_anytime_scorer", "player_first_goal_scorer"}
+_YES_NO_MARKETS = {
+    "player_goals",
+    "player_anytime_scorer",
+    "player_first_goal_scorer",
+}
+# Keep old name as alias for any external references
+_ANYTIME_SCORER_MARKETS = _YES_NO_MARKETS
 
 # Full team name → abbreviation (NBA, MLB, NHL combined)
 _TEAM_ABBR: Dict[str, str] = {
@@ -564,14 +577,14 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 stat = stat_map.get(mk)
                 if not stat:
                     continue
-                is_yes_no = mk in _ANYTIME_SCORER_MARKETS
+                is_yes_no = mk in _YES_NO_MARKETS
                 for outcome in market.get("outcomes", []):
                     oname = outcome.get("name", "")
-                    # Accept "Over" for standard O/U markets; "Yes" for anytime scorer
+                    # Accept "Over" for standard O/U markets; "Yes" for Yes/No markets
                     if is_yes_no:
                         if oname != "Yes":
                             continue
-                        # Anytime scorer: use line=0.5 (binary prop)
+                        # Yes/No market (e.g. player_goals): use line=0.5 (binary prop)
                         player = (outcome.get("description") or "").strip() or oname
                         line   = 0.5
                     else:

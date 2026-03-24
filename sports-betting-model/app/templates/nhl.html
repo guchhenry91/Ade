@@ -27,12 +27,14 @@
 }
 .stat-name { font-size: 12px; font-weight: 700;
              text-transform: uppercase; letter-spacing: .06em; }
-.stat-name[data-stat="goals"]   { color: #ff6b6b; }
-.stat-name[data-stat="assists"] { color: #00ff88; }
-.stat-name[data-stat="shots"]   { color: #00d4ff; }
-.stat-name[data-stat="points"]  { color: #bf5af2; }
-.stat-name[data-stat="saves"]   { color: #ffa500; }
-.stat-name:not([data-stat])     { color: var(--txt2); }
+.stat-name[data-stat="goals"]         { color: #ff6b6b; }
+.stat-name[data-stat="assists"]       { color: #00ff88; }
+.stat-name[data-stat="shots"]         { color: #00d4ff; }
+.stat-name[data-stat="points"]        { color: #bf5af2; }
+.stat-name[data-stat="pp_points"]     { color: #f59e0b; }
+.stat-name[data-stat="blocked_shots"] { color: #64748b; }
+.stat-name[data-stat="saves"]         { color: #ffa500; }
+.stat-name:not([data-stat])           { color: var(--txt2); }
 .stat-line { font-size: 11px; color: var(--txt3); }
 .stat-pick-row {
   display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
@@ -136,7 +138,7 @@
 
 <!-- Stat filter -->
 <div class="filter-bar" id="nhl-filter-bar">
-  {% for label, val in [('All','all'),('Goals','goals'),('Assists','assists'),('Shots','shots'),('Points','points'),('Saves','saves')] %}
+  {% for label, val in [('All','all'),('Goals','goals'),('Assists','assists'),('Shots','shots'),('Points','points'),('PP Points','pp_points'),('Blocked','blocked_shots')] %}
   <button class="filter-btn {% if loop.first %}active{% endif %}"
           data-group="nhl" data-filter="{{ val }}">{{ label }}</button>
   {% endfor %}

@@ -27,14 +27,15 @@
 }
 .stat-name { font-size: 12px; font-weight: 700;
              text-transform: uppercase; letter-spacing: .06em; }
-.stat-name[data-stat="hits"]        { color: #00d4ff; }
-.stat-name[data-stat="home_runs"]   { color: #ff6b6b; }
-.stat-name[data-stat="rbi"]         { color: #00ff88; }
-.stat-name[data-stat="total_bases"] { color: #bf5af2; }
-.stat-name[data-stat="strikeouts"]  { color: #ffa500; }
-.stat-name[data-stat="runs"]        { color: #f0c040; }
-.stat-name[data-stat="innings"]     { color: #60a5fa; }
-.stat-name:not([data-stat])         { color: var(--txt2); }
+.stat-name[data-stat="hits"]           { color: #00d4ff; }
+.stat-name[data-stat="home_runs"]      { color: #ff6b6b; }
+.stat-name[data-stat="rbi"]            { color: #00ff88; }
+.stat-name[data-stat="total_bases"]    { color: #bf5af2; }
+.stat-name[data-stat="strikeouts"]     { color: #ffa500; }
+.stat-name[data-stat="runs"]           { color: #f0c040; }
+.stat-name[data-stat="singles"]        { color: #34d399; }
+.stat-name[data-stat="hits_runs_rbis"] { color: #f472b6; }
+.stat-name:not([data-stat])            { color: var(--txt2); }
 .stat-line { font-size: 11px; color: var(--txt3); }
 .stat-pick-row {
   display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
@@ -138,7 +139,7 @@
 
 <!-- Stat filter -->
 <div class="filter-bar" id="mlb-filter-bar">
-  {% for label, val in [('All','all'),('Hits','hits'),('HR','home_runs'),('RBI','rbi'),('Total Bases','total_bases'),('Strikeouts','strikeouts'),('Runs','runs'),('Innings','innings')] %}
+  {% for label, val in [('All','all'),('Hits','hits'),('HR','home_runs'),('RBI','rbi'),('Total Bases','total_bases'),('Strikeouts','strikeouts'),('Runs','runs'),('Singles','singles'),('H+R+RBI','hits_runs_rbis')] %}
   <button class="filter-btn {% if loop.first %}active{% endif %}"
           data-group="mlb" data-filter="{{ val }}">{{ label }}</button>
   {% endfor %}
