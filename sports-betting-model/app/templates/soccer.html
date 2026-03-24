@@ -62,6 +62,19 @@
   /* ── Hide/show via data-filter ───────────────────── */
   .game-card[data-hidden="true"] { display:none; }
 
+  /* ── Coming Up (no games today) ──────────────────── */
+  .soccer-coming-up { display:flex; flex-direction:column; align-items:center; padding:40px 20px; text-align:center; gap:12px; }
+  .soccer-icon      { font-size:56px; }
+  .soccer-coming-up h2 { font-size:22px; color:#fff; margin:0; }
+  .soccer-coming-up p  { color:#888; margin:0; font-size:14px; }
+  .coming-up-games  { display:flex; flex-wrap:wrap; gap:16px; justify-content:center; margin-top:20px; width:100%; max-width:800px; }
+  .coming-up-league { background:#1a1a2e; border:1px solid #252545; border-radius:12px; padding:16px; min-width:240px; text-align:left; }
+  .coming-up-league h4 { color:#00d4ff; margin:0 0 10px 0; font-size:13px; }
+  .coming-up-fixture { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #252545; gap:12px; }
+  .coming-up-fixture:last-child { border-bottom:none; }
+  .fixture-teams { font-size:13px; color:#fff; }
+  .fixture-date  { font-size:11px; color:#888; white-space:nowrap; }
+
   /* ── Game pick badges ── */
   .game-pick-badge { display:inline-flex;align-items:center;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap; }
   .badge-strong   { background:#00ff8822; color:#00ff88; border:1px solid #00ff88; }
@@ -96,12 +109,28 @@
 </div>
 
 {% if total == 0 %}
-<div class="card rounded-xl p-12 text-center">
-  <p class="text-4xl mb-3">⚽</p>
-  <p class="text-white font-semibold text-lg">No soccer fixtures today</p>
-  <p class="text-slate-400 mt-1 text-sm">
-    Check back on match days — EPL, La Liga, UCL, Serie A, Bundesliga, Ligue 1, MLS.
-  </p>
+<div class="card rounded-xl">
+  <div class="soccer-coming-up">
+    <div class="soccer-icon">⚽</div>
+    <h2>No Soccer Today</h2>
+    <p>Next Premier League fixtures: April 10, 2026</p>
+    <p>Player props appear 24–48 hrs before kickoff.</p>
+    {% if upcoming_leagues %}
+    <div class="coming-up-games">
+      {% for lg in upcoming_leagues %}
+      <div class="coming-up-league">
+        <h4>{{ lg.icon }} {{ lg.league }}</h4>
+        {% for game in lg.games[:3] %}
+        <div class="coming-up-fixture">
+          <span class="fixture-teams">{{ game.home_team }} vs {{ game.away_team }}</span>
+          <span class="fixture-date">{{ game.kickoff[:10] if game.kickoff else '—' }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
 </div>
 {% else %}
 

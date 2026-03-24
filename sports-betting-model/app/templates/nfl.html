@@ -13,6 +13,10 @@
   .pick-over  { color:#4ade80; font-weight:700; }
   .pick-under { color:#f87171; font-weight:700; }
   .pick-fair  { color:#94a3b8; }
+  .offseason-card { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:80px 20px; text-align:center; gap:16px; }
+  .offseason-icon { font-size:64px; }
+  .offseason-card h2 { font-size:24px; color:#fff; margin:0; }
+  .offseason-card p  { color:#888; margin:0; font-size:15px; }
 </style>
 {% endblock %}
 
@@ -32,11 +36,14 @@
   <a href="/nfl" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium">↻ Refresh</a>
 </div>
 
-{% if total == 0 %}
-<div class="card rounded-xl p-12 text-center">
-  <p class="text-4xl mb-3">🏟</p>
-  <p class="text-white font-semibold text-lg">No NFL games right now</p>
-  <p class="text-slate-400 mt-1 text-sm">NFL season runs September – February. Check back during the season.</p>
+{% if offseason %}
+<div class="card rounded-xl">
+  <div class="offseason-card">
+    <div class="offseason-icon">🏈</div>
+    <h2>NFL Offseason</h2>
+    <p>Regular season returns September 2026.</p>
+    <p>NFL Draft: April 24–26, 2026</p>
+  </div>
 </div>
 {% else %}
 

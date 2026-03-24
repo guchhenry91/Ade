@@ -481,12 +481,27 @@ async def home(request: Request):
 async def soccer_page(request: Request):
     from data.odds_api import build_soccer_props
     today_label = date.today().strftime("%A, %B %d %Y")
-    games       = _cached("soccer", build_soccer_props, ttl=600)
-    if games is None:
-        games = []
+    result      = _cached("soccer", build_soccer_props, ttl=600)
+    if isinstance(result, dict):
+        games    = result.get("games", [])
+        upcoming = result.get("upcoming", [])
+    else:
+        games    = result or []
+        upcoming = []
+
+    # Group upcoming fixtures by league for the "Coming Up" display
+    _ul: dict = {}
+    for u in upcoming:
+        lg = u.get("league", "")
+        if lg not in _ul:
+            _ul[lg] = {"league": lg, "icon": u.get("sport_icon", ""), "games": []}
+        _ul[lg]["games"].append(u)
+    upcoming_leagues = list(_ul.values())
+
     return TEMPLATES.TemplateResponse(request, "soccer.html", {
         "games": games, "today": today_label,
         "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+        "upcoming_leagues": upcoming_leagues,
         "generated_at": _now_iso(),
     })
 
@@ -518,6 +533,7 @@ async def nfl_page(request: Request):
     return TEMPLATES.TemplateResponse(request, "nfl.html", {
         "games": games, "today": today_label,
         "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+        "offseason": len(games) == 0,
         "generated_at": _now_iso(),
     })
 

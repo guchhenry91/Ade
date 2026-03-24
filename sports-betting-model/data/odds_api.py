@@ -797,6 +797,7 @@ def build_soccer_props(ttl: int = 900) -> list:
                 return data
 
     all_games: list = []
+    upcoming:  list = []   # fixtures with no odds posted yet
 
     for league_slug, league_cfg in SOCCER_LEAGUES.items():
         sport_key   = league_cfg["sport_key"]
@@ -888,9 +889,16 @@ def build_soccer_props(ttl: int = 900) -> list:
                                 total_goals_line = o.get("point")
                                 break
 
-            # Default if no odds available
+            # No bookmaker lines posted yet — save as upcoming fixture and skip
             if home_prob is None:
-                home_prob, draw_prob, away_prob = 40.0, 25.0, 35.0
+                upcoming.append({
+                    "home_team":  home_team,
+                    "away_team":  away_team,
+                    "league":     league_name,
+                    "sport_icon": icon,
+                    "kickoff":    event.get("commence_time", ""),
+                })
+                continue
 
             # Predicted winner
             if home_prob >= draw_prob and home_prob >= away_prob:
@@ -1040,10 +1048,11 @@ def build_soccer_props(ttl: int = 900) -> list:
                 "away_wins":    0, "away_losses": 0,
             })
 
-    print(f"[SOCCER] Total: {len(all_games)} games across all leagues")
+    print(f"[SOCCER] Total: {len(all_games)} active games, {len(upcoming)} upcoming (no odds yet)")
+    result = {"games": all_games, "upcoming": upcoming}
     with _SOCCER_LOCK:
-        _SOCCER_CACHE[cache_key] = (all_games, now + ttl)
-    return all_games
+        _SOCCER_CACHE[cache_key] = (result, now + ttl)
+    return result
 
 
 def get_sport_odds(sport: str, regions: str = "us,uk") -> List[Dict]:
