@@ -165,203 +165,11 @@ def _ml_to_prob(ml) -> float:
 # ── Game-data builders (reused by today + sport pages) ───────────────────────
 
 def _build_nba_games(today_str: str) -> list:
-    from data.nba_data   import get_games as nba_get_games, get_nba_win_pcts, \
-                                fetch_all_player_stats
+    from data.nba_data   import (get_games as nba_get_games, get_nba_win_pcts,
+                                  get_espn_team_roster, get_espn_player_stats,
+                                  get_espn_player_logs)
     from data.odds_api   import build_odds_lookup, find_game_odds, decimal_to_american
     from utils.stats     import confidence_label, shot_attempt_over_under, threept_made_ou
-
-    # ── PrizePicks line lookup: real market lines per (player_name, stat_key) ─
-    _PP_STAT_KEY = {
-        "points":   "pts", "rebounds": "reb", "assists": "ast",
-        "3-point":  "3pm", "threes":   "3pm", "three":   "3pm", "made": "3pm",
-        "steals":   "stl", "blocks":   "blk",
-    }
-    _PP_SKIP_FRAGMENTS = ("pra", "pts+", "reb+", "ast+", "+reb", "+ast",
-                          "points+", "fantasy", "score", "combo")
-
-    # ── ESPN scoreboard abbreviation → PrizePicks abbreviation ───────────────
-    # Comprehensive map covering all known ESPN/PP abbr discrepancies.
-    _ESPN_TO_PP: dict[str, str] = {
-        "GS":   "GSW",   # Golden State Warriors
-        "SA":   "SAS",   # San Antonio Spurs
-        "NO":   "NOP",   # New Orleans Pelicans
-        "NY":   "NYK",   # New York Knicks
-        "BK":   "BKN",   # Brooklyn Nets
-        "NJ":   "BKN",   # Old Brooklyn abbr
-        "UTAH": "UTA",   # Utah Jazz
-        "WSH":  "WAS",   # Washington Wizards
-        "CHA":  "CHO",   # Charlotte Hornets (PP uses CHO)
-        "PHX":  "PHO",   # Phoenix Suns (PP uses PHO)
-        "CLB":  "CLE",   # Cleveland (rare ESPN variant)
-    }
-
-    def _norm_nba_abbr(abbr: str) -> str:
-        """Normalise ESPN scoreboard abbreviation to PrizePicks abbreviation."""
-        u = (abbr or "").upper().strip()
-        return _ESPN_TO_PP.get(u, u)
-
-    # ── PrizePicks direct fetch (bypass disk cache — PP data changes live) ───
-    pp_lines: dict[tuple, float] = {}
-    pp_by_team: dict[str, dict] = {}
-
-    _PP_URL = "https://api.prizepicks.com/projections"
-    _PP_HDRS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept":     "application/json",
-        "Referer":    "https://app.prizepicks.com/",
-        "Origin":     "https://app.prizepicks.com",
-    }
-    try:
-        from data.fetcher import fetch as _http_fetch
-        raw_pp = _http_fetch(
-            _PP_URL,
-            params={"league_id": 7, "per_page": 500, "single_stat": "true",
-                    "game_mode": "pickem"},
-            headers=_PP_HDRS,
-            use_cache=False,   # always fetch fresh — PP lines change throughout the day
-        )
-
-        # ── Verbose structure diagnostics ─────────────────────────────────────
-        if raw_pp is None:
-            print("[NBA] PrizePicks returned None (possible 403/429 or network error)")
-        else:
-            _pp_data     = raw_pp.get("data", [])
-            _pp_included = raw_pp.get("included", [])
-            print(f"[NBA] PP response keys: {list(raw_pp.keys())}")
-            print(f"[NBA] PP data count: {len(_pp_data)}")
-            print(f"[NBA] PP included count: {len(_pp_included)}")
-
-            # Log first projection structure
-            if _pp_data:
-                _fp = _pp_data[0]
-                print(f"[NBA] First proj type: {_fp.get('type')}")
-                print(f"[NBA] First proj attr keys: {list(_fp.get('attributes', {}).keys())}")
-                print(f"[NBA] First proj rel keys:  {list(_fp.get('relationships', {}).keys())}")
-
-            # Log included types
-            _inc_types = set(i.get("type") for i in _pp_included)
-            print(f"[NBA] Included types: {_inc_types}")
-
-            # Log first included item of each type for structure inspection
-            _seen_types: set = set()
-            for _ii in _pp_included:
-                _it = _ii.get("type")
-                if _it not in _seen_types:
-                    _seen_types.add(_it)
-                    print(f"[NBA] Sample included [{_it}]: "
-                          f"attrs={list(_ii.get('attributes', {}).keys())}")
-
-        if raw_pp:
-            _pp_data     = raw_pp.get("data", [])
-            _pp_included = raw_pp.get("included", [])
-
-            # ── Build player lookup from "included" sideload ──────────────────
-            # Structure C: included array with type="new_player"/"player"
-            _pmap: dict = {}
-            for item in _pp_included:
-                if item.get("type") in ("new_player", "player"):
-                    pid   = str(item.get("id", ""))
-                    attrs = item.get("attributes", {})
-                    name  = (attrs.get("display_name")
-                             or attrs.get("name")
-                             or (attrs.get("first_name","") + " "
-                                 + attrs.get("last_name","")).strip()).strip()
-                    team  = (attrs.get("team")
-                             or attrs.get("team_abbr")
-                             or attrs.get("team_abbreviation", "")).upper().strip()
-                    if name and pid:
-                        _pmap[pid] = {"name": name, "team": team,
-                                      "pos":  attrs.get("position", "")}
-
-            print(f"[NBA] PP included players (Structure C): {len(_pmap)}")
-
-            _parse_errors = 0
-            for proj in _pp_data:
-                if "projection" not in (proj.get("type") or "").lower():
-                    continue
-                attrs  = proj.get("attributes", {})
-
-                # ── Status filter: accept all non-cancelled projections ────────
-                status = (attrs.get("status") or "").lower()
-                if status in ("cancelled", "canceled", "suspended", "voided"):
-                    continue
-
-                # ── Stat type filter ──────────────────────────────────────────
-                stat_raw = (attrs.get("stat_type")
-                            or attrs.get("stat_display_name")
-                            or attrs.get("name") or "").lower()
-                if any(frag in stat_raw for frag in _PP_SKIP_FRAGMENTS) or "+" in stat_raw:
-                    continue
-                sk = next((v for k, v in _PP_STAT_KEY.items() if k in stat_raw), None)
-                if not sk:
-                    continue
-
-                # ── Multi-structure player name + team resolution ─────────────
-                name_raw  = ""
-                team_abbr = ""
-
-                # Structure A: player info directly in projection attributes
-                if not name_raw:
-                    name_raw  = (attrs.get("name") or attrs.get("player_name")
-                                 or attrs.get("display_name") or "").strip()
-                    team_abbr = (attrs.get("team") or attrs.get("team_abbr")
-                                 or attrs.get("team_abbreviation") or "").strip().upper()
-
-                # Structure B: nested player object inside attributes
-                if not name_raw:
-                    _po = attrs.get("player", {})
-                    if isinstance(_po, dict) and _po:
-                        name_raw  = (_po.get("name") or _po.get("display_name") or "").strip()
-                        team_abbr = (_po.get("team") or _po.get("team_abbr") or "").strip().upper()
-
-                # Structure C: resolve via relationships → included sideload
-                if not name_raw:
-                    rel = proj.get("relationships", {})
-                    for _rk in ("new_player", "player", "projection_player"):
-                        _rd  = rel.get(_rk, {}).get("data", {})
-                        _pid = str(_rd.get("id", "")) if isinstance(_rd, dict) else ""
-                        if _pid and _pid in _pmap:
-                            _pi   = _pmap[_pid]
-                            name_raw  = _pi.get("name", "")
-                            team_abbr = _pi.get("team", "")
-                            break
-
-                if not name_raw or not team_abbr:
-                    _parse_errors += 1
-                    if _parse_errors <= 5:
-                        print(f"[NBA] Parse fail #{_parse_errors} — "
-                              f"attr_keys={list(attrs.keys())}, "
-                              f"rel_keys={list(proj.get('relationships',{}).keys())}, "
-                              f"stat={stat_raw}")
-                    continue
-
-                line_val = float(attrs.get("line_score") or attrs.get("line") or 0)
-                if line_val <= 0:
-                    continue
-
-                name_key = name_raw.lower()
-                pp_lines[(name_key, sk)] = line_val
-                pp_by_team.setdefault(team_abbr, {})
-                if name_key not in pp_by_team[team_abbr]:
-                    pp_by_team[team_abbr][name_key] = {
-                        "name": name_raw,
-                        "pos":  _pmap.get(
-                                    str(proj.get("relationships",{})
-                                           .get("new_player",{})
-                                           .get("data",{}).get("id","")),
-                                    {}).get("pos", ""),
-                    }
-
-            pp_teams = sorted(pp_by_team.keys())
-            print(f"[NBA] PP parse errors: {_parse_errors}")
-            print(f"[NBA] PP teams ({len(pp_teams)}): {pp_teams}")
-            print(f"[NBA] PP lines: {len(pp_lines)} entries")
-            if not pp_teams:
-                print("[NBA] CRITICAL: No teams parsed from PP — check structure logs above")
-    except Exception as _ppe:
-        print(f"[NBA] PrizePicks fetch failed: {_ppe}")
-        traceback.print_exc()
 
     # NBA per-game stat caps to reject ESPN fantasy composites / season totals
     _STAT_CAPS = {"pts": 45.0, "reb": 20.0, "ast": 15.0, "fg3m": 7.0}
@@ -375,15 +183,17 @@ def _build_nba_games(today_str: str) -> list:
         """
         Build one prop dict using:
           1. Real ESPN season avg for normal-distribution base
-          2. PrizePicks line as market line (if available)
+          2. Generated line from season avg (rounded to nearest 0.5, slightly below avg)
           3. Hit-rate from last 5 / last 10 ESPN game logs
           Weighted formula: 35% L5 hit-rate + 35% L10 hit-rate + 30% season-avg model
           Clamped [0.30, 0.82] so result always varies by player.
         """
         if avg < 0.5:
             return None
-        pp_line = pp_lines.get((player_name.lower().strip(), stat_key))
-        line    = pp_line if (pp_line and pp_line > 0) else max(0.5, round(avg * 2) / 2 - 0.5)
+        # Generate realistic line: round avg to nearest 0.5, then subtract 0.5 for high scorers
+        line = max(0.5, round(avg * 2) / 2)
+        if avg > 20:
+            line = max(0.5, line - 0.5)
 
         # Season-avg model probability
         if std is None:
@@ -464,97 +274,73 @@ def _build_nba_games(today_str: str) -> list:
                             "pts": p.get("pts", 0), "props": props})
         return out
 
-    def _nba_roster_from_leaders(leaders: list, team_id: str) -> list:
-        """Fallback: build roster from ESPN competition leaders."""
-        def _build(filtered: list) -> list:
-            player_map: dict = {}
-            for ldr in filtered:
-                name = ldr.get("name", "")
-                if not name:
-                    continue
-                stat = ldr.get("stat", "")
-                val  = float(ldr.get("value", 0))
-                sk   = {"points": "pts", "rebounds": "reb",
-                        "assists": "ast",
-                        "threePointFieldGoalsMade": "fg3m"}.get(stat)
-                if not sk:
-                    continue
-                if val > _STAT_CAPS.get(sk, 50.0):
-                    continue
-                player_map.setdefault(name, {"name": name, "pos": "",
-                                             "pts": 0.0, "reb": 0.0,
-                                             "ast": 0.0, "fg3m": 0.0})
-                player_map[name][sk] = val
-            return _nba_props_from_avgs(list(player_map.values()))
+    def _nba_team_roster_with_props(team_id: str, team_abbr: str) -> list:
+        """
+        Fetch ESPN team roster → get season stats + game logs for each player
+        → build prop cards. Returns up to 10 players sorted by pts.
+        No PrizePicks needed — lines generated from season averages.
+        """
+        if not team_id:
+            return []
+        try:
+            roster = get_espn_team_roster(team_id)
+        except Exception as _re:
+            print(f"[NBA] Roster fetch failed for {team_abbr}: {_re}")
+            return []
 
-        team_ldrs = [l for l in leaders if not l.get("team_id") or l.get("team_id") == team_id]
-        # Only use team-filtered leaders — never fall back to all-league leaders which
-        # would show star players (Luka, SGA, Giannis) for any game.
-        return _build(team_ldrs)
+        if not roster:
+            print(f"[NBA] {team_abbr}: empty roster from ESPN")
+            return []
+
+        print(f"[NBA] {team_abbr}: {len(roster)} players on ESPN roster")
+
+        def _fetch_one(player: dict) -> dict | None:
+            pid  = player.get("id", "")
+            name = player.get("name", "")
+            pos  = player.get("pos", "")
+            if not pid or not name:
+                return None
+            try:
+                season_stats = get_espn_player_stats(pid) or {}
+                # Skip players with essentially no stats (injured/inactive)
+                pts = float(season_stats.get("pts", 0))
+                if pts < 1.0 and float(season_stats.get("reb", 0)) < 1.0:
+                    return None
+                game_logs = get_espn_player_logs(pid)
+                return {
+                    "name":      name,
+                    "pos":       pos,
+                    "pts":       pts,
+                    "reb":       float(season_stats.get("reb",  0)),
+                    "ast":       float(season_stats.get("ast",  0)),
+                    "fg3m":      float(season_stats.get("fg3m", 0)),
+                    "player_id": pid,
+                    "_logs":     game_logs,
+                }
+            except Exception as _fe:
+                return None
+
+        # Parallel fetch all players (ESPN has no rate limit)
+        max_w = min(12, max(1, len(roster)))
+        with ThreadPoolExecutor(max_workers=max_w) as ex:
+            raw_results = list(ex.map(_fetch_one, roster[:18]))
+
+        enriched = [r for r in raw_results if r is not None]
+        enriched.sort(key=lambda p: p["pts"], reverse=True)
+
+        # Build per-player game_logs dict keyed by athlete_id
+        game_logs_map = {p["player_id"]: p.pop("_logs", []) for p in enriched}
+
+        roster_with_props = _nba_props_from_avgs(enriched[:10], game_logs_map)
+        print(f"[NBA] {team_abbr}: {len(roster_with_props)} players with props")
+        return roster_with_props
 
     games = []
     try:
-        nba_book_lookup  = build_odds_lookup("NBA")
-        nba_standings    = get_nba_win_pcts()  # {team_name_lower: win_pct} — 6h cache
-
-        raw_games = nba_get_games(dates=today_str)
-
-        # ── ESPN batch fetch for all PrizePicks players ───────────────────────
-        # Collect unique player names from PP by team so we can look up real
-        # season averages + game logs from ESPN (no rate limit, no API key).
-        all_pp_player_names = list({
-            data["name"]
-            for team_data in pp_by_team.values()
-            for data in team_data.values()
-            if data.get("name")
-        })
-        espn_player_data: dict = {}
-        if all_pp_player_names:
-            try:
-                espn_player_data = fetch_all_player_stats(all_pp_player_names)
-                print(f"[NBA] ESPN stats: {len(espn_player_data)}/{len(all_pp_player_names)} players found")
-            except Exception as _espn_e:
-                print(f"[NBA] ESPN batch fetch failed: {_espn_e}")
-
-        # Game logs: {athlete_id: [{pts, reb, ast, fg3m}, ...]}
-        espn_game_logs: dict = {
-            data["athlete_id"]: data.get("game_logs", [])
-            for data in espn_player_data.values()
-            if data.get("athlete_id")
-        }
-
-        def _nba_props_from_pp_espn(abbr: str) -> list:
-            """Build NBA roster from PrizePicks players enriched with ESPN season stats."""
-            norm = _norm_nba_abbr(abbr)
-            # Try normalised abbr first, then raw upper abbr as fallback
-            team_players = (pp_by_team.get(norm)
-                            or pp_by_team.get((abbr or "").upper(), {}))
-            if not team_players:
-                return []
-            enriched = []
-            for name_lower, pp_data in team_players.items():
-                espn_data = espn_player_data.get(name_lower, {})
-                # Sanity-check ESPN per-game averages: pts should be >= 1.0 for real
-                # NBA players. Values below this indicate API misparse or missing data.
-                raw_pts  = float(espn_data.get("pts",  0.0))
-                raw_reb  = float(espn_data.get("reb",  0.0))
-                raw_ast  = float(espn_data.get("ast",  0.0))
-                raw_fg3m = float(espn_data.get("fg3m", 0.0))
-                # Check if at least one meaningful stat is present
-                has_valid_stats = (raw_pts  >= 1.0 or raw_reb  >= 1.0
-                                   or raw_ast >= 1.0 or raw_fg3m >= 0.1)
-                if not has_valid_stats:
-                    raw_pts = raw_reb = raw_ast = raw_fg3m = 0.0
-                enriched.append({
-                    "name":      pp_data.get("name", name_lower),
-                    "pos":       pp_data.get("pos", ""),
-                    "pts":       raw_pts,
-                    "reb":       raw_reb,
-                    "ast":       raw_ast,
-                    "fg3m":      raw_fg3m,
-                    "player_id": espn_data.get("athlete_id"),  # ESPN athlete_id
-                })
-            return _nba_props_from_avgs(enriched, espn_game_logs)
+        nba_book_lookup = build_odds_lookup("NBA")
+        nba_standings   = get_nba_win_pcts()  # {team_name_lower: win_pct} — 6h cache
+        raw_games       = nba_get_games(dates=today_str)
+        print(f"[NBA] {len(raw_games)} games today")
 
         for g in raw_games:
             home_team = g.get("home_team") or "TBD"
@@ -564,6 +350,15 @@ def _build_nba_games(today_str: str) -> list:
             home_abbr = g.get("home_abbr", "")
             away_abbr = g.get("away_abbr", "")
 
+            # Fetch both team rosters in parallel
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                home_fut = ex.submit(_nba_team_roster_with_props, home_id, home_abbr)
+                away_fut = ex.submit(_nba_team_roster_with_props, away_id, away_abbr)
+                home_roster = home_fut.result()
+                away_roster = away_fut.result()
+
+            print(f"[NBA] {home_abbr}={len(home_roster)} {away_abbr}={len(away_roster)}")
+
             # Win probability: 1) moneyline  2) ESPN standings  3) scoreboard records  4) 55%
             if g.get("home_ml"):
                 h_prob = _ml_to_prob(g.get("home_ml"))
@@ -572,10 +367,9 @@ def _build_nba_games(today_str: str) -> list:
                           or nba_standings.get(home_abbr.lower()))
                 a_wpct = (nba_standings.get(away_team.lower())
                           or nba_standings.get(away_abbr.lower()))
-
                 if h_wpct is not None and a_wpct is not None and h_wpct + a_wpct > 0:
                     raw = h_wpct / (h_wpct + a_wpct)
-                    h_prob = max(0.25, min(0.75, raw * 0.97 + 0.03))  # +3% HCA
+                    h_prob = max(0.25, min(0.75, raw * 0.97 + 0.03))
                 else:
                     hw = g.get("home_wins", 0) or 0
                     hl = g.get("home_losses", 0) or 0
@@ -591,40 +385,11 @@ def _build_nba_games(today_str: str) -> list:
             predicted_winner = home_team if h_prob >= a_prob else away_team
             win_prob = h_prob if h_prob >= a_prob else a_prob
 
-            book    = find_game_odds(nba_book_lookup, home_team, away_team) or {}
-            leaders = g.get("leaders", [])
-            print(f"[NBA] {home_team} vs {away_team} — ESPN leaders: {len(leaders)}")
-
-            # Primary: PP players with real ESPN season stats + game logs
-            home_abbr_norm = _norm_nba_abbr(home_abbr)
-            away_abbr_norm = _norm_nba_abbr(away_abbr)
-            home_roster = _nba_props_from_pp_espn(home_abbr)
-            away_roster = _nba_props_from_pp_espn(away_abbr)
-            print(f"[NBA] {home_abbr}→{home_abbr_norm} vs {away_abbr}→{away_abbr_norm} "
-                  f"ESPN home={len(home_roster)} away={len(away_roster)}")
-
-            # Fallback: ESPN competition leaders (team-filtered only — never league-wide)
-            if not home_roster:
-                home_roster = _nba_roster_from_leaders(leaders, home_id)
-                if home_roster:
-                    print(f"[NBA] {home_abbr_norm}: using ESPN leaders fallback ({len(home_roster)} players)")
-            if not away_roster:
-                away_roster = _nba_roster_from_leaders(leaders, away_id)
-                if away_roster:
-                    print(f"[NBA] {away_abbr_norm}: using ESPN leaders fallback ({len(away_roster)} players)")
-
-            if not home_roster:
-                print(f"[NBA] {home_abbr_norm}: no props found — showing empty section")
-            if not away_roster:
-                print(f"[NBA] {away_abbr_norm}: no props found — showing empty section")
-
-            print(f"[NBA] Final: {home_abbr_norm}={len(home_roster)} {away_abbr_norm}={len(away_roster)}")
-
+            book = find_game_odds(nba_book_lookup, home_team, away_team) or {}
             games.append({
                 "sport": "Basketball", "league": "NBA", "sport_icon": "🏀",
                 "home_team": home_team, "away_team": away_team,
-                "home_abbr": home_abbr_norm,
-                "away_abbr": away_abbr_norm,
+                "home_abbr": home_abbr, "away_abbr": away_abbr,
                 "kickoff": g.get("date", ""), "status": g.get("status", ""),
                 "home_score": g.get("home_score"), "away_score": g.get("away_score"),
                 "home_wins":   g.get("home_wins", 0),
@@ -1074,107 +839,95 @@ async def today_page(request: Request):
 def _build_mlb_props(today_str: str) -> tuple[list, int]:
     """
     Build MLB player prop cards.
-    Primary: PrizePicks market lines + MLB Stats API per-game season averages.
-    Falls back to line-as-median (50/50) when no MLB Stats data found.
+    Source: ESPN team rosters → MLB Stats API season averages.
+    No PrizePicks needed — lines generated from season averages.
     """
-    from data.mlb_data    import get_games as mlb_get_games, search_mlb_player, \
-                                   get_pitcher_season_stats, get_batter_season_stats
-    from data.prizepicks  import get_mlb_projections
+    from data.mlb_data    import (get_games as mlb_get_games, get_espn_team_roster,
+                                   search_mlb_player, get_pitcher_season_stats,
+                                   get_batter_season_stats)
     from models.mlb_model import build_pitcher_props, build_batter_props
 
     all_props: list = []
+    total_games = 0
     try:
         games = mlb_get_games(dates=today_str)
         total_games = len(games)
         print(f"[MLB] {total_games} games today")
 
-        pp_projections: list = []
-        try:
-            pp_projections = get_mlb_projections()
-            print(f"[MLB] PrizePicks: {len(pp_projections)} projections")
-        except Exception as _ppe:
-            print(f"[MLB] PrizePicks fetch failed: {_ppe}")
+        seen_teams: set = set()
+        for game in games:
+            for team_id, team_abbr in [
+                (game.get("home_id", ""), game.get("home_abbr", "")),
+                (game.get("away_id", ""), game.get("away_abbr", "")),
+            ]:
+                if not team_id or team_abbr in seen_teams:
+                    continue
+                seen_teams.add(team_abbr)
 
-        if not pp_projections:
-            return all_props, total_games
+                try:
+                    roster = get_espn_team_roster(team_id)
+                except Exception as _re:
+                    print(f"[MLB] Roster fetch failed for {team_abbr}: {_re}")
+                    roster = []
 
-        # Map PP stat names → model stat keys
-        _MLB_STAT_KEY = {
-            "strikeout": "so",     "inning":      "ip",
-            "hit":       "hits",   "total base":  "tb",
-            "home run":  "hr",     "rbi":         "rbi",
-            "run":       "runs",   "walk":        "bb",
-            "earned run": "er",
-        }
+                if not roster:
+                    # Fall back to ESPN scoreboard leaders for this team
+                    for g in games:
+                        for ldr in g.get("leaders", []):
+                            if ldr.get("team_id") in (
+                                game.get("home_id"), game.get("away_id")
+                            ):
+                                n = ldr.get("name", "")
+                                p = ldr.get("position", "")
+                                if n:
+                                    roster.append({"id": "", "name": n, "pos": p})
 
-        # Group PP projections by player name
-        player_projs: dict[str, list] = {}
-        for proj in pp_projections:
-            n = (proj.get("name") or "").strip()
-            if n:
-                player_projs.setdefault(n, []).append(proj)
+                print(f"[MLB] {team_abbr}: {len(roster)} players")
 
-        for player_name, projs in player_projs.items():
-            stat_types = [(p.get("stat") or "").lower() for p in projs]
-            is_pitcher = any(
-                any(k in s for k in ("strikeout", "inning", "earned run"))
-                for s in stat_types
-            )
+                team_props_count = 0
+                for player in roster[:20]:  # top 20 per roster
+                    player_name = player.get("name", "")
+                    pos         = player.get("pos", "")
+                    if not player_name:
+                        continue
 
-            # Fetch real per-game season averages from MLB Stats API
-            season_stats: dict = {}
-            pos = projs[0].get("pos", "")
-            mlb_player = search_mlb_player(player_name)
-            if mlb_player and mlb_player.get("id"):
-                mlb_id = mlb_player["id"]
-                pos = mlb_player.get("pos", pos)
-                if is_pitcher or pos in ("SP", "RP", "P"):
-                    season_stats = get_pitcher_season_stats(mlb_id) or {}
-                    is_pitcher = True
-                else:
-                    season_stats = get_batter_season_stats(mlb_id) or {}
+                    # Determine pitcher vs batter from position
+                    is_pitcher = pos in ("SP", "RP", "P", "RHP", "LHP")
 
-            # Collect PP line overrides for this player
-            pp_lines: dict[str, float] = {}
-            for proj in projs:
-                stat_raw = (proj.get("stat") or "").lower()
-                sk = next((v for k, v in _MLB_STAT_KEY.items() if k in stat_raw), None)
-                if sk:
-                    line_val = float(proj.get("line") or 0)
-                    if line_val > 0:
-                        pp_lines[sk + "_line"] = line_val
+                    # Fetch MLB Stats API data by searching name
+                    season_stats: dict = {}
+                    mlb_player = search_mlb_player(player_name)
+                    if mlb_player and mlb_player.get("id"):
+                        mlb_id = mlb_player["id"]
+                        pos    = mlb_player.get("pos", pos) or pos
+                        if is_pitcher or pos in ("SP", "RP", "P"):
+                            season_stats = get_pitcher_season_stats(mlb_id) or {}
+                            is_pitcher = True
+                        else:
+                            season_stats = get_batter_season_stats(mlb_id) or {}
 
-            if is_pitcher:
-                # Use MLB Stats API per-game avg; fall back to PP line as median estimate
-                so_pg = season_stats.get("so_pg") or pp_lines.get("so_line") or 0
-                ip_pg = season_stats.get("ip_pg") or pp_lines.get("ip_line") or 0
-                pstats = {"so_pg": so_pg, "ip_pg": ip_pg, **pp_lines}
-                props = build_pitcher_props(pstats)
-            else:
-                hits_pg = season_stats.get("hits_pg") or pp_lines.get("hits_line") or 0
-                tb_pg   = season_stats.get("tb_pg")   or pp_lines.get("tb_line")   or 0
-                hr_pg   = season_stats.get("hr_pg",  0) or pp_lines.get("hr_line",  0) or 0
-                rbi_pg  = season_stats.get("rbi_pg", 0) or pp_lines.get("rbi_line", 0) or 0
-                runs_pg = season_stats.get("runs_pg", 0.6) or 0.6
-                bstats  = {
-                    "hits_pg": hits_pg, "tb_pg": tb_pg, "hr_pg": hr_pg,
-                    "rbi_pg":  rbi_pg,  "runs_pg": runs_pg, **pp_lines,
-                }
-                props = build_batter_props(bstats)
+                    if not season_stats:
+                        continue
 
-            # Flatten: emit one entry per prop so the template renders each as
-            # a separate card with the correct data-stat for filter tabs.
-            if props:
-                player_meta = {
-                    "name":     player_name,
-                    "pos":      pos,
-                    "team":     projs[0].get("team", ""),
-                    "opponent": "",
-                }
-                for prop in props:
-                    all_props.append({**player_meta, **prop})
-            if len(all_props) >= 500:  # generous cap — show all teams
-                break
+                    if is_pitcher:
+                        props = build_pitcher_props(season_stats)
+                    else:
+                        props = build_batter_props(season_stats)
+
+                    if props:
+                        for prop in props:
+                            all_props.append({
+                                "name":     player_name,
+                                "pos":      pos,
+                                "team":     team_abbr,
+                                "opponent": "",
+                                **prop,
+                            })
+                        team_props_count += 1
+
+                print(f"[MLB] {team_abbr}: {team_props_count} players with props")
+
+        print(f"[MLB] Total props: {len(all_props)}")
 
     except Exception:
         traceback.print_exc()
@@ -1186,13 +939,11 @@ def _build_mlb_props(today_str: str) -> tuple[list, int]:
 def _build_nhl_props(today_str: str) -> tuple[list, int]:
     """
     Build NHL player prop cards.
-    PrizePicks lines + NHL API real averages; rejects MMA data.
+    Source: NHL Stats API team rosters (api-web.nhle.com/v1).
+    No PrizePicks needed — Poisson model for goals/assists, normal dist for shots/saves.
     """
     from data.nhl_data    import get_games as nhl_get_games, get_team_roster_stats
-    from data.prizepicks  import get_nhl_projections
-    from models.nhl_model import (build_skater_props, build_goalie_props,
-                                  build_props_from_prizepicks, _MMA_REJECT_STATS)
-    from utils.stats      import confidence_label, shot_attempt_over_under
+    from models.nhl_model import build_skater_props, build_goalie_props
 
     all_props: list = []
     total_games = 0
@@ -1201,55 +952,32 @@ def _build_nhl_props(today_str: str) -> tuple[list, int]:
         total_games = len(games)
         print(f"[NHL] {total_games} games today")
 
-        pp_projs = get_nhl_projections()
-        # Filter out MMA stats immediately
-        pp_projs = [p for p in pp_projs
-                    if not any(m in (p.get("stat") or "").lower() for m in _MMA_REJECT_STATS)]
-        print(f"[NHL] PrizePicks (after MMA filter): {len(pp_projs)} projections")
+        seen_teams:   set = set()
+        seen_players: set = set()
 
-        # Build a {name_lower: {goals_pg, assists_pg, pts_pg, shots_pg, saves_pg}}
-        # map from NHL roster API so build_props_from_prizepicks can use real
-        # per-game averages instead of position priors.
-        nhl_player_stats: dict = {}
-        seen_teams: set = set()
         for g in games:
             for abbr in [g.get("home_abbr", ""), g.get("away_abbr", "")]:
                 if not abbr or abbr in seen_teams:
                     continue
                 seen_teams.add(abbr)
                 try:
-                    roster = get_team_roster_stats(abbr)
-                    for p in roster:
-                        pname = p.get("name", "")
-                        if pname:
-                            nhl_player_stats[pname.lower()] = p
-                except Exception:
-                    pass
-        print(f"[NHL] NHL roster stats: {len(nhl_player_stats)} players")
+                    players = get_team_roster_stats(abbr)
+                except Exception as _re:
+                    print(f"[NHL] Roster fetch failed for {abbr}: {_re}")
+                    players = []
 
-        if pp_projs:
-            # Pass real per-game averages so Poisson uses actual goal rates
-            all_props = build_props_from_prizepicks(pp_projs, nhl_player_stats)
-        else:
-            # Fall back: build directly from NHL roster stats
-            seen_players: set = set()
-            for g in games:
-                for abbr in [g.get("home_abbr", ""), g.get("away_abbr", "")]:
-                    if not abbr:
+                print(f"[NHL] {abbr}: {len(players)} players from NHL API")
+                team_count = 0
+                for p in players[:14]:
+                    pname = p.get("name", "")
+                    if not pname or pname in seen_players:
                         continue
-                    try:
-                        players = get_team_roster_stats(abbr)
-                    except Exception:
-                        players = []
-                    for p in players[:12]:
-                        pname = p.get("name", "")
-                        if pname in seen_players:
-                            continue
-                        seen_players.add(pname)
-                        if p.get("is_goalie"):
-                            props = build_goalie_props(p)
-                        else:
-                            props = build_skater_props(p)
+                    seen_players.add(pname)
+                    if p.get("is_goalie"):
+                        props = build_goalie_props(p)
+                    else:
+                        props = build_skater_props(p)
+                    if props:
                         player_meta = {
                             "name":      pname,
                             "team":      abbr,
@@ -1261,6 +989,11 @@ def _build_nhl_props(today_str: str) -> tuple[list, int]:
                         }
                         for prop in props:
                             all_props.append({**player_meta, **prop})
+                        team_count += 1
+
+                print(f"[NHL] {abbr}: {team_count} players with props")
+
+        print(f"[NHL] Total props: {len(all_props)}")
     except Exception:
         traceback.print_exc()
         total_games = 0
@@ -1341,131 +1074,38 @@ async def debug_nba():
     return {"today": today_str, "game_count": len(raw_games), "games": out}
 
 
-@app.get("/api/debug/prizepicks-nba")
-async def debug_prizepicks_nba():
-    """Diagnostic: show raw PrizePicks NBA props + leagues list for NBA league_id."""
-    from data.fetcher import fetch as _http_fetch
-    _PP_HDRS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept":     "application/json",
-        "Referer":    "https://app.prizepicks.com/",
-        "Origin":     "https://app.prizepicks.com",
-    }
-
-    # ── Check PP leagues to confirm NBA league_id ─────────────────────────────
-    leagues_raw = _http_fetch("https://api.prizepicks.com/leagues",
-                              headers=_PP_HDRS, use_cache=False)
-    nba_leagues: list = []
-    if leagues_raw:
-        for lg in leagues_raw.get("data", []):
-            lg_name = (lg.get("attributes", {}).get("name") or "").upper()
-            if "NBA" in lg_name or "BASKETBALL" in lg_name:
-                nba_leagues.append({
-                    "id":   lg.get("id"),
-                    "name": lg.get("attributes", {}).get("name"),
+@app.get("/api/debug/espn-nba-roster")
+async def debug_espn_nba_roster():
+    """Diagnostic: show ESPN NBA roster for each team playing today."""
+    from data.nba_data import get_games as nba_get_games, get_espn_team_roster, \
+                              get_espn_player_stats
+    today_str = date.today().strftime("%Y%m%d")
+    raw_games = nba_get_games(dates=today_str)
+    out = []
+    for g in raw_games:
+        for side in ("home", "away"):
+            team_id   = str(g.get(f"{side}_id", ""))
+            team_abbr = g.get(f"{side}_abbr", "")
+            if not team_id:
+                continue
+            try:
+                roster = get_espn_team_roster(team_id)
+                sample_stats = {}
+                if roster:
+                    try:
+                        sample_stats = get_espn_player_stats(roster[0]["id"]) or {}
+                    except Exception:
+                        pass
+                out.append({
+                    "team":         team_abbr,
+                    "team_id":      team_id,
+                    "roster_count": len(roster),
+                    "sample_players": [p["name"] for p in roster[:5]],
+                    "first_player_stats": sample_stats,
                 })
-
-    # ── Fetch projections ─────────────────────────────────────────────────────
-    raw = _http_fetch(
-        "https://api.prizepicks.com/projections",
-        params={"league_id": 7, "per_page": 500, "single_stat": "true",
-                "game_mode": "pickem"},
-        headers=_PP_HDRS,
-        use_cache=False,
-    )
-    if not raw:
-        return {
-            "error": "PrizePicks /projections returned empty/None (possible 403/429)",
-            "nba_leagues_found": nba_leagues,
-        }
-
-    _pp_data     = raw.get("data", [])
-    _pp_included = raw.get("included", [])
-    inc_types    = list({i.get("type") for i in _pp_included})
-
-    # ── Structure diagnostics ─────────────────────────────────────────────────
-    first_proj_attrs: dict = {}
-    first_proj_rels: dict  = {}
-    if _pp_data:
-        first_proj_attrs = _pp_data[0].get("attributes", {})
-        first_proj_rels  = {k: v for k, v in _pp_data[0].get("relationships", {}).items()}
-
-    sample_included: dict = {}
-    for _ii in _pp_included:
-        _it = _ii.get("type")
-        if _it not in sample_included:
-            sample_included[_it] = {
-                "attr_keys": list(_ii.get("attributes", {}).keys()),
-                "sample":    {k: v for k, v in list(_ii.get("attributes", {}).items())[:6]},
-            }
-
-    # ── Build player map + collect sample props ───────────────────────────────
-    pmap: dict = {}
-    for item in _pp_included:
-        if item.get("type") in ("new_player", "player"):
-            pid   = str(item.get("id", ""))
-            attrs = item.get("attributes", {})
-            name  = (attrs.get("display_name") or attrs.get("name")
-                     or (attrs.get("first_name","") + " " + attrs.get("last_name","")).strip()
-                     or "").strip()
-            team  = (attrs.get("team") or attrs.get("team_abbr")
-                     or attrs.get("team_abbreviation") or "").upper()
-            if name and pid:
-                pmap[pid] = {"name": name, "team": team}
-
-    sample: list = []
-    teams_seen: set = set()
-    parse_fail = 0
-    for proj in _pp_data:
-        if "projection" not in (proj.get("type") or "").lower():
-            continue
-        attrs  = proj.get("attributes", {})
-        rel    = proj.get("relationships", {})
-
-        name = team = ""
-        # Try Structure A
-        name = (attrs.get("name") or attrs.get("player_name") or attrs.get("display_name") or "").strip()
-        team = (attrs.get("team") or attrs.get("team_abbr") or attrs.get("team_abbreviation") or "").strip().upper()
-        # Try Structure B
-        if not name:
-            _po  = attrs.get("player", {})
-            if isinstance(_po, dict):
-                name = (_po.get("name") or _po.get("display_name") or "").strip()
-                team = (_po.get("team") or "").strip().upper()
-        # Try Structure C
-        if not name:
-            for _rk in ("new_player", "player", "projection_player"):
-                _rd  = rel.get(_rk, {}).get("data", {})
-                _pid = str(_rd.get("id", "")) if isinstance(_rd, dict) else ""
-                if _pid and _pid in pmap:
-                    name = pmap[_pid]["name"]
-                    team = pmap[_pid]["team"]
-                    break
-
-        stat   = attrs.get("stat_type", "")
-        line   = attrs.get("line_score", 0)
-        status = attrs.get("status", "")
-        if team:
-            teams_seen.add(team)
-        if len(sample) < 30:
-            sample.append({"player": name or "(unknown)", "team": team or "(unknown)",
-                           "stat_type": stat, "line": line, "status": status})
-        if not name or not team:
-            parse_fail += 1
-
-    return {
-        "total_projections":     len(_pp_data),
-        "included_players_map":  len(pmap),
-        "unique_teams":          sorted(teams_seen),
-        "parse_failures":        parse_fail,
-        "nba_leagues_found":     nba_leagues,
-        "included_types":        inc_types,
-        "first_proj_attr_keys":  list(first_proj_attrs.keys()),
-        "first_proj_rel_keys":   list(first_proj_rels.keys()),
-        "sample_included_types": sample_included,
-        "sample_props":          sample,
-    }
+            except Exception as _e:
+                out.append({"team": team_abbr, "error": str(_e)})
+    return {"today": today_str, "game_count": len(raw_games), "teams": out}
 
 
 @app.get("/api/debug/espn-schedule")

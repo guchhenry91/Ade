@@ -159,6 +159,35 @@ def get_batter_season_stats(mlb_player_id: str | int) -> Dict[str, Any]:
         return {}
 
 
+def get_espn_team_roster(team_id: str) -> List[Dict]:
+    """Fetch MLB roster from ESPN team endpoint.
+
+    Returns list of {id, name, pos, jersey}.
+    """
+    data = espn_fetch("baseball", "mlb", f"teams/{team_id}/roster")
+    if not data:
+        return []
+    athletes_raw = data.get("athletes", [])
+    flat: List[Dict] = []
+    for item in athletes_raw:
+        if not isinstance(item, dict):
+            continue
+        if "items" in item:
+            flat.extend(item["items"])
+        elif item.get("id"):
+            flat.append(item)
+    result: List[Dict] = []
+    for p in flat:
+        pid     = str(p.get("id", ""))
+        name    = (p.get("displayName") or p.get("fullName") or "").strip()
+        pos_obj = p.get("position", {})
+        pos     = pos_obj.get("abbreviation", "") if isinstance(pos_obj, dict) else ""
+        jersey  = str(p.get("jersey", ""))
+        if pid and name:
+            result.append({"id": pid, "name": name, "pos": pos, "jersey": jersey})
+    return result
+
+
 def search_mlb_player(name: str) -> Optional[Dict]:
     """Find a player by name in MLB Stats API."""
     try:
