@@ -161,6 +161,480 @@ def fetch_player_props(sport: str, markets: str,
     return all_lines
 
 
+# ── build_sport_props — Odds API as single source of truth ────────────────────
+
+import math
+import requests as _requests
+from collections import defaultdict
+
+# Sport config: what markets to pull and how to label them
+_SPORT_CONFIG: Dict[str, Dict] = {
+    "nba": {
+        "sport_key": "basketball_nba",
+        "sport_label": "Basketball",
+        "league": "NBA",
+        "icon": "🏀",
+        "espn_path": "basketball/nba",
+        "primary_stat": "PTS",
+        "markets": ["player_points", "player_rebounds",
+                    "player_assists", "player_threes"],
+        "stat_map": {
+            "player_points":   "PTS",
+            "player_rebounds": "REB",
+            "player_assists":  "AST",
+            "player_threes":   "3PM",
+        },
+        "stat_labels": {
+            "PTS": "Points", "REB": "Rebounds",
+            "AST": "Assists", "3PM": "3-Pointers",
+        },
+    },
+    "mlb": {
+        "sport_key": "baseball_mlb",
+        "sport_label": "Baseball",
+        "league": "MLB",
+        "icon": "⚾",
+        "espn_path": "baseball/mlb",
+        "primary_stat": "hits",
+        "markets": ["batter_hits", "batter_total_bases", "batter_home_runs",
+                    "batter_rbis", "batter_runs_scored", "pitcher_strikeouts",
+                    "pitcher_innings_pitched"],
+        "stat_map": {
+            "batter_hits":             "hits",
+            "batter_total_bases":      "total_bases",
+            "batter_home_runs":        "home_runs",
+            "batter_rbis":             "rbi",
+            "batter_runs_scored":      "runs",
+            "pitcher_strikeouts":      "strikeouts",
+            "pitcher_innings_pitched": "innings",
+        },
+        "stat_labels": {
+            "hits": "Hits", "total_bases": "Total Bases",
+            "home_runs": "Home Runs", "rbi": "RBI",
+            "runs": "Runs", "strikeouts": "Strikeouts",
+            "innings": "Innings Pitched",
+        },
+    },
+    "nhl": {
+        "sport_key": "icehockey_nhl",
+        "sport_label": "Ice Hockey",
+        "league": "NHL",
+        "icon": "🏒",
+        "espn_path": "hockey/nhl",
+        "primary_stat": "shots",
+        "markets": ["player_points", "player_shots_on_goal",
+                    "player_goals", "player_assists"],
+        "stat_map": {
+            "player_points":        "points",
+            "player_shots_on_goal": "shots",
+            "player_goals":         "goals",
+            "player_assists":       "assists",
+        },
+        "stat_labels": {
+            "points": "Points", "shots": "Shots on Goal",
+            "goals": "Goals", "assists": "Assists",
+        },
+    },
+}
+
+# Full team name → abbreviation (NBA, MLB, NHL combined)
+_TEAM_ABBR: Dict[str, str] = {
+    # NBA
+    "Atlanta Hawks": "ATL", "Boston Celtics": "BOS",
+    "Brooklyn Nets": "BKN", "Charlotte Hornets": "CHA",
+    "Chicago Bulls": "CHI", "Cleveland Cavaliers": "CLE",
+    "Dallas Mavericks": "DAL", "Denver Nuggets": "DEN",
+    "Detroit Pistons": "DET", "Golden State Warriors": "GSW",
+    "Houston Rockets": "HOU", "Indiana Pacers": "IND",
+    "LA Clippers": "LAC", "Los Angeles Clippers": "LAC",
+    "LA Lakers": "LAL", "Los Angeles Lakers": "LAL",
+    "Memphis Grizzlies": "MEM", "Miami Heat": "MIA",
+    "Milwaukee Bucks": "MIL", "Minnesota Timberwolves": "MIN",
+    "New Orleans Pelicans": "NOP", "New York Knicks": "NYK",
+    "Oklahoma City Thunder": "OKC", "Orlando Magic": "ORL",
+    "Philadelphia 76ers": "PHI", "Phoenix Suns": "PHX",
+    "Portland Trail Blazers": "POR", "Sacramento Kings": "SAC",
+    "San Antonio Spurs": "SAS", "Toronto Raptors": "TOR",
+    "Utah Jazz": "UTA", "Washington Wizards": "WAS",
+}
+
+_ROSTER_CACHE: Dict[str, Tuple[set, float]] = {}
+_ROSTER_LOCK = threading.Lock()
+_ROSTER_TTL = 86400  # 24 h
+
+
+def _get_team_roster_names(espn_path: str, team_full_name: str) -> set:
+    """Return set of player display names for a team via ESPN roster endpoint.
+
+    Results cached 24 h in-process. On any error returns empty set.
+    """
+    cache_key = f"{espn_path}|{team_full_name}"
+    now = time.time()
+    with _ROSTER_LOCK:
+        cached = _ROSTER_CACHE.get(cache_key)
+        if cached:
+            names, expires = cached
+            if now < expires:
+                return names
+
+    names: set = set()
+    try:
+        # Step 1: find team ID
+        teams_data = fetch(
+            f"https://site.api.espn.com/apis/site/v2/sports/{espn_path}/teams",
+            params={"limit": 40},
+            timeout=8,
+        )
+        if not teams_data:
+            return names
+
+        team_id = None
+        team_lower = team_full_name.lower()
+        for sport in teams_data.get("sports", [teams_data]):
+            for league in sport.get("leagues", [sport]):
+                for t in league.get("teams", []):
+                    info = t.get("team", t)
+                    display = (info.get("displayName") or "").lower()
+                    if team_lower in display or display in team_lower:
+                        team_id = info.get("id")
+                        break
+                if team_id:
+                    break
+            if team_id:
+                break
+
+        if not team_id:
+            return names
+
+        # Step 2: fetch roster
+        roster_data = fetch(
+            f"https://site.api.espn.com/apis/site/v2/sports/{espn_path}"
+            f"/teams/{team_id}/roster",
+            timeout=8,
+        )
+        if not roster_data:
+            return names
+
+        for group in roster_data.get("athletes", []):
+            if isinstance(group, dict):
+                items = group.get("items", [group])
+                for item in items:
+                    if isinstance(item, dict):
+                        name = item.get("displayName", "")
+                        if name:
+                            names.add(name)
+
+        print(f"[ROSTER] {team_full_name}: {len(names)} players")
+    except Exception as e:
+        logger.debug("Roster fetch failed %s: %s", team_full_name, e)
+
+    with _ROSTER_LOCK:
+        _ROSTER_CACHE[cache_key] = (names, now + _ROSTER_TTL)
+    return names
+
+
+def _assign_to_team(player_name: str,
+                    home_team: str, home_abbr: str, home_roster: set,
+                    away_team: str, away_abbr: str, away_roster: set) -> str:
+    """Assign a player to home or away abbr using roster fuzzy matching."""
+    if player_name in home_roster:
+        return home_abbr
+    if player_name in away_roster:
+        return away_abbr
+    # Last-name match
+    last = player_name.split()[-1].lower()
+    for n in home_roster:
+        if n.split()[-1].lower() == last:
+            return home_abbr
+    for n in away_roster:
+        if n.split()[-1].lower() == last:
+            return away_abbr
+    # Substring match
+    pl = player_name.lower()
+    for n in home_roster:
+        if pl in n.lower() or n.lower() in pl:
+            return home_abbr
+    for n in away_roster:
+        if pl in n.lower() or n.lower() in pl:
+            return away_abbr
+    return home_abbr  # default to home
+
+
+def _team_abbr(team_full_name: str) -> str:
+    """Convert full team name to short abbreviation."""
+    if team_full_name in _TEAM_ABBR:
+        return _TEAM_ABBR[team_full_name]
+    words = team_full_name.upper().split()
+    return words[-1][:3] if words else "UNK"
+
+
+def _build_prop_card(stat: str, line: float,
+                     stat_labels: Dict[str, str], sport: str) -> Dict:
+    """Build a single prop card from an Odds API line.
+
+    Confidence is computed from line context (no historical data available).
+    Bookmakers set lines at ~50/50; we lean slightly OVER since lines
+    are typically set just below the player's true average.
+    """
+    # Special binary events: Poisson estimate
+    if sport == "nhl" and stat == "goals":
+        est_gpg = line * 0.65
+        over_p = max(0.15, min(0.60, 1.0 - math.exp(-est_gpg)))
+    elif sport == "mlb" and stat == "home_runs":
+        est_hrpg = line * 0.55
+        over_p = max(0.10, min(0.48, 1.0 - math.exp(-est_hrpg)))
+    else:
+        over_p = 0.54  # slight lean to over
+
+    under_p = 1.0 - over_p
+    pick    = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
+    best    = max(over_p, under_p)
+    conf_pct = round(best * 100, 1)
+
+    if conf_pct >= 85:
+        stars, conf_label = 5, "Elite Pick"
+    elif conf_pct >= 78:
+        stars, conf_label = 4, "Strong Pick"
+    elif conf_pct >= 68:
+        stars, conf_label = 3, "Good Pick"
+    elif conf_pct >= 58:
+        stars, conf_label = 2, "Moderate"
+    else:
+        stars, conf_label = 1, "Use Caution"
+
+    # Map conf_pct to legacy confidence string for template compatibility
+    if best >= 0.78:
+        conf_str = "HIGH"
+    elif best >= 0.62:
+        conf_str = "MEDIUM"
+    else:
+        conf_str = "LOW"
+
+    return {
+        "stat":           stat,
+        "label":          stat_labels.get(stat, stat),
+        "line":           line,
+        "avg":            line,       # use line as season-avg reference
+        "over_prob":      round(over_p  * 100, 1),
+        "under_prob":     round(under_p * 100, 1),
+        "pick":           pick,
+        "confidence":     conf_str,
+        "stars":          stars,
+        "conf_label":     conf_label,
+        "last5_avg":      None,
+        "last10_avg":     None,
+        "hit_over_last5": None,
+        "trend":          "→",
+    }
+
+
+def _fetch_h2h_probs(sport_key: str) -> Dict[str, Dict[str, float]]:
+    """Fetch h2h win probabilities. Returns {f"{home}|{away}": {home: %, away: %}}."""
+    api_key = _key()
+    if not api_key:
+        return {}
+
+    data = fetch(
+        f"{ODDS_BASE}/sports/{sport_key}/odds",
+        params={
+            "apiKey": api_key,
+            "regions": "us",
+            "markets": "h2h",
+            "oddsFormat": "american",
+        },
+        use_cache=False,
+        timeout=12,
+    )
+    if not data or not isinstance(data, list):
+        return {}
+
+    result: Dict[str, Dict[str, float]] = {}
+    for game in data:
+        home = game.get("home_team", "")
+        away = game.get("away_team", "")
+        for bm in game.get("bookmakers", [])[:1]:
+            for market in bm.get("markets", []):
+                if market.get("key") != "h2h":
+                    continue
+                probs: Dict[str, float] = {}
+                for outcome in market.get("outcomes", []):
+                    team  = outcome.get("name", "")
+                    price = float(outcome.get("price", 0) or 0)
+                    if price > 0:
+                        prob = 100 / (price + 100)
+                    elif price < 0:
+                        prob = abs(price) / (abs(price) + 100)
+                    else:
+                        prob = 0.5
+                    probs[team] = round(prob * 100, 1)
+                if probs:
+                    result[f"{home}|{away}"] = probs
+    return result
+
+
+def build_sport_props(sport_name: str, ttl: int = 900) -> list:
+    """Build all prop cards for a sport using ONLY the Odds API.
+
+    Returns list of game dicts each containing:
+        home_team, away_team, home_abbr, away_abbr,
+        home_prob, away_prob,
+        home_roster, away_roster (list of player card dicts),
+        sport, league, sport_icon, kickoff, status.
+
+    Player cards: {name, pos, pts, props[]}
+    Prop cards:   {stat, label, line, avg, over_prob, under_prob,
+                   pick, confidence, stars, conf_label, trend, ...}
+    """
+    cfg = _SPORT_CONFIG.get(sport_name)
+    if not cfg:
+        logger.warning("build_sport_props: unknown sport %s", sport_name)
+        return []
+
+    sport_key  = cfg["sport_key"]
+    espn_path  = cfg["espn_path"]
+    markets    = cfg["markets"]
+    stat_map   = cfg["stat_map"]
+    stat_labels = cfg["stat_labels"]
+    primary    = cfg["primary_stat"]
+    api_key    = _key()
+
+    if not api_key:
+        logger.warning("[ODDS] ODDS_API_KEY not set — no props for %s", sport_name)
+        return []
+
+    # Step 1: get events
+    events = fetch(
+        f"{ODDS_BASE}/sports/{sport_key}/events",
+        params={"apiKey": api_key, "dateFormat": "iso"},
+        use_cache=False,
+        timeout=12,
+    )
+    if not events or not isinstance(events, list):
+        print(f"[ODDS] No events for {sport_name}")
+        return []
+    print(f"[ODDS] {sport_name}: {len(events)} events")
+
+    # Step 2: h2h win probabilities
+    h2h_probs = _fetch_h2h_probs(sport_key)
+
+    games: list = []
+    markets_str = ",".join(markets)
+
+    for event in events[:15]:
+        event_id  = event.get("id", "")
+        home_team = event.get("home_team", "")
+        away_team = event.get("away_team", "")
+        if not home_team or not away_team:
+            continue
+
+        # Win probabilities from h2h odds
+        probs    = h2h_probs.get(f"{home_team}|{away_team}", {})
+        home_prob = probs.get(home_team, 50.0)
+        away_prob = probs.get(away_team, 100.0 - home_prob)
+
+        # Step 3: player props for this game
+        props_data = fetch(
+            f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
+            params={
+                "apiKey":     api_key,
+                "regions":    "us",
+                "markets":    markets_str,
+                "bookmakers": "draftkings,fanduel,betmgm",
+                "oddsFormat": "american",
+            },
+            use_cache=False,
+            timeout=10,
+        )
+        if not props_data or not isinstance(props_data, dict):
+            continue
+
+        # player_name → {stat: line}  (first bookmaker wins)
+        player_lines: Dict[str, Dict[str, float]] = defaultdict(dict)
+        for bookmaker in props_data.get("bookmakers", [])[:2]:
+            for market in bookmaker.get("markets", []):
+                mk   = market.get("key", "")
+                stat = stat_map.get(mk)
+                if not stat:
+                    continue
+                for outcome in market.get("outcomes", []):
+                    if outcome.get("name") != "Over":
+                        continue
+                    player = outcome.get("description", "")
+                    line   = outcome.get("point")
+                    if player and line is not None and stat not in player_lines[player]:
+                        player_lines[player][stat] = float(line)
+
+        if not player_lines:
+            print(f"[ODDS] {home_team} vs {away_team}: no props")
+            continue
+
+        print(f"[ODDS] {home_team} vs {away_team}: {len(player_lines)} players")
+
+        # Step 4: get ESPN rosters to assign players to teams
+        home_roster_names = _get_team_roster_names(espn_path, home_team)
+        away_roster_names = _get_team_roster_names(espn_path, away_team)
+
+        home_abbr = _team_abbr(home_team)
+        away_abbr = _team_abbr(away_team)
+
+        home_players: list = []
+        away_players: list = []
+
+        for player_name, lines in player_lines.items():
+            if not lines:
+                continue
+            team_abbr = _assign_to_team(
+                player_name,
+                home_team, home_abbr, home_roster_names,
+                away_team, away_abbr, away_roster_names,
+            )
+            props = [
+                _build_prop_card(stat, line, stat_labels, sport_name)
+                for stat, line in lines.items()
+            ]
+            primary_val = lines.get(primary, 0.0)
+            card = {
+                "name":  player_name,
+                "pos":   "",
+                "pts":   primary_val,   # used for sort; field name kept for template compat
+                "props": props,
+            }
+            if team_abbr == home_abbr:
+                home_players.append(card)
+            else:
+                away_players.append(card)
+
+        # Sort by primary stat descending
+        home_players.sort(key=lambda p: p["pts"], reverse=True)
+        away_players.sort(key=lambda p: p["pts"], reverse=True)
+
+        games.append({
+            "sport":      cfg["sport_label"],
+            "league":     cfg["league"],
+            "sport_icon": cfg["icon"],
+            "home_team":  home_team,
+            "away_team":  away_team,
+            "home_abbr":  home_abbr,
+            "away_abbr":  away_abbr,
+            "home_prob":  home_prob,
+            "away_prob":  away_prob,
+            "home_roster": home_players[:12],
+            "away_roster": away_players[:12],
+            "kickoff":    event.get("commence_time", ""),
+            "status":     "STATUS_SCHEDULED",
+            "spread":     None,
+            "over_under": None,
+            "bookmaker":  "",
+            "book_home_ml": None,
+            "book_away_ml": None,
+            "book_home_spread": None,
+            "book_total": None,
+        })
+
+    print(f"[ODDS] {sport_name}: {len(games)} games with players")
+    return games
+
+
 def get_sport_odds(sport: str, regions: str = "us,uk") -> List[Dict]:
     """
     Fetch upcoming game odds for a sport from The Odds API.

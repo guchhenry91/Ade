@@ -19,7 +19,6 @@ from typing import Dict, List, Optional
 
 from data.nba_data import (
     get_games, get_team_net_rating,
-    get_espn_athlete_id, get_espn_player_stats,
 )
 from utils.stats import (
     nba_win_prob, shot_attempt_over_under, threept_made_ou,
@@ -188,13 +187,11 @@ class NBAModel:
         Generate O/U props for a player given ESPN athlete_id and a dict of lines:
           prop_lines = {"pts": 22.5, "reb": 7.5, "ast": 4.5, "3pm": 2.5}
         """
-        espn_stats = get_espn_player_stats(athlete_id) if athlete_id else {}
-
         stat_map = {
-            "pts": float(espn_stats.get("pts", NBA_LEAGUE_AVG["ppg"])),
-            "reb": float(espn_stats.get("reb", NBA_LEAGUE_AVG["rpg"])),
-            "ast": float(espn_stats.get("ast", NBA_LEAGUE_AVG["apg"])),
-            "3pm": float(espn_stats.get("fg3m", NBA_LEAGUE_AVG["3pm"])),
+            "pts": NBA_LEAGUE_AVG["ppg"],
+            "reb": NBA_LEAGUE_AVG["rpg"],
+            "ast": NBA_LEAGUE_AVG["apg"],
+            "3pm": NBA_LEAGUE_AVG["3pm"],
         }
 
         signals = []
@@ -235,11 +232,8 @@ class NBAModel:
                     player_name, stat, avg, line, mo.get(stat))
             return signals
 
-        athlete_id = get_espn_athlete_id(player_name)
-        if not athlete_id:
-            logger.warning("ESPN: player not found: %s", player_name)
-            return []
-        return self.player_props_by_id(athlete_id, player_name,
+        # ESPN player lookup removed — use league averages as fallback
+        return self.player_props_by_id(None, player_name,
                                        prop_lines, market_odds)
 
     # ── Season average O/U (long-term) ──────────────────────────────────────
@@ -262,10 +256,7 @@ class NBAModel:
 
         for i, athlete_id in enumerate(player_ids):
             name = player_names[i] if i < len(player_names) else str(athlete_id)
-            espn_stats = get_espn_player_stats(athlete_id)
-            if not espn_stats:
-                continue
-            current_avg = float(espn_stats.get(stat_key, 0))
+            current_avg = float(NBA_LEAGUE_AVG.get(stat, 10.0))
             if current_avg < 0.5:
                 continue
             # Bayesian shrinkage toward league mean (assume 60 games played)
