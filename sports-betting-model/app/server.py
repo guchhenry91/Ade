@@ -294,6 +294,13 @@ def _build_nba_games(today_str: str) -> list:
 
         print(f"[NBA] {team_abbr}: {len(roster)} players on ESPN roster")
 
+        # Position-based per-game defaults when ESPN stats unavailable
+        _POS_DEFAULTS = {
+            "PG": (10.0, 3.0, 4.5, 1.5), "SG": (10.0, 3.0, 2.5, 1.5),
+            "SF": (9.0,  4.5, 2.0, 1.0), "PF": (8.5,  5.5, 1.5, 0.5),
+            "C":  (8.0,  7.0, 1.5, 0.2),
+        }
+
         def _fetch_one(player: dict) -> dict | None:
             pid  = player.get("id", "")
             name = player.get("name", "")
@@ -302,18 +309,32 @@ def _build_nba_games(today_str: str) -> list:
                 return None
             try:
                 season_stats = get_espn_player_stats(pid) or {}
-                # Skip players with essentially no stats (injured/inactive)
-                pts = float(season_stats.get("pts", 0))
-                if pts < 1.0 and float(season_stats.get("reb", 0)) < 1.0:
-                    return None
-                game_logs = get_espn_player_logs(pid)
+                game_logs    = get_espn_player_logs(pid)
+
+                pts  = float(season_stats.get("pts",  0))
+                reb  = float(season_stats.get("reb",  0))
+                ast  = float(season_stats.get("ast",  0))
+                fg3m = float(season_stats.get("fg3m", 0))
+
+                # If ESPN stats returned empty, compute from game logs
+                if pts == 0 and reb == 0 and game_logs:
+                    n = len(game_logs)
+                    pts  = round(sum(g.get("pts",  0) for g in game_logs) / n, 1)
+                    reb  = round(sum(g.get("reb",  0) for g in game_logs) / n, 1)
+                    ast  = round(sum(g.get("ast",  0) for g in game_logs) / n, 1)
+                    fg3m = round(sum(g.get("fg3m", 0) for g in game_logs) / n, 1)
+
+                # Last resort: position-based defaults so roster players always show
+                if pts == 0 and reb == 0:
+                    pts, reb, ast, fg3m = _POS_DEFAULTS.get(pos.upper(), (8.0, 4.0, 2.0, 1.0))
+
                 return {
                     "name":      name,
                     "pos":       pos,
                     "pts":       pts,
-                    "reb":       float(season_stats.get("reb",  0)),
-                    "ast":       float(season_stats.get("ast",  0)),
-                    "fg3m":      float(season_stats.get("fg3m", 0)),
+                    "reb":       reb,
+                    "ast":       ast,
+                    "fg3m":      fg3m,
                     "player_id": pid,
                     "_logs":     game_logs,
                 }

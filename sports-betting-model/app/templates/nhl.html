@@ -1,6 +1,31 @@
 {% extends "base.html" %}
 {% block title %}NHL Props – BetModel Pro{% endblock %}
 
+{% block head %}
+<style>
+.pick-filter-bar {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 6px 0 10px;
+}
+.pick-tab {
+  padding: 5px 13px; border-radius: 20px; font-size: 12px;
+  font-weight: 700; cursor: pointer; border: 1px solid var(--border);
+  background: transparent; color: var(--txt2); transition: all .15s;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.pick-tab:hover { border-color: var(--accent); color: var(--accent); }
+.pick-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+.pick-tab-over.active  { background: var(--over);  color: #000; border-color: var(--over); }
+.pick-tab-under.active { background: var(--under); color: #fff; border-color: var(--under); }
+.pick-tab-fair.active  { background: #666; color: #fff; border-color: #666; }
+.pick-count { font-size: 10px; opacity: 0.75; }
+@media (max-width: 640px) {
+  .pick-filter-bar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .pick-filter-bar::-webkit-scrollbar { display: none; }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <!-- Page header -->
 <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
@@ -31,6 +56,14 @@
   {% endfor %}
 </div>
 
+<!-- Pick direction filter -->
+<div class="pick-filter-bar" id="nhl-pick-filter">
+  <button class="pick-tab active" data-pick="all">All <span class="pick-count" id="nhl-cnt-all"></span></button>
+  <button class="pick-tab pick-tab-over" data-pick="OVER">▲ OVER <span class="pick-count" id="nhl-cnt-over"></span></button>
+  <button class="pick-tab pick-tab-under" data-pick="UNDER">▼ UNDER <span class="pick-count" id="nhl-cnt-under"></span></button>
+  <button class="pick-tab pick-tab-fair" data-pick="FAIR">◆ FAIR <span class="pick-count" id="nhl-cnt-fair"></span></button>
+</div>
+
 {% if total_players == 0 %}
 <div class="card" style="padding:64px;text-align:center;">
   <div style="font-size:48px;margin-bottom:12px;">🏒</div>
@@ -52,8 +85,8 @@
 {% set stat_key = (pr.get('stat', p.get('stat','')) or '')|lower|replace(' ','-') %}
 
 <div class="prop-card {% if pick=='OVER' %}over-card{% elif pick=='UNDER' %}under-card{% else %}fair-card{% endif %}"
-     data-group="nhl" data-stat="{{ stat_key }}"
-     data-conf="{{ conf_pct }}" data-stars="{{ stars_n }}">
+     data-group="nhl" data-stat="{{ stat_key }}" data-pick="{{ pick }}"
+     data-team="{{ p.get('team','') }}" data-conf="{{ conf_pct }}" data-stars="{{ stars_n }}">
 
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
     <div>
@@ -159,6 +192,58 @@
 
 {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', () => { initFilters('nhl'); });
+(function() {
+  let activeStatFilter = 'all';
+  let activePickFilter = 'all';
+
+  function applyNHLFilters() {
+    const sf = activeStatFilter;
+    const pf = activePickFilter;
+    let counts = {all: 0, OVER: 0, UNDER: 0, FAIR: 0};
+
+    document.querySelectorAll('#nhl-grid .prop-card').forEach(card => {
+      const statOk = sf === 'all' || card.dataset.stat === sf;
+      const pickOk = pf === 'all' || card.dataset.pick === pf;
+      const show = statOk && pickOk;
+      card.style.display = show ? '' : 'none';
+      if (show) {
+        counts.all++;
+        const p = card.dataset.pick;
+        if (p) counts[p] = (counts[p] || 0) + 1;
+      }
+    });
+
+    const ids = {all: 'nhl-cnt-all', OVER: 'nhl-cnt-over', UNDER: 'nhl-cnt-under', FAIR: 'nhl-cnt-fair'};
+    Object.entries(ids).forEach(([k, id]) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = `(${counts[k] || 0})`;
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Stat filter
+    document.querySelectorAll('.filter-btn[data-group="nhl"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn[data-group="nhl"]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeStatFilter = btn.dataset.filter;
+        applyNHLFilters();
+      });
+    });
+
+    // Pick direction filter
+    document.querySelectorAll('#nhl-pick-filter .pick-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#nhl-pick-filter .pick-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activePickFilter = btn.dataset.pick;
+        applyNHLFilters();
+      });
+    });
+
+    // Initial count update
+    applyNHLFilters();
+  });
+})();
 </script>
 {% endblock %}

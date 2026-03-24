@@ -83,6 +83,28 @@
   .filter-bar::-webkit-scrollbar { display: none; }
 }
 
+/* ── Pick filter bar ── */
+.pick-filter-bar {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 6px 0 10px;
+}
+.pick-tab {
+  padding: 5px 13px; border-radius: 20px; font-size: 12px;
+  font-weight: 700; cursor: pointer; border: 1px solid var(--border);
+  background: transparent; color: var(--txt2); transition: all .15s;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.pick-tab:hover { border-color: var(--accent); color: var(--accent); }
+.pick-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+.pick-tab-over.active  { background: var(--over);  color: #000; border-color: var(--over); }
+.pick-tab-under.active { background: var(--under); color: #fff; border-color: var(--under); }
+.pick-tab-fair.active  { background: #666; color: #fff; border-color: #666; }
+.pick-count { font-size: 10px; opacity: 0.75; }
+@media (max-width: 640px) {
+  .pick-filter-bar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .pick-filter-bar::-webkit-scrollbar { display: none; }
+}
+
 /* ── Live soon badge ── */
 .badge-live-soon {
   font-size: 10px; font-weight: 700; padding: 2px 8px;
@@ -156,6 +178,14 @@
     <span style="font-size:11px;color:var(--txt2);">Sort:</span>
     <button class="filter-btn" onclick="sortByConf()">★ Confidence</button>
   </div>
+</div>
+
+<!-- Pick direction filter -->
+<div class="pick-filter-bar" id="nba-pick-filter">
+  <button class="pick-tab active" data-pick="all">All <span class="pick-count" id="nba-cnt-all"></span></button>
+  <button class="pick-tab pick-tab-over" data-pick="OVER">▲ OVER <span class="pick-count" id="nba-cnt-over"></span></button>
+  <button class="pick-tab pick-tab-under" data-pick="UNDER">▼ UNDER <span class="pick-count" id="nba-cnt-under"></span></button>
+  <button class="pick-tab pick-tab-fair" data-pick="FAIR">◆ FAIR <span class="pick-count" id="nba-cnt-fair"></span></button>
 </div>
 
 {% if total == 0 %}
@@ -273,7 +303,7 @@
       {% for pr in p.props %}
       {% set conf_pct = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
       {% set pick = pr.pick %}
-      <div class="stat-section" data-stat="{{ pr.stat|lower }}">
+      <div class="stat-section" data-stat="{{ pr.stat|lower }}" data-pick="{{ pr.pick }}">
 
         <div class="stat-top">
           <div>
@@ -342,7 +372,7 @@
   </div>
   {% else %}
   <div style="padding:12px 16px;color:var(--txt3);font-size:12px;">
-    No PrizePicks props available for {{ abbr }} tonight.
+    No props available for {{ abbr }} tonight.
   </div>
   {% endif %}
   {% endfor %}
@@ -355,56 +385,89 @@
 
 {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  // ── Stat-type filter ──────────────────────────────────────────────────────
-  document.querySelectorAll('.filter-btn[data-group="nba"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.filter-btn[data-group="nba"]').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const filter = btn.dataset.filter;
-      document.querySelectorAll('.player-card[data-group="nba"]').forEach(card => {
-        if (filter === 'all') {
-          card.style.display = '';
-          card.querySelectorAll('.stat-section').forEach(s => s.style.display = '');
-        } else {
-          const stats = (card.dataset.stats || '').split(' ').filter(Boolean);
-          if (stats.includes(filter)) {
+(function() {
+  let activeStatFilter = 'all';
+  let activePickFilter = 'all';
+
+  function applyNBAFilters() {
+    const sf = activeStatFilter;
+    const pf = activePickFilter;
+    let counts = {all: 0, OVER: 0, UNDER: 0, FAIR: 0};
+
+    document.querySelectorAll('.player-card[data-group="nba"]').forEach(card => {
+      let visible = 0;
+      card.querySelectorAll('.stat-section').forEach(sec => {
+        const statOk = sf === 'all' || sec.dataset.stat === sf;
+        const pickOk = pf === 'all' || sec.dataset.pick === pf;
+        const show = statOk && pickOk;
+        sec.style.display = show ? '' : 'none';
+        if (show) {
+          visible++;
+          counts.all++;
+          const p = sec.dataset.pick;
+          if (p) counts[p] = (counts[p] || 0) + 1;
+        }
+      });
+      card.style.display = visible > 0 ? '' : 'none';
+    });
+
+    // Update count badges
+    const ids = {all: 'nba-cnt-all', OVER: 'nba-cnt-over', UNDER: 'nba-cnt-under', FAIR: 'nba-cnt-fair'};
+    Object.entries(ids).forEach(([k, id]) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = `(${counts[k] || 0})`;
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // ── Stat-type filter ────────────────────────────────────────────────────
+    document.querySelectorAll('.filter-btn[data-group="nba"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn[data-group="nba"]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeStatFilter = btn.dataset.filter;
+        applyNBAFilters();
+      });
+    });
+
+    // ── Pick direction filter ───────────────────────────────────────────────
+    document.querySelectorAll('#nba-pick-filter .pick-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#nba-pick-filter .pick-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activePickFilter = btn.dataset.pick;
+        applyNBAFilters();
+      });
+    });
+
+    // ── Team filter tabs ────────────────────────────────────────────────────
+    document.querySelectorAll('.team-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.team-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const team = tab.dataset.team;
+        document.querySelectorAll('.game-card').forEach(card => {
+          if (team === 'all') {
             card.style.display = '';
-            card.querySelectorAll('.stat-section').forEach(s => {
-              s.style.display = (s.dataset.stat === filter) ? '' : 'none';
-            });
           } else {
-            card.style.display = 'none';
+            const teams = (card.dataset.teams || '').split(',');
+            card.style.display = teams.includes(team) ? '' : 'none';
           }
-        }
+        });
       });
     });
+
+    // Initial count update
+    applyNBAFilters();
   });
 
-  // ── Team filter tabs ──────────────────────────────────────────────────────
-  document.querySelectorAll('.team-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.team-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      const team = tab.dataset.team;
-      document.querySelectorAll('.game-card').forEach(card => {
-        if (team === 'all') {
-          card.style.display = '';
-        } else {
-          const teams = (card.dataset.teams || '').split(',');
-          card.style.display = teams.includes(team) ? '' : 'none';
-        }
-      });
+  window.sortByConf = function() {
+    document.querySelectorAll('[id^="nba-grid-"]').forEach(grid => {
+      const cards = Array.from(grid.querySelectorAll('.player-card'));
+      cards.sort((a, b) => parseFloat(b.dataset.conf || 0) - parseFloat(a.dataset.conf || 0));
+      cards.forEach(c => grid.appendChild(c));
     });
-  });
-});
-
-function sortByConf() {
-  document.querySelectorAll('[id^="nba-grid-"]').forEach(grid => {
-    const cards = Array.from(grid.querySelectorAll('.player-card'));
-    cards.sort((a, b) => parseFloat(b.dataset.conf || 0) - parseFloat(a.dataset.conf || 0));
-    cards.forEach(c => grid.appendChild(c));
-  });
-}
+  };
+})();
 </script>
 {% endblock %}

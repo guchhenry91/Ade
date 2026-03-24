@@ -20,6 +20,26 @@
                   scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .team-tab-bar::-webkit-scrollbar { display: none; }
 }
+.pick-filter-bar {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 6px 0 10px;
+}
+.pick-tab {
+  padding: 5px 13px; border-radius: 20px; font-size: 12px;
+  font-weight: 700; cursor: pointer; border: 1px solid var(--border);
+  background: transparent; color: var(--txt2); transition: all .15s;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.pick-tab:hover { border-color: var(--accent); color: var(--accent); }
+.pick-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+.pick-tab-over.active  { background: var(--over);  color: #000; border-color: var(--over); }
+.pick-tab-under.active { background: var(--under); color: #fff; border-color: var(--under); }
+.pick-tab-fair.active  { background: #666; color: #fff; border-color: #666; }
+.pick-count { font-size: 10px; opacity: 0.75; }
+@media (max-width: 640px) {
+  .pick-filter-bar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .pick-filter-bar::-webkit-scrollbar { display: none; }
+}
 </style>
 {% endblock %}
 
@@ -51,6 +71,14 @@
   <button class="filter-btn {% if loop.first %}active{% endif %}"
           data-group="mlb" data-filter="{{ val }}">{{ label }}</button>
   {% endfor %}
+</div>
+
+<!-- Pick direction filter -->
+<div class="pick-filter-bar" id="mlb-pick-filter">
+  <button class="pick-tab active" data-pick="all">All <span class="pick-count" id="mlb-cnt-all"></span></button>
+  <button class="pick-tab pick-tab-over" data-pick="OVER">▲ OVER <span class="pick-count" id="mlb-cnt-over"></span></button>
+  <button class="pick-tab pick-tab-under" data-pick="UNDER">▼ UNDER <span class="pick-count" id="mlb-cnt-under"></span></button>
+  <button class="pick-tab pick-tab-fair" data-pick="FAIR">◆ FAIR <span class="pick-count" id="mlb-cnt-fair"></span></button>
 </div>
 
 {% if total_players == 0 %}
@@ -89,7 +117,7 @@
 
 <div class="prop-card {% if pick=='OVER' %}over-card{% elif pick=='UNDER' %}under-card{% else %}fair-card{% endif %}"
      data-group="mlb" data-stat="{{ stat_key }}" data-team="{{ player_team }}"
-     data-conf="{{ conf_pct }}" data-stars="{{ stars_n }}">
+     data-pick="{{ pick }}" data-conf="{{ conf_pct }}" data-stars="{{ stars_n }}">
 
   <!-- Player name -->
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
@@ -186,24 +214,72 @@
 
 {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  initFilters('mlb');
+(function() {
+  let activeStatFilter = 'all';
+  let activePickFilter = 'all';
+  let activeTeamFilter = 'all';
 
-  // Team filter tabs
-  document.querySelectorAll('#mlb-team-tabs .team-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('#mlb-team-tabs .team-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      const team = tab.dataset.team;
-      document.querySelectorAll('#mlb-grid .prop-card').forEach(card => {
-        if (team === 'all') {
-          card.style.display = '';
-        } else {
-          card.style.display = (card.dataset.team === team) ? '' : 'none';
-        }
+  function applyMLBFilters() {
+    const sf = activeStatFilter;
+    const pf = activePickFilter;
+    const tf = activeTeamFilter;
+    let counts = {all: 0, OVER: 0, UNDER: 0, FAIR: 0};
+
+    document.querySelectorAll('#mlb-grid .prop-card').forEach(card => {
+      const statOk = sf === 'all' || card.dataset.stat === sf;
+      const pickOk = pf === 'all' || card.dataset.pick === pf;
+      const teamOk = tf === 'all' || card.dataset.team === tf;
+      const show = statOk && pickOk && teamOk;
+      card.style.display = show ? '' : 'none';
+      if (show) {
+        counts.all++;
+        const p = card.dataset.pick;
+        if (p) counts[p] = (counts[p] || 0) + 1;
+      }
+    });
+
+    // Update count badges
+    const ids = {all: 'mlb-cnt-all', OVER: 'mlb-cnt-over', UNDER: 'mlb-cnt-under', FAIR: 'mlb-cnt-fair'};
+    Object.entries(ids).forEach(([k, id]) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = `(${counts[k] || 0})`;
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Stat filter
+    document.querySelectorAll('.filter-btn[data-group="mlb"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn[data-group="mlb"]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeStatFilter = btn.dataset.filter;
+        applyMLBFilters();
       });
     });
+
+    // Pick direction filter
+    document.querySelectorAll('#mlb-pick-filter .pick-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#mlb-pick-filter .pick-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activePickFilter = btn.dataset.pick;
+        applyMLBFilters();
+      });
+    });
+
+    // Team filter
+    document.querySelectorAll('#mlb-team-tabs .team-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('#mlb-team-tabs .team-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        activeTeamFilter = tab.dataset.team;
+        applyMLBFilters();
+      });
+    });
+
+    // Initial count update
+    applyMLBFilters();
   });
-});
+})();
 </script>
 {% endblock %}

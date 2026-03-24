@@ -4,10 +4,22 @@ Calculates OVER/UNDER probabilities for pitcher strikeouts,
 batter hits, total bases, home runs, RBIs, and runs.
 """
 from __future__ import annotations
+import math
 import logging
 from typing import Dict, List, Optional, Tuple
 
 from utils.stats import shot_attempt_over_under, confidence_label
+
+
+def _poisson_over(lam: float, line: float) -> float:
+    """P(X > line) for X ~ Poisson(lam). For line=0.5: P(X>=1) = 1-e^(-lam)."""
+    if lam <= 0:
+        return 0.05
+    if line <= 0.5:
+        return min(0.92, max(0.05, 1.0 - math.exp(-lam)))
+    k = int(math.ceil(line + 0.001))
+    cdf = sum(math.exp(-lam) * (lam ** i) / math.factorial(i) for i in range(k))
+    return min(0.92, max(0.05, 1.0 - cdf))
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +32,13 @@ _PITCHER_MARKETS: List[Tuple[str, str, float, float]] = [
 _BATTER_MARKETS: List[Tuple[str, str, float, float]] = [
     ("Hits",        "hits_pg", 0.55, 0.30),
     ("Total Bases", "tb_pg",   0.50, 0.50),
-    ("Home Runs",   "hr_pg",   0.90, 0.05),   # ~3-4 HR/season minimum
+    ("Home Runs",   "hr_pg",   0.90, 0.20),   # ~32 HR/season minimum (Poisson model)
     ("RBI",         "rbi_pg",  0.65, 0.20),   # ~33 RBI/season minimum
     ("Runs",        "runs_pg", 0.60, 0.30),
 ]
+
+# Stats where Poisson is more accurate than normal dist (rare binary events per game)
+_POISSON_STATS = frozenset({"Home Runs", "RBI", "Hits", "Runs"})
 
 
 def build_pitcher_props(player: Dict) -> List[Dict]:
@@ -56,6 +71,7 @@ def build_pitcher_props(player: Dict) -> List[Dict]:
 def build_batter_props(player: Dict) -> List[Dict]:
     """Build prop cards for a batter from season-average stats.
     Supports '<stat>_line' override keys for market lines.
+    Uses Poisson model for rare binary events (HR, Hits, RBI, Runs) at line ≤ 0.5.
     """
     props: List[Dict] = []
     for label, key, std, min_avg in _BATTER_MARKETS:
@@ -65,7 +81,13 @@ def build_batter_props(player: Dict) -> List[Dict]:
         line_key = key[:-3] + "_line"  # "hits_pg" → "hits_line", "hr_pg" → "hr_line"
         raw_line = player.get(line_key)
         line     = float(raw_line) if raw_line else max(0.5, round(avg * 2) / 2 - 0.5)
-        over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
+
+        if label in _POISSON_STATS and line <= 0.5:
+            over_p  = _poisson_over(avg, line)
+            under_p = 1.0 - over_p
+        else:
+            over_p, under_p = shot_attempt_over_under(avg, line, std_factor=std)
+
         pick = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
         props.append({
             "stat":       label,
