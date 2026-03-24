@@ -22,7 +22,7 @@ import traceback
 import json
 import time as _time
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -68,28 +68,25 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 @app.on_event("startup")
 async def _startup_preload():
-    """Warm the cache in background so the first real request is fast."""
+    """Warm the cache in background so the first real request is fast.
+    Sports are loaded sequentially with 2s gaps to avoid Odds API rate limits.
+    """
     def _preload():
         today_str = date.today().strftime("%Y%m%d")
-        print("[STARTUP] Preloading NBA / MLB / NHL in background… (Odds API source)")
-        try:
-            with ThreadPoolExecutor(max_workers=3) as ex:
-                futs = {
-                    ex.submit(_build_nba_games, today_str): f"nba_{today_str}",
-                    ex.submit(_build_mlb_props, today_str): f"mlb_{today_str}",
-                    ex.submit(_build_nhl_props, today_str): f"nhl_{today_str}",
-                }
-                for fut in as_completed(futs):
-                    key = futs[fut]
-                    try:
-                        data = fut.result()
-                        with _CACHE_LOCK:
-                            _PAGE_CACHE[key] = (data, _time.time() + 600)
-                        print(f"[STARTUP] {key} preloaded OK")
-                    except Exception as _e:
-                        print(f"[STARTUP] {key} preload failed: {_e}")
-        except Exception as _e:
-            print(f"[STARTUP] Preload error: {_e}")
+        print("[STARTUP] Preloading NBA / MLB / NHL sequentially… (Odds API source)")
+        for key, fn in [
+            (f"nba_{today_str}", lambda: _build_nba_games(today_str)),
+            (f"mlb_{today_str}", lambda: _build_mlb_props(today_str)),
+            (f"nhl_{today_str}", lambda: _build_nhl_props(today_str)),
+        ]:
+            try:
+                data = fn()
+                with _CACHE_LOCK:
+                    _PAGE_CACHE[key] = (data, _time.time() + 600)
+                print(f"[STARTUP] {key} preloaded OK")
+            except Exception as _e:
+                print(f"[STARTUP] {key} preload failed: {_e}")
+            _time.sleep(2)  # 2s gap between sports to avoid rate limiting
     threading.Thread(target=_preload, daemon=True).start()
 
 
@@ -640,61 +637,120 @@ async def nhl_page(request: Request):
 
 @app.get("/api/debug/mlb-markets")
 async def debug_mlb_markets():
-    """Diagnostic: test each Odds API market for baseball_mlb to find which return data."""
+    """Redirect to generic debug route for backward compatibility."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/api/debug/markets/baseball_mlb")
+
+
+@app.get("/api/debug/markets/{sport_key}")
+async def debug_markets(sport_key: str):
+    """Diagnostic: test which player prop markets work for a given sport key.
+    Usage: /api/debug/markets/baseball_mlb
+           /api/debug/markets/icehockey_nhl
+           /api/debug/markets/basketball_nba
+    """
     import requests as _req
-    from data.odds_api import ODDS_BASE, _key, fetch
+    from data.odds_api import ODDS_BASE, _key
 
     api_key = _key()
     if not api_key:
         return {"error": "ODDS_API_KEY not set"}
 
     # Step 1: get events
-    events = fetch(
-        f"{ODDS_BASE}/sports/baseball_mlb/events",
-        params={"apiKey": api_key, "dateFormat": "iso"},
-        use_cache=False, timeout=12,
-    )
+    try:
+        events_r = _req.get(
+            f"{ODDS_BASE}/sports/{sport_key}/events",
+            params={"apiKey": api_key, "dateFormat": "iso"},
+            timeout=12,
+        )
+        events = events_r.json() if events_r.status_code == 200 else []
+    except Exception as e:
+        return {"error": str(e)}
+
     if not events or not isinstance(events, list):
-        return {"error": "no events found", "events_raw": repr(events)[:200]}
+        return {"sport": sport_key, "events": 0, "error": "No events found"}
 
     event = events[0]
     event_id = event.get("id", "")
     home = event.get("home_team", "")
     away = event.get("away_team", "")
 
-    markets_to_test = [
-        "batter_hits", "batter_total_bases", "batter_home_runs",
-        "batter_rbis", "batter_runs_scored", "pitcher_strikeouts",
-        "pitcher_innings_pitched", "player_hits", "player_total_bases",
-        "player_home_runs",
-    ]
+    # Step 2: get available bookmakers via h2h (always works)
+    try:
+        base_r = _req.get(
+            f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
+            params={"apiKey": api_key, "regions": "us", "markets": "h2h", "oddsFormat": "american"},
+            timeout=10,
+        )
+        available_bookmakers = [b["key"] for b in base_r.json().get("bookmakers", [])] if base_r.status_code == 200 else []
+    except Exception:
+        available_bookmakers = []
+
+    # Step 3: markets to test per sport
+    markets_to_test = {
+        "baseball_mlb": [
+            "batter_hits", "batter_total_bases", "batter_home_runs",
+            "batter_rbis", "batter_runs_scored", "pitcher_strikeouts",
+            "pitcher_innings_pitched", "batter_hits_runs_rbis",
+            "batter_doubles", "batter_singles",
+        ],
+        "icehockey_nhl": [
+            "player_points", "player_shots_on_goal", "player_assists",
+            "player_anytime_scorer", "player_first_goal_scorer",
+            "player_power_play_points", "player_blocked_shots", "player_goals",
+        ],
+        "basketball_nba": [
+            "player_points", "player_rebounds", "player_assists",
+            "player_threes", "player_blocks", "player_steals",
+            "player_points_rebounds_assists",
+        ],
+    }.get(sport_key, ["player_points", "player_goals", "player_shots"])
 
     results = {}
+    working = []
     for market in markets_to_test:
         try:
             r = _req.get(
-                f"{ODDS_BASE}/sports/baseball_mlb/events/{event_id}/odds",
-                params={"apiKey": api_key, "regions": "us",
-                        "markets": market, "bookmakers": "draftkings",
-                        "oddsFormat": "american"},
+                f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
+                params={
+                    "apiKey": api_key, "regions": "us",
+                    "markets": market, "oddsFormat": "american",
+                },
                 timeout=8,
             )
-            bk = r.json().get("bookmakers", []) if r.status_code == 200 else []
-            player_count = sum(
-                len([o for o in m.get("outcomes", []) if o.get("name") == "Over"])
-                for b in bk for m in b.get("markets", [])
-            )
-            results[market] = {"status": r.status_code, "bookmakers": len(bk), "players": player_count}
+            if r.status_code == 422:
+                results[market] = {"status": 422, "works": False, "reason": "Invalid market for this sport"}
+                continue
+            if r.status_code == 401:
+                return {"error": "Invalid API key"}
+            data = r.json()
+            bookmakers = data.get("bookmakers", [])
+            player_count = 0
+            sample_players = []
+            for bk in bookmakers[:1]:
+                for m in bk.get("markets", []):
+                    overs = [o for o in m.get("outcomes", []) if o.get("name") in ["Over", "Yes"]]
+                    player_count = len(overs)
+                    sample_players = [(o.get("description") or o.get("name", "")) for o in overs[:3]]
+            has_data = player_count > 0
+            if has_data:
+                working.append(market)
+            results[market] = {
+                "status": r.status_code, "works": has_data,
+                "player_count": player_count, "sample_players": sample_players,
+                "bookmakers_found": len(bookmakers),
+            }
         except Exception as e:
             results[market] = {"error": str(e)}
 
-    working = [m for m, v in results.items() if v.get("players", 0) > 0]
     return {
+        "sport": sport_key,
         "total_events": len(events),
-        "tested_game": f"{home} vs {away}",
+        "sample_game": f"{home} vs {away}",
         "event_id": event_id,
-        "markets": results,
+        "available_bookmakers": available_bookmakers,
         "working_markets": working,
+        "all_results": results,
     }
 
 

@@ -523,7 +523,11 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
     games: list = []
     markets_str = ",".join(markets)
 
-    for event in events[:15]:
+    for i, event in enumerate(events[:15]):
+        # Throttle: pause 500 ms every 3 requests to avoid 429 rate limits
+        if i > 0 and i % 3 == 0:
+            import time as _t; _t.sleep(0.5)
+
         event_id  = event.get("id", "")
         home_team = event.get("home_team", "")
         away_team = event.get("away_team", "")
@@ -535,14 +539,14 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
         home_prob = probs.get(home_team, 50.0)
         away_prob = probs.get(away_team, 100.0 - home_prob)
 
-        # Step 3: player props for this game
+        # Step 3: player props for this game — use regions=us without bookmakers
+        # filter so the API returns data from any US bookmaker that has the market.
         props_data = fetch(
             f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
             params={
                 "apiKey":     api_key,
                 "regions":    "us",
                 "markets":    markets_str,
-                "bookmakers": "draftkings,fanduel,betmgm",
                 "oddsFormat": "american",
             },
             use_cache=False,
