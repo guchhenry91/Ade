@@ -809,6 +809,30 @@ _STAT_DISPLAY_CAPS: Dict[str, int] = {
     "runs":                     3,
 }
 
+MAX_PER_STAT_DISPLAY: Dict[str, int] = {
+    "blocks":               1,
+    "steals":               1,
+    "player_blocked_shots": 1,
+    "pp_points":            2,
+    "double_double":        0,
+    "first_basket":         0,
+    "triple_double":        0,
+}
+
+
+def apply_display_stat_caps(props: List[Dict]) -> List[Dict]:
+    stat_counts: Dict[str, int] = {}
+    result = []
+    for p in props:
+        stat = p.get("stat", "")
+        cap = MAX_PER_STAT_DISPLAY.get(stat, 99)
+        count = stat_counts.get(stat, 0)
+        if count < cap:
+            result.append(p)
+            stat_counts[stat] = count + 1
+    return result
+
+
 # Sport-level prop caps  (min, max)
 _SPORT_PROP_CAPS: Dict[str, Tuple[int, int]] = {
     "nba": (12, 18),
@@ -1050,8 +1074,13 @@ def build_display_props(
             p_copy = {**p, "game": game_label}
             all_props.append(p_copy)
 
-    # Quality gate
-    playable = [p for p in all_props if is_playable_prop(p)]
+    # Quality gate + exclude plus money and heavy juice (-250 to -100 only)
+    playable = [
+        p for p in all_props
+        if is_playable_prop(p)
+        and p.get("price", 0) < 0
+        and p.get("price", -110) >= -250
+    ]
 
     # Rank (must happen before dedupe so we keep the best-ranked prop per player)
     playable.sort(key=prop_rank_score, reverse=True)
@@ -1091,7 +1120,10 @@ def build_display_props(
         f"{sum(1 for p in selected if p.get('pick')=='UNDER')} UNDER)"
     )
 
-    # Step 2: force OVER/UNDER balance (max 60% one side) then hard-cap to 15
+    # Step 2: hard stat caps (blocks=1, steals=1, novelty=0, etc.)
+    selected = apply_display_stat_caps(selected)
+
+    # Step 3: force OVER/UNDER balance (max 60% one side) then hard-cap to 15
     top_props = _balance_props(selected, target=15)
 
     # Debug: log final composition
@@ -1673,24 +1705,46 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
             )
 
             # top_props: max 2 per game via same diversity pipeline
+            _TOP_EXCL_STATS = {
+                "blocks", "steals", "player_blocked_shots",
+                "double_double", "first_basket", "triple_double",
+            }
             _per_game_playable = [p for p in all_game_props_clean if is_playable_prop(p)]
             _per_game_playable.sort(key=prop_rank_score, reverse=True)
             _per_game_deduped = dedupe_best_per_player(_per_game_playable)
             _per_game_deduped.sort(key=prop_rank_score, reverse=True)
-            top_props = _balance_game_props(_per_game_deduped, target=2)
-            print(f"[DEBUG] {away_abbr} @ {home_abbr}: "
-                  f"top_props={len(top_props)}, "
-                  f"all_clean={len(all_game_props_clean)}, "
-                  f"all_game={len(all_game_props)}")
-            # Fallback: if all filters left nothing, use best 2 raw props by score
+
+            # Tier-1: price -250 to -100, exclude low-signal stats
+            _top_filtered = [
+                p for p in _per_game_deduped
+                if p.get("price", 0) < 0
+                and p.get("price", -110) >= -250
+                and p.get("stat") not in _TOP_EXCL_STATS
+            ]
+            top_props = _balance_game_props(_top_filtered, target=2)
+
+            # Tier-2: price -250 to -100, any stat
             if not top_props:
-                fallback = sorted(
+                _top_price_only = [
+                    p for p in _per_game_deduped
+                    if p.get("price", 0) < 0
+                    and p.get("price", -110) >= -250
+                ]
+                top_props = _balance_game_props(_top_price_only, target=2)
+
+            # Tier-3: best 2 by score regardless of filters
+            if not top_props:
+                top_props = sorted(
                     all_game_props,
                     key=lambda x: x.get("score", 0),
                     reverse=True
                 )[:2]
-                top_props = fallback
                 print(f"[DEBUG] Used fallback for {away_abbr} @ {home_abbr}")
+
+            print(f"[DEBUG] {away_abbr} @ {home_abbr}: "
+                  f"top_props={len(top_props)}, "
+                  f"all_clean={len(all_game_props_clean)}, "
+                  f"all_game={len(all_game_props)}")
 
             # more_props: remaining clean props, excluding specialty/heavy juice, capped at 10
             _SPECIALTY_STATS = {"double_double", "first_basket", "triple_double"}
