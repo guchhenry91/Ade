@@ -230,10 +230,10 @@
     {% endfor %}
   </div>
   <div class="filter-row" id="nhl-pick-pills">
-    <button class="ppill active" data-pick="all">All <span class="badge" id="nhl-cnt-all"></span></button>
-    <button class="ppill over"   data-pick="OVER">▲ OVER <span class="badge" id="nhl-cnt-over"></span></button>
-    <button class="ppill under"  data-pick="UNDER">▼ UNDER <span class="badge" id="nhl-cnt-under"></span></button>
-    <button class="ppill fair"   data-pick="FAIR">↔ FAIR <span class="badge" id="nhl-cnt-fair"></span></button>
+    <button class="ppill active" data-pick="all">All <span class="badge" id="nhl-cnt-all" data-pick-count="all"></span></button>
+    <button class="ppill over"   data-pick="OVER">▲ OVER <span class="badge" id="nhl-cnt-over" data-pick-count="over"></span></button>
+    <button class="ppill under"  data-pick="UNDER">▼ UNDER <span class="badge" id="nhl-cnt-under" data-pick-count="under"></span></button>
+    <button class="ppill fair"   data-pick="FAIR">↔ FAIR <span class="badge" id="nhl-cnt-fair" data-pick-count="fair"></span></button>
   </div>
   <div class="filter-row" id="nhl-grade-pills">
     <button class="gpill active" data-grade="all">All Grade</button>
@@ -295,7 +295,7 @@
       {% if game.top_pick %}
       <span class="gh-top-prop">
         ⭐ {{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }}
-        {{ game.top_pick.label }} {{ game.top_pick.line }}
+        {{ game.top_pick.label or game.top_pick.stat or '' }} {{ game.top_pick.line }}
         <strong>{{ game.top_pick.confidence }}%</strong>
         <span class="grade-badge grade-{{ game.top_pick.grade }}">{{ game.top_pick.grade }}</span>
       </span>
@@ -327,7 +327,7 @@
     <div class="stat-row"
          data-stat="{{ pr.stat|lower }}"
          data-pick="{{ pr.pick }}"
-         data-grade="{{ pr.grade }}">
+         data-grade="{{ pr.grade or 'B' }}">
       <div class="sr-main">
         <span class="sr-label">{{ pr.label or pr.stat }}</span>
         <span class="sr-line">{{ pr.line }}</span>

@@ -176,9 +176,18 @@ def _ml_to_prob(ml) -> float:
 
 # ── Game-data builders (reused by today + sport pages) ───────────────────────
 
+def _normalize_games(games: list) -> list:
+    """Ensure top_pick dicts use player_name key (odds_api may use 'player')."""
+    for game in games:
+        tp = game.get("top_pick")
+        if isinstance(tp, dict) and "player_name" not in tp:
+            tp["player_name"] = tp.get("player", "")
+    return games
+
+
 def _build_nba_games(today_str: str) -> list:
     from data.odds_api import build_sport_props
-    return build_sport_props("nba")
+    return _normalize_games(build_sport_props("nba"))
 
 
 def _build_nfl_games() -> list:
@@ -674,13 +683,13 @@ async def today_page(request: Request):
 def _build_mlb_props(today_str: str) -> list:
     """Build MLB player props using Odds API as single source of truth."""
     from data.odds_api import build_sport_props
-    return build_sport_props("mlb")
+    return _normalize_games(build_sport_props("mlb"))
 
 
 def _build_nhl_props(today_str: str) -> list:
     """Build NHL player props using Odds API as single source of truth."""
     from data.odds_api import build_sport_props
-    return build_sport_props("nhl")
+    return _normalize_games(build_sport_props("nhl"))
 
 
 # ─────────────────────────────────────────────
