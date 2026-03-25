@@ -33,11 +33,14 @@ SPORT_KEYS: Dict[str, str] = {
 }
 
 # Player props market keys per sport
-NBA_PROP_MARKETS  = "player_points,player_rebounds,player_assists,player_threes"
-MLB_PROP_MARKETS  = ("batter_hits,batter_total_bases,batter_home_runs,"
-                     "batter_rbis,pitcher_strikeouts")
+NBA_PROP_MARKETS  = ("player_points,player_rebounds,player_assists,player_threes,"
+                     "player_blocks,player_steals,player_points_rebounds_assists")
+MLB_PROP_MARKETS  = ("batter_hits,batter_total_bases,batter_rbis,"
+                     "batter_runs_scored,pitcher_strikeouts,"
+                     "pitcher_hits_allowed,pitcher_earned_runs")
 NHL_PROP_MARKETS  = ("player_points,player_shots_on_goal,"
-                     "player_goals,player_assists")
+                     "player_assists,player_goals,"
+                     "player_power_play_points,player_blocked_shots")
 
 # Odds API market_key → our internal stat label (for lookup key construction)
 MARKET_STAT_MAP: Dict[str, str] = {
@@ -182,12 +185,13 @@ _SPORT_CONFIG: Dict[str, Dict] = {
         "espn_path": "basketball/nba",
         "primary_stat": "PTS",
         "markets": [
-            "player_points", "player_rebounds", "player_assists",
-            "player_threes", "player_blocks", "player_steals",
+            "player_points",
+            "player_rebounds",
+            "player_assists",
+            "player_threes",
+            "player_blocks",
+            "player_steals",
             "player_points_rebounds_assists",
-            "player_points_rebounds", "player_points_assists",
-            "player_rebounds_assists",
-            "player_first_basket", "player_double_double",
         ],
         "stat_map": {
             "player_points":                   "PTS",
@@ -212,11 +216,13 @@ _SPORT_CONFIG: Dict[str, Dict] = {
         "espn_path": "baseball/mlb",
         "primary_stat": "hits",
         "markets": [
-            "batter_hits", "batter_total_bases", "batter_home_runs",
-            "batter_rbis", "batter_runs_scored", "batter_hits_runs_rbis",
-            "batter_singles", "batter_stolen_bases",
-            "pitcher_strikeouts", "pitcher_hits_allowed",
-            "pitcher_earned_runs", "pitcher_outs",
+            "batter_hits",
+            "batter_total_bases",
+            "batter_rbis",
+            "batter_runs_scored",
+            "pitcher_strikeouts",
+            "pitcher_hits_allowed",
+            "pitcher_earned_runs",
         ],
         "stat_map": {
             "batter_hits":             "hits",
@@ -1755,7 +1761,7 @@ def build_soccer_props(ttl: int = 900) -> dict:
     return result
 
 
-def get_sport_odds(sport: str, regions: str = "us,uk") -> List[Dict]:
+def get_sport_odds(sport: str, regions: str = "us") -> List[Dict]:
     """
     Fetch upcoming game odds for a sport from The Odds API.
     Returns list of game dicts with moneyline, spread, and total odds.
