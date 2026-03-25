@@ -790,6 +790,25 @@ _LOW_SIGNAL_STATS: set = {
     "anytime_goal",
 }
 
+# Mainstream / stable markets that should be preferred in the final display
+_MAINSTREAM_STATS: Dict[str, set] = {
+    "nba": {"points", "rebounds", "assists", "pts_rebs_asts", "threes"},
+    "mlb": {"strikeouts", "earned_runs", "hits", "total_bases", "pitcher_outs"},
+    "nhl": {"player_shots_on_goal", "player_points", "player_assists", "player_goals"},
+}
+
+# Hard per-stat caps in the final displayed list (applies across both sides combined)
+# Any stat not listed here is uncapped.
+_STAT_DISPLAY_CAPS: Dict[str, int] = {
+    "blocks":                   2,
+    "steals":                   2,
+    "player_blocked_shots":     1,
+    "player_power_play_points": 2,
+    "pp_points":                2,
+    "rbi":                      3,
+    "runs":                     3,
+}
+
 # Sport-level prop caps  (min, max)
 _SPORT_PROP_CAPS: Dict[str, Tuple[int, int]] = {
     "nba": (12, 18),
@@ -800,73 +819,73 @@ _SPORT_PROP_CAPS: Dict[str, Tuple[int, int]] = {
 
 def is_playable_prop(prop: Dict, min_edge: float = 4.0, min_prob: float = 0.53) -> bool:
     """Return True if a prop is worth showing on the curated board."""
-    # Must have a real side
     pick = prop.get("pick", "")
     if pick not in ("OVER", "UNDER"):
         return False
-    # Must be bettable (odds quality)
     if not is_bettable(prop):
         return False
-    # Must meet minimum line
     if not meets_minimum_line(prop):
         return False
-    # Must not be specialty / novelty
     if is_specialty_market(prop.get("stat", "")):
         return False
-    # Edge must be positive and above threshold
     edge = _num(prop.get("edge", 0))
     if edge < min_edge:
         return False
-    # Probability / confidence threshold
     prob = _num(prop.get("probability", prop.get("confidence", 0)))
-    # confidence is 0-100 scale, probability is 0-1
     if prob > 1:
         prob = prob / 100.0
     if prob < min_prob:
         return False
-    # If heavily juiced, require stronger edge
     price = _num(prop.get("price", -110))
     if price < -180 and edge < 10:
         return False
-    # Grade must not be Pass
     if prop.get("grade") == "Pass":
         return False
     return True
 
 
 def prop_rank_score(prop: Dict) -> float:
-    """Weighted score for display ranking.  Higher = better display pick."""
+    """Weighted score for display ranking.  Higher = better display pick.
+
+    Designed so that mainstream high-edge props outrank low-signal stats even
+    when the low-signal model confidence is higher.
+    """
     edge  = _num(prop.get("edge", 0))
     conf  = _num(prop.get("confidence", 50))
     grade = prop.get("grade", "Watch")
     price = _num(prop.get("price", -110))
     stat  = prop.get("stat", "")
+    sport = prop.get("sport", "")
 
-    # Base: edge is most important signal
+    # Base: edge is the primary signal
     score = edge * 3.0
 
-    # Confidence contributes moderately
+    # Confidence above neutral contributes moderately
     score += (conf - 50) * 0.5
 
     # Grade bonus
-    if grade == "A":
-        score += 12
-    elif grade == "B":
-        score += 6
+    if grade == "A":   score += 12
+    elif grade == "B": score += 6
 
-    # Odds quality: favour -110 to +150 range
-    if -150 <= price <= 150:
-        score += 4
-    elif price < -180:
-        score -= 5
+    # Odds quality: prefer fair-value range
+    if -130 <= price <= 150:  score += 4
+    elif price < -180:         score -= 5
 
-    # Penalise low-signal stats
+    # Strong penalty for low-signal / binary markets
+    # (-15 ensures blocks/steals/PP-points can't outrank mainstream props
+    #  even with high model confidence)
     if stat in _LOW_SIGNAL_STATS:
-        score -= 8
+        score -= 15
 
-    # Small bonus for OVER to help balance
+    # Bonus for mainstream / high-reliability markets per sport
+    mainstream = _MAINSTREAM_STATS.get(sport, set())
+    if stat in mainstream:
+        score += 8
+
+    # OVER bonus to counter the model's systematic UNDER bias
+    # (UNDER lines are easier to beat so confidence is inflated for UNDERs)
     if prop.get("pick") == "OVER":
-        score += 2
+        score += 4
 
     return score
 
@@ -894,31 +913,81 @@ def cap_props_per_game(props: List[Dict], max_per_game: int = 2) -> List[Dict]:
     return result
 
 
+def _apply_stat_diversity_caps(props: List[Dict]) -> List[Dict]:
+    """Enforce hard per-stat display caps. Input should be sorted by rank score."""
+    stat_counts: Dict[str, int] = {}
+    result: List[Dict] = []
+    for p in props:
+        stat = p.get("stat", "")
+        cap  = _STAT_DISPLAY_CAPS.get(stat)
+        if cap is not None:
+            used = stat_counts.get(stat, 0)
+            if used >= cap:
+                continue
+            stat_counts[stat] = used + 1
+        result.append(p)
+    return result
+
+
+def _final_diversity_select(
+    props: List[Dict],
+    target: int,
+    max_per_game: int = 2,
+    max_side_ratio: float = 0.70,
+) -> List[Dict]:
+    """
+    Final curation: enforce stat diversity, side balance, and game caps.
+
+    Pipeline:
+      1. Apply hard per-stat caps (_STAT_DISPLAY_CAPS)
+      2. Split into OVER / UNDER pools (each already sorted by rank score)
+      3. Apply per-game cap to EACH pool independently
+      4. Allocate slots: UNDER gets at most floor(target * max_side_ratio)
+         OVER fills the remaining slots (subject to same ratio cap)
+      5. Merge and re-sort; return at most `target` props
+
+    If not enough opposite-side props exist, fewer than `target` are returned
+    rather than padding with junk props.
+    """
+    # props must be sorted by prop_rank_score descending before calling
+    stat_filtered = _apply_stat_diversity_caps(props)
+
+    # Separate sides (order preserved from sorted input)
+    overs  = [p for p in stat_filtered if p.get("pick") == "OVER"]
+    unders = [p for p in stat_filtered if p.get("pick") == "UNDER"]
+
+    # Per-game cap applied to each side independently so game diversity is
+    # maintained within each pool before the side-ratio selection
+    overs  = cap_props_per_game(overs,  max_per_game=max_per_game)
+    unders = cap_props_per_game(unders, max_per_game=max_per_game)
+
+    # Hard side cap: neither side can take more than max_side_ratio of target
+    max_from_one_side = max(1, int(target * max_side_ratio))
+
+    # UNDER allocation (dominant side in most models — cap it first)
+    n_under = min(len(unders), max_from_one_side)
+    selected_unders = unders[:n_under]
+
+    # OVER fills remaining slots
+    budget_for_over = target - len(selected_unders)
+    n_over = min(len(overs), max(0, budget_for_over), max_from_one_side)
+    selected_overs = overs[:n_over]
+
+    merged = selected_overs + selected_unders
+    merged.sort(key=prop_rank_score, reverse=True)
+    return merged[:target]
+
+
 def balance_prop_sides(
     props: List[Dict],
     max_props: int,
     max_under_ratio: float = 0.65,
 ) -> List[Dict]:
-    """Ensure no more than max_under_ratio of displayed props are one side."""
-    if not props:
-        return props
-
-    overs  = [p for p in props if p.get("pick") == "OVER"]
-    unders = [p for p in props if p.get("pick") == "UNDER"]
-
-    max_under = int(max_props * max_under_ratio)
-    max_over  = int(max_props * max_under_ratio)
-
-    # Trim the dominant side if needed
-    if len(unders) > max_under and len(overs) > 0:
-        unders = unders[:max_under]
-    if len(overs) > max_over and len(unders) > 0:
-        overs = overs[:max_over]
-
-    # Merge and re-sort by rank score
-    merged = overs + unders
-    merged.sort(key=lambda p: prop_rank_score(p), reverse=True)
-    return merged[:max_props]
+    """Thin wrapper retained for backward compatibility — delegates to _final_diversity_select."""
+    return _final_diversity_select(
+        props, target=max_props, max_side_ratio=max_under_ratio,
+        max_per_game=999,  # caller handles game caps separately
+    )
 
 
 def build_display_props(
@@ -927,14 +996,17 @@ def build_display_props(
     max_per_game: int = 2,
 ) -> Tuple[List[Dict], Optional[Dict]]:
     """
-    Cross-slate curation: take the full list of games (each with all_game_props_clean)
-    and return (top_props, best_value_prop).
+    Cross-slate curation: select the best props across the entire slate.
 
-    This is the ONLY function that decides what appears on the default sport tab.
+    Pipeline:
+      raw clean props → quality gate → rank → dedupe per player
+      → diversity + balance + game cap (all in _final_diversity_select)
+
+    This is the ONLY function that decides what appears on the curated board.
     """
-    min_cap, max_cap = _SPORT_PROP_CAPS.get(sport, (10, 18))
+    _min_cap, max_cap = _SPORT_PROP_CAPS.get(sport, (10, 18))
 
-    # Collect all clean props across all games, attaching game context
+    # Collect all clean props across all games
     all_props: List[Dict] = []
     for game in games:
         game_label = f"{game.get('away_abbr', '')} @ {game.get('home_abbr', '')}"
@@ -942,30 +1014,55 @@ def build_display_props(
             p_copy = {**p, "game": game_label}
             all_props.append(p_copy)
 
-    # Step 1: Only playable props
+    # Quality gate
     playable = [p for p in all_props if is_playable_prop(p)]
 
-    # Step 2: Rank by weighted score
-    playable.sort(key=lambda p: prop_rank_score(p), reverse=True)
+    # Rank (must happen before dedupe so we keep the best-ranked prop per player)
+    playable.sort(key=prop_rank_score, reverse=True)
 
-    # Step 3: One prop per player
+    # One prop per player
     deduped = dedupe_best_per_player(playable)
+    deduped.sort(key=prop_rank_score, reverse=True)
 
-    # Step 4: Cap per game
-    capped = cap_props_per_game(deduped, max_per_game=max_per_game)
+    # Debug: log pool composition before final selection
+    over_ct  = sum(1 for p in deduped if p.get("pick") == "OVER")
+    under_ct = sum(1 for p in deduped if p.get("pick") == "UNDER")
+    print(
+        f"[CURATE] {sport}: {len(playable)} playable, {len(deduped)} deduped "
+        f"({over_ct} OVER / {under_ct} UNDER)"
+    )
 
-    # Step 5: Balance OVER/UNDER
-    balanced = balance_prop_sides(capped, max_props=max_cap, max_under_ratio=0.65)
+    # Final selection: diversity + balance + game cap in one pass
+    top_props = _final_diversity_select(
+        deduped,
+        target=max_cap,
+        max_per_game=max_per_game,
+        max_side_ratio=0.70,
+    )
 
-    # Step 6: Ensure at least min_cap if enough exist, but never pad with junk
-    top_props = balanced[:max_cap]
-
-    # Best value prop: highest edge among A/B grade
-    best_value = None
+    # Debug: log final composition
+    final_over  = sum(1 for p in top_props if p.get("pick") == "OVER")
+    final_under = sum(1 for p in top_props if p.get("pick") == "UNDER")
+    stat_dist: Dict[str, int] = {}
     for p in top_props:
-        if p.get("grade") in ("A", "B") and _num(p.get("edge", 0)) > 0:
+        s = p.get("stat", "?")
+        stat_dist[s] = stat_dist.get(s, 0) + 1
+    print(
+        f"[CURATE] {sport}: final {len(top_props)} props "
+        f"({final_over} OVER / {final_under} UNDER) stats={stat_dist}"
+    )
+
+    # Best value: prefer A/B grade OVER, fall back to any A/B
+    best_value: Optional[Dict] = None
+    for p in top_props:
+        if p.get("grade") in ("A", "B") and p.get("pick") == "OVER" and _num(p.get("edge", 0)) > 0:
             best_value = p
             break
+    if best_value is None:
+        for p in top_props:
+            if p.get("grade") in ("A", "B") and _num(p.get("edge", 0)) > 0:
+                best_value = p
+                break
 
     return top_props, best_value
 
@@ -1514,26 +1611,22 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 reverse=True,
             )
 
-            # top_props: first 3 A/B-grade props from clean list
-            top_props = [
-                p for p in all_game_props_clean if p.get("grade") in ("A", "B")
-            ][:3]
-
-            # Balance check: ensure at least one OVER appears in top_props
-            overs = [p for p in top_props if p.get("pick") == "OVER"]
-            if len(overs) == 0:
-                best_overs = [
-                    p for p in all_game_props_clean
-                    if p.get("pick") == "OVER"
-                    and p.get("grade") in ("A", "B")
-                    and p.get("edge", 0) > 0
-                ]
-                if best_overs:
-                    best_overs.sort(key=lambda x: x.get("score", 0), reverse=True)
-                    if len(top_props) >= 3:
-                        top_props = top_props[:2] + [best_overs[0]]
-                    else:
-                        top_props = top_props + [best_overs[0]]
+            # top_props: diversity-aware selection for this game (max 3, balanced)
+            _per_game_playable = [p for p in all_game_props_clean if is_playable_prop(p)]
+            _per_game_playable.sort(key=prop_rank_score, reverse=True)
+            _per_game_deduped = dedupe_best_per_player(_per_game_playable)
+            _per_game_deduped.sort(key=prop_rank_score, reverse=True)
+            top_props = _final_diversity_select(
+                _per_game_deduped,
+                target=3,
+                max_per_game=3,   # one game; cap prevents >3 per side in pool
+                max_side_ratio=0.67,  # max 2 of same side in a 3-prop display
+            )
+            # Fallback: if playable filter too strict, show best A/B grade props
+            if not top_props:
+                top_props = [
+                    p for p in all_game_props_clean if p.get("grade") in ("A", "B")
+                ][:3]
 
             # more_props: remaining A/B after top 3, plus Watch grade
             ab_rest = [
