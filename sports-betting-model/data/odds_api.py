@@ -1252,7 +1252,7 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 if p.get("is_bettable") and not p.get("is_specialty") and p.get("grade") != "Pass"
             ]
             core_props = dedupe_by_player(core_props)
-            top_props, more_props = apply_game_cap(core_props, max_per_game=3)
+            top_props, more_props = apply_game_cap(core_props, max_per_game=25)
             top_props = top_props[:25]
 
             # Specialty props: bettable specialty market props
