@@ -675,7 +675,7 @@ MINIMUM_LINES: Dict[str, float] = {
     "hits":           1.5,
     "total_bases":    1.5,
     "rbi":            1.5,
-    "runs":           0.5,
+    "runs":           1.5,
     "strikeouts":     4.5,
     "hits_allowed":   4.5,
     "earned_runs":    1.5,
@@ -1325,6 +1325,22 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
             top_props = [
                 p for p in all_game_props_clean if p.get("grade") in ("A", "B")
             ][:3]
+
+            # Balance check: ensure at least one OVER appears in top_props
+            overs = [p for p in top_props if p.get("pick") == "OVER"]
+            if len(overs) == 0:
+                best_overs = [
+                    p for p in all_game_props_clean
+                    if p.get("pick") == "OVER"
+                    and p.get("grade") in ("A", "B")
+                    and p.get("edge", 0) > 0
+                ]
+                if best_overs:
+                    best_overs.sort(key=lambda x: x.get("score", 0), reverse=True)
+                    if len(top_props) >= 3:
+                        top_props = top_props[:2] + [best_overs[0]]
+                    else:
+                        top_props = top_props + [best_overs[0]]
 
             # more_props: remaining A/B after top 3, plus Watch grade
             ab_rest = [
