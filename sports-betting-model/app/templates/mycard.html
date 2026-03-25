@@ -82,6 +82,35 @@
 .log-btn:hover { background: var(--accent-dim); border-color: var(--accent); }
 .mc-empty { padding: 40px; text-align: center; color: var(--text-muted); font-size: 14px; }
 
+/* ── Sharp mode toggle ───────────────────────── */
+.sharp-toggle-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 10px;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.sharp-toggle-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); flex: 1; }
+.sharp-toggle-label strong { color: var(--text-primary); }
+.toggle-switch {
+  position: relative; width: 42px; height: 22px;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0; border-radius: 22px;
+  background: var(--border); cursor: pointer; transition: background 0.2s;
+}
+.toggle-slider:before {
+  content: ''; position: absolute;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; left: 3px; top: 3px; transition: transform 0.2s;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--accent); }
+.toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
+.sharp-badge {
+  font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px;
+  background: var(--under-dim); color: var(--under);
+}
+
 /* ── Best picks cards ────────────────────────── */
 .best-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 20px; }
 .best-card {
@@ -117,6 +146,20 @@
   {% for sk, sdata in sports.items() %}
   <button class="mc-stab" data-sport="{{ sk }}">{{ sdata.emoji }} {{ sdata.label }} <span class="mc-stab-count">{{ sdata.window|length }}</span></button>
   {% endfor %}
+</div>
+
+<!-- Sharp Mode toggle -->
+<div class="sharp-toggle-bar">
+  <div class="sharp-toggle-label">
+    <strong>Mode:</strong>
+    <span id="sharp-mode-label">Standard (A + B Grade)</span>
+  </div>
+  <span class="sharp-badge" id="sharp-mode-badge" style="display:none;">⚡ Sharp</span>
+  <label class="toggle-switch" title="Toggle Sharp Mode">
+    <input type="checkbox" id="sharp-mode-toggle">
+    <span class="toggle-slider"></span>
+  </label>
+  <span style="font-size:12px;color:var(--text-muted);">Sharp Mode</span>
 </div>
 
 <!-- All sports panel -->
@@ -166,7 +209,7 @@
     <thead><tr><th>Player</th><th>Game</th><th>Stat</th><th>Line</th><th>Pick</th><th>Conf</th><th>Grade</th><th>Edge</th></tr></thead>
     <tbody>
       {% for prop in parlay_legs %}
-      <tr class="prop-row grade-border-{{ prop.grade }}">
+      <tr class="prop-row mc-prop-row grade-border-{{ prop.grade }}" data-grade="{{ prop.grade }}" data-sport="{{ prop.sport_key }}">
         <td class="pr-player">{{ prop.player_name }}</td>
         <td class="pr-game">{{ prop.sport_emoji }} {{ prop.game }}</td>
         <td>{{ prop.label }}</td><td style="font-weight:700;">{{ prop.line }}</td>
@@ -210,7 +253,7 @@
     </tr></thead>
     <tbody>
       {% for prop in sdata.window %}
-      <tr class="prop-row grade-border-{{ prop.grade }}">
+      <tr class="prop-row mc-prop-row standard-row grade-border-{{ prop.grade }}" data-grade="{{ prop.grade or 'B' }}" data-sport="{{ sk }}">
         <td class="pr-player">{{ prop.player_name }}</td>
         <td class="pr-game">{{ prop.game }}</td>
         <td>{{ prop.label }}</td>
@@ -223,6 +266,22 @@
         <td class="pr-book hide-mobile">{{ prop.best_book|upper if prop.best_book else '-' }}</td>
         <td class="pr-stake">{{ prop.stake_rec }}</td>
         <td><button class="log-btn" onclick="logBet({player:'{{ prop.player_name }}',stat:'{{ prop.label }}',line:{{ prop.line }},pick:'{{ prop.pick }}',odds:'{{ prop.price }}',grade:'{{ prop.grade }}',score:{{ prop.score }},sport:'{{ prop.sport_key }}',game:'{{ prop.game }}',confidence:{{ prop.confidence }}})">Log</button></td>
+      </tr>
+      {% endfor %}
+      {% for prop in sdata.sharp %}
+      <tr class="prop-row mc-prop-row sharp-row grade-border-A" data-grade="A" data-sport="{{ sk }}" style="display:none;">
+        <td class="pr-player">⚡ {{ prop.player_name }}</td>
+        <td class="pr-game">{{ prop.game }}</td>
+        <td>{{ prop.label }}</td>
+        <td style="font-weight:700;">{{ prop.line }}</td>
+        <td><span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span></td>
+        <td><span class="conf-high">{{ prop.confidence }}%</span></td>
+        <td><span class="grade-badge grade-A">A</span></td>
+        <td><span class="score-badge {{ prop.score_class }}">{{ prop.score }}</span></td>
+        <td class="edge-pos">+{{ prop.edge }}%</td>
+        <td class="pr-book hide-mobile">{{ prop.best_book|upper if prop.best_book else '-' }}</td>
+        <td class="pr-stake">{{ prop.stake_rec }}</td>
+        <td><button class="log-btn" onclick="logBet({player:'{{ prop.player_name }}',stat:'{{ prop.label }}',line:{{ prop.line }},pick:'{{ prop.pick }}',odds:'{{ prop.price }}',grade:'A',score:{{ prop.score }},sport:'{{ prop.sport_key }}',game:'{{ prop.game }}',confidence:{{ prop.confidence }}})">Log</button></td>
       </tr>
       {% endfor %}
     </tbody>
@@ -248,6 +307,25 @@ document.querySelectorAll('.mc-stab').forEach(tab => {
     if (panel) panel.classList.add('active');
   });
 });
+
+// Sharp Mode toggle
+const sharpToggle = document.getElementById('sharp-mode-toggle');
+const sharpLabel  = document.getElementById('sharp-mode-label');
+const sharpBadge  = document.getElementById('sharp-mode-badge');
+
+function applySharpMode(isSharp) {
+  document.querySelectorAll('.standard-row').forEach(r => r.style.display = isSharp ? 'none' : '');
+  document.querySelectorAll('.sharp-row').forEach(r => r.style.display = isSharp ? '' : 'none');
+  sharpLabel.textContent = isSharp ? 'Sharp Mode (A Grade · ≥6% edge)' : 'Standard (A + B Grade)';
+  sharpBadge.style.display = isSharp ? '' : 'none';
+  // Update All panel best3 visibility
+  document.querySelectorAll('.best-card.sharp-only').forEach(c => c.style.display = isSharp ? '' : 'none');
+  document.querySelectorAll('.best-card.standard-only').forEach(c => c.style.display = isSharp ? 'none' : '');
+}
+
+if (sharpToggle) {
+  sharpToggle.addEventListener('change', () => applySharpMode(sharpToggle.checked));
+}
 
 // Log bet (stores to localStorage)
 function logBet(data) {

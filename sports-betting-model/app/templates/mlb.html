@@ -170,6 +170,33 @@
 .ppill.fair.active  { background: var(--fair-dim, #88889918); border-color: var(--border); color: var(--fair, #888899); }
 .ppill .badge { background: rgba(255,255,255,.1); border-radius: 8px; padding: 0 5px; font-size: 10px; margin-left: 3px; }
 
+/* ── Best picks strip ────────────────────────── */
+.best-picks-strip {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px 14px 6px; border-bottom: 1px solid var(--border);
+}
+.bp-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 20px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+}
+.bp-pill.grade-A { border-color: var(--over); color: var(--over); background: var(--over-dim); }
+.bp-pill.grade-B { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.show-more-btn {
+  display: block; width: 100%; padding: 8px; text-align: center;
+  background: var(--bg-elevated); border: 1px dashed var(--border);
+  color: var(--text-muted); font-size: 12px; font-weight: 600;
+  cursor: pointer; border-radius: 8px; margin: 8px 0; transition: all 0.15s;
+}
+.show-more-btn:hover { border-color: var(--accent); color: var(--accent); }
+.specialty-label {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; font-size: 11px; font-weight: 700;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+  border-top: 1px dashed var(--border); margin-top: 4px;
+}
+
 /* ── Mobile ──────────────────────────────────── */
 @media (max-width: 600px) {
   .filter-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
@@ -281,6 +308,19 @@
   </div>
 
   <div class="game-players">
+
+  {% if game.top_props %}
+  <div class="best-picks-strip">
+    {% for prop in game.top_props %}
+    <span class="bp-pill grade-{{ prop.grade }}">
+      {{ prop.player_name.split()[-1] }} · {{ prop.label }} {{ prop.line }}
+      <span class="pick-pill {{ prop.pick|lower }}" style="font-size:10px;padding:1px 6px;">{{ prop.pick }}</span>
+      {{ prop.confidence }}%
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% for team_label, roster, abbr in [(game.home_team, game.home_roster, game.home_abbr),(game.away_team, game.away_roster, game.away_abbr)] %}
   {% if roster %}
   <div class="team-label-compact">
@@ -304,7 +344,8 @@
     <div class="stat-row"
          data-stat="{{ pr.stat|lower }}"
          data-pick="{{ pr.pick }}"
-         data-grade="{{ pr.grade or 'B' }}">
+         data-grade="{{ pr.grade or 'B' }}"
+         data-odds="{{ pr.price|default(-110) }}">
       <div class="sr-main">
         <span class="sr-label">{{ pr.label or pr.stat }}</span>
         <span class="sr-line">{{ pr.line }}</span>
@@ -333,6 +374,63 @@
   <div style="padding:10px 0;font-size:12px;color:var(--text-muted);">No props for {{ abbr }} today.</div>
   {% endif %}
   {% endfor %}
+
+  {% if game.more_props %}
+  <div class="more-props-section" id="more-mlb-{{ gid }}" style="display:none;">
+    {% for prop in game.more_props %}
+    <div class="stat-row"
+         data-stat="{{ prop.stat|lower }}"
+         data-pick="{{ prop.pick }}"
+         data-grade="{{ prop.grade or 'B' }}"
+         data-odds="{{ prop.price|default(-110) }}"
+         style="background:var(--bg-card);">
+      <div class="sr-main">
+        <span class="sr-label">{{ prop.player_name }} · {{ prop.label or prop.stat }}</span>
+        <span class="sr-line">{{ prop.line }}</span>
+        <span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span>
+        <span class="sr-conf {% if prop.confidence >= 70 %}high{% elif prop.confidence >= 58 %}med{% else %}low{% endif %}">{{ prop.confidence }}%</span>
+      </div>
+      <div class="sr-detail">
+        <span class="grade-badge grade-{{ prop.grade }}">{{ prop.grade }}</span>
+        <span class="sr-edge {{ 'edge-pos' if prop.edge > 0 else 'edge-neg' }}">{% if prop.edge > 0 %}+{% endif %}{{ prop.edge }}% edge</span>
+        {% if prop.best_book %}<span class="sr-book">{{ prop.best_book|upper }}</span>{% endif %}
+        <span class="sr-stake">{{ prop.stake_rec }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <button class="show-more-btn" onclick="
+    const el = document.getElementById('more-mlb-{{ gid }}');
+    const show = el.style.display === 'none';
+    el.style.display = show ? '' : 'none';
+    this.textContent = show ? 'Hide overflow props' : 'Show {{ game.more_props|length }} more prop{{ 's' if game.more_props|length != 1 else '' }}';
+  ">Show {{ game.more_props|length }} more prop{{ 's' if game.more_props|length != 1 else '' }}</button>
+  {% endif %}
+
+  {% if game.specialty_props %}
+  <div class="specialty-label">🧪 Advanced Markets</div>
+  {% for prop in game.specialty_props %}
+  <div class="stat-row"
+       data-stat="{{ prop.stat|lower }}"
+       data-pick="{{ prop.pick }}"
+       data-grade="{{ prop.grade or 'B' }}"
+       data-odds="{{ prop.price|default(-110) }}"
+       style="opacity:0.75;">
+    <div class="sr-main">
+      <span class="sr-label">{{ prop.player_name }} · {{ prop.label or prop.stat }}</span>
+      <span class="sr-line">{{ prop.line }}</span>
+      <span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span>
+      <span class="sr-conf {% if prop.confidence >= 70 %}high{% elif prop.confidence >= 58 %}med{% else %}low{% endif %}">{{ prop.confidence }}%</span>
+    </div>
+    <div class="sr-detail">
+      <span class="grade-badge grade-{{ prop.grade }}">{{ prop.grade }}</span>
+      <span class="sr-edge {{ 'edge-pos' if prop.edge > 0 else 'edge-neg' }}">{% if prop.edge > 0 %}+{% endif %}{{ prop.edge }}% edge</span>
+      <span style="font-size:10px;color:var(--text-muted);">specialty</span>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
   </div>
 
 </div>
@@ -359,6 +457,9 @@
         if (grade === 'Pass') { row.style.display = 'none'; return; }
         // Always hide double_double and first_basket
         if (stat === 'double_double' || stat === 'first_basket') { row.style.display = 'none'; return; }
+        // Hide props with juice worse than -400
+        const odds = parseFloat(row.dataset.odds || '-110');
+        if (odds < 0 && odds < -400) { row.style.display = 'none'; return; }
         // Grade filter: "all" shows A, B, and Watch (hides only Pass)
         let gradeMatch = false;
         if (activeGrade === 'all') {

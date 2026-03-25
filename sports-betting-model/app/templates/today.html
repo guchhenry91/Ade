@@ -16,54 +16,93 @@
 }
 .refresh-btn:hover { border-color: #00d4ff; color: #00d4ff; }
 
-/* ── Sport section ───────────────────────────────── */
-.today-sport-section {
-  background: #0d0d1a; border: 1px solid #1e1e3a;
-  border-radius: 12px; margin-bottom: 14px; overflow: hidden;
-}
-.today-sport-header {
+/* ── Today sport section header ───────────────────── */
+.today-sport-hdr {
   display: flex; align-items: center; gap: 10px;
-  padding: 12px 16px; background: #111128;
-  font-size: 15px; font-weight: 700; color: #fff;
-  border-bottom: 1px solid #1e1e3a;
+  padding: 10px 0 8px;
+  font-size: 14px; font-weight: 700; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  border-top: 1px solid var(--border); margin-top: 8px;
 }
-.view-all {
-  margin-left: auto; font-size: 12px; color: #00d4ff;
-  text-decoration: none; white-space: nowrap;
+.today-sport-hdr:first-child { border-top: none; margin-top: 0; }
+.view-all-link {
+  margin-left: auto; font-size: 12px; color: var(--accent);
+  text-decoration: none; font-weight: 600; white-space: nowrap;
 }
-.view-all:hover { color: #00aacc; }
-.prop-count-badge {
-  font-size: 11px; color: #888; font-weight: 400;
+.view-all-link:hover { color: #33ddff; }
+.tsh-count {
+  font-size: 11px; color: #555; font-weight: 400;
 }
 
-/* ── Game row ────────────────────────────────────── */
-.today-game-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 16px; border-bottom: 1px solid #1a1a2e;
-  text-decoration: none; transition: background 0.15s; cursor: pointer;
+/* ── Today card grid ─────────────────────────────── */
+.today-games {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  padding: 6px 0 14px;
 }
-.today-game-row:last-child { border-bottom: none; }
-.today-game-row:hover { background: #1a1a2e; }
-.today-matchup {
-  font-size: 14px; font-weight: 700; color: #fff;
-  min-width: 110px; flex-shrink: 0;
+.today-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: var(--space-md);
+  text-decoration: none; display: flex; flex-direction: column; gap: 10px;
+  transition: var(--transition); cursor: pointer;
 }
-.today-pick {
-  font-size: 11px; padding: 2px 8px; border-radius: 10px;
-  white-space: nowrap; flex-shrink: 0;
+.today-card:hover {
+  border-color: var(--accent); background: var(--bg-hover);
+  transform: translateY(-2px); box-shadow: var(--shadow-md);
 }
-.badge-strong   { background:#00ff8822; color:#00ff88; border:1px solid #00ff8866; }
-.badge-favoured { background:#00d4ff22; color:#00d4ff; border:1px solid #00d4ff66; }
-.badge-slight   { background:#ff950022; color:#ff9500; border:1px solid #ff950066; }
-.badge-pickem   { background:#88888822; color:#888;    border:1px solid #44444466; }
-.today-top {
-  font-size: 12px; color: #888; margin-left: auto;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+
+/* Card header */
+.tc-header {
+  display: flex; align-items: center; gap: 8px;
 }
-.today-top strong { color: #00ff88; }
-.today-time {
-  font-size: 11px; color: #555; flex-shrink: 0; white-space: nowrap;
+.tc-league {
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: var(--radius-full); background: var(--accent-dim);
+  color: var(--accent); border: 1px solid rgba(0,212,255,0.3);
 }
+.tc-time { font-size: var(--text-xs); color: var(--text-muted); }
+.tc-props-badge {
+  margin-left: auto; font-size: 10px; font-weight: 700; color: var(--text-muted);
+}
+
+/* Card matchup */
+.tc-matchup {
+  display: flex; align-items: center; gap: var(--space-sm);
+}
+.tc-team { display: flex; flex-direction: column; align-items: flex-start; flex: 1; }
+.tc-team.right { align-items: flex-end; }
+.tc-team-name { font-size: var(--text-sm); font-weight: 700; color: var(--text-secondary); }
+.tc-prob { font-size: 26px; font-weight: 900; line-height: 1; }
+.tc-prob.home { color: var(--over); }
+.tc-prob.away { color: var(--accent); }
+.tc-ml-row { font-size: 11px; color: #555; }
+.tc-vs {
+  font-size: var(--text-xs); color: var(--text-muted); font-weight: 600;
+  padding: 0 4px;
+}
+
+/* Lines */
+.tc-lines { display: flex; gap: 6px; flex-wrap: wrap; }
+.tc-line {
+  font-size: 11px; color: var(--text-muted); background: var(--bg-elevated);
+  padding: 2px 8px; border-radius: var(--radius-full); border: 1px solid var(--border);
+}
+
+/* Game pick badge */
+.tc-pick-badge {
+  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-full);
+}
+
+/* Standout pick */
+.tc-standout {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 8px 10px; background: var(--bg-elevated);
+  border-radius: var(--radius-md); border-top: 1px solid var(--border);
+}
+.tc-standout-icon { font-size: 13px; }
+.tc-standout-player { font-size: var(--text-sm); font-weight: 700; color: var(--text-primary); }
+.tc-standout-stat { font-size: var(--text-xs); color: var(--text-secondary); flex: 1; }
 
 /* ── Empty state ─────────────────────────────────── */
 .today-empty {
@@ -74,9 +113,14 @@
 .today-empty p { color: #666; font-size: 13px; margin: 0; }
 
 /* ── Offseason notice ────────────────────────────── */
-.today-offseason {
+.today-offseason-note {
   padding: 14px 16px; text-align: center;
   color: #555; font-size: 13px; font-style: italic;
+}
+
+@media (max-width: 600px) {
+  .today-games { grid-template-columns: 1fr; gap: 10px; }
+  .tc-prob { font-size: 22px; }
 }
 </style>
 {% endblock %}
@@ -119,120 +163,218 @@
 {% else %}
 
 {# ── NBA ─────────────────────────────────────────────────────────────────── #}
-{% set total_props = namespace(n=0) %}
+{% set total_nba_props = namespace(n=0) %}
 {% for game in nba_games %}
-  {% for team_roster in [game.home_roster or [], game.away_roster or []] %}
-    {% for p in team_roster %}{% set total_props.n = total_props.n + (p.props|length) %}{% endfor %}
+  {% for roster in [game.home_roster or [], game.away_roster or []] %}
+    {% for p in roster %}{% set total_nba_props.n = total_nba_props.n + (p.props|length) %}{% endfor %}
   {% endfor %}
 {% endfor %}
 {% if nba_games %}
-<div class="today-sport-section">
-  <div class="today-sport-header">
-    🏀 NBA
-    <span class="prop-count-badge">{{ nba_games|length }} game{{ 's' if nba_games|length != 1 else '' }} · {{ total_props.n }} props</span>
-    <a href="/nba" class="view-all">View all →</a>
-  </div>
-  {% for game in nba_games[:8] %}
-  <a href="/nba?team={{ game.home_abbr }}" class="today-game-row">
-    <span class="today-matchup">{{ game.away_abbr }} @ {{ game.home_abbr }}</span>
+<div class="today-sport-hdr">
+  🏀 NBA
+  <span class="tsh-count">{{ nba_games|length }} game{{ 's' if nba_games|length != 1 else '' }} · {{ total_nba_props.n }} props</span>
+  <a href="/nba" class="view-all-link">View all →</a>
+</div>
+<div class="today-games">
+{% for game in nba_games %}
+  {% set prop_count = namespace(n=0) %}
+  {% for roster in [game.home_roster or [], game.away_roster or []] %}
+    {% for p in roster %}{% set prop_count.n = prop_count.n + (p.props|length) %}{% endfor %}
+  {% endfor %}
+  <a href="/nba?team={{ game.home_abbr }}" class="today-card">
+    <div class="tc-header">
+      <span class="tc-league">NBA</span>
+      {% if game.kickoff and game.kickoff|length > 10 %}
+      <span class="tc-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+      {% endif %}
+      {% if prop_count.n > 0 %}
+      <span class="tc-props-badge">{{ prop_count.n }} props</span>
+      {% endif %}
+    </div>
+    <div class="tc-matchup">
+      <div class="tc-team">
+        <span class="tc-team-name">{{ game.home_team.split()[-1] if game.home_team else game.home_abbr }}</span>
+        <span class="tc-prob home">{{ game.home_prob }}%</span>
+        {% if game.home_ml %}<span class="tc-ml-row">{{ game.home_ml|format_american }}</span>{% endif %}
+      </div>
+      <div class="tc-vs">vs</div>
+      <div class="tc-team right">
+        <span class="tc-team-name">{{ game.away_team.split()[-1] if game.away_team else game.away_abbr }}</span>
+        <span class="tc-prob away">{{ game.away_prob }}%</span>
+        {% if game.away_ml %}<span class="tc-ml-row">{{ game.away_ml|format_american }}</span>{% endif %}
+      </div>
+    </div>
+    {% if game.home_spread is not none or game.total_line %}
+    <div class="tc-lines">
+      {% if game.home_spread is not none %}
+      <span class="tc-line">{{ (game.home_team or game.home_abbr).split()[-1] }} {{ game.home_spread }}</span>
+      {% endif %}
+      {% if game.total_line %}<span class="tc-line">O/U {{ game.total_line }}</span>{% endif %}
+    </div>
+    {% endif %}
     {% if game.pick_badge_label %}
-    <span class="today-pick {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>
+    <div>
+      <span class="tc-pick-badge {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>
+    </div>
     {% endif %}
-    {% if game.top_pick %}
-    <span class="today-top">⭐ {{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }} {{ game.top_pick.label or game.top_pick.stat or '' }} <strong>{{ game.top_pick.confidence }}%</strong></span>
-    {% endif %}
-    {% if game.kickoff and game.kickoff|length > 10 %}
-    <span class="today-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+    {% if game.top_pick and game.top_pick.stat not in ['double_double','first_basket'] %}
+    <div class="tc-standout">
+      <span class="tc-standout-icon">⭐</span>
+      <span class="tc-standout-player">{{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }}</span>
+      <span class="tc-standout-stat">{{ game.top_pick.label or game.top_pick.stat or '' }} {{ game.top_pick.line }}</span>
+      <span class="pick-pill {{ game.top_pick.pick|lower }}">{{ game.top_pick.pick }}</span>
+      <strong class="conf-{{ 'high' if game.top_pick.confidence >= 72 else 'med' }}">{{ game.top_pick.confidence }}%</strong>
+      <span class="grade-badge grade-{{ game.top_pick.grade }}">{{ game.top_pick.grade }}</span>
+    </div>
     {% endif %}
   </a>
-  {% endfor %}
-  {% if nba_games|length > 8 %}
-  <div class="today-offseason">+ {{ nba_games|length - 8 }} more games — <a href="/nba" style="color:#00d4ff;">view all</a></div>
-  {% endif %}
+{% endfor %}
 </div>
 {% else %}
-<div class="today-sport-section">
-  <div class="today-sport-header">🏀 NBA <a href="/nba" class="view-all">View →</a></div>
-  <div class="today-offseason">No NBA games scheduled today.</div>
-</div>
+<div class="today-sport-hdr">🏀 NBA <a href="/nba" class="view-all-link">View →</a></div>
+<div class="today-offseason-note">No NBA games scheduled today.</div>
 {% endif %}
 
 {# ── MLB ─────────────────────────────────────────────────────────────────── #}
-{% set total_props = namespace(n=0) %}
+{% set total_mlb_props = namespace(n=0) %}
 {% for game in mlb_games %}
-  {% for team_roster in [game.home_roster or [], game.away_roster or []] %}
-    {% for p in team_roster %}{% set total_props.n = total_props.n + (p.props|length) %}{% endfor %}
+  {% for roster in [game.home_roster or [], game.away_roster or []] %}
+    {% for p in roster %}{% set total_mlb_props.n = total_mlb_props.n + (p.props|length) %}{% endfor %}
   {% endfor %}
 {% endfor %}
 {% if mlb_games %}
-<div class="today-sport-section">
-  <div class="today-sport-header">
-    ⚾ MLB
-    <span class="prop-count-badge">{{ mlb_games|length }} game{{ 's' if mlb_games|length != 1 else '' }} · {{ total_props.n }} props</span>
-    <a href="/mlb" class="view-all">View all →</a>
-  </div>
-  {% for game in mlb_games[:8] %}
-  <a href="/mlb?team={{ game.home_abbr }}" class="today-game-row">
-    <span class="today-matchup">{{ game.away_abbr }} @ {{ game.home_abbr }}</span>
+<div class="today-sport-hdr">
+  ⚾ MLB
+  <span class="tsh-count">{{ mlb_games|length }} game{{ 's' if mlb_games|length != 1 else '' }} · {{ total_mlb_props.n }} props</span>
+  <a href="/mlb" class="view-all-link">View all →</a>
+</div>
+<div class="today-games">
+{% for game in mlb_games %}
+  {% set prop_count = namespace(n=0) %}
+  {% for roster in [game.home_roster or [], game.away_roster or []] %}
+    {% for p in roster %}{% set prop_count.n = prop_count.n + (p.props|length) %}{% endfor %}
+  {% endfor %}
+  <a href="/mlb?team={{ game.home_abbr }}" class="today-card">
+    <div class="tc-header">
+      <span class="tc-league" style="background:rgba(255,149,0,0.15);color:#ff9500;border-color:rgba(255,149,0,0.3);">MLB</span>
+      {% if game.kickoff and game.kickoff|length > 10 %}
+      <span class="tc-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+      {% endif %}
+      {% if prop_count.n > 0 %}
+      <span class="tc-props-badge">{{ prop_count.n }} props</span>
+      {% endif %}
+    </div>
+    <div class="tc-matchup">
+      <div class="tc-team">
+        <span class="tc-team-name">{{ game.home_team.split()[-1] if game.home_team else game.home_abbr }}</span>
+        <span class="tc-prob home">{{ game.home_prob }}%</span>
+        {% if game.home_ml %}<span class="tc-ml-row">{{ game.home_ml|format_american }}</span>{% endif %}
+      </div>
+      <div class="tc-vs">vs</div>
+      <div class="tc-team right">
+        <span class="tc-team-name">{{ game.away_team.split()[-1] if game.away_team else game.away_abbr }}</span>
+        <span class="tc-prob away">{{ game.away_prob }}%</span>
+        {% if game.away_ml %}<span class="tc-ml-row">{{ game.away_ml|format_american }}</span>{% endif %}
+      </div>
+    </div>
+    {% if game.home_spread is not none or game.total_line %}
+    <div class="tc-lines">
+      {% if game.home_spread is not none %}
+      <span class="tc-line">{{ (game.home_team or game.home_abbr).split()[-1] }} {{ game.home_spread }}</span>
+      {% endif %}
+      {% if game.total_line %}<span class="tc-line">O/U {{ game.total_line }}</span>{% endif %}
+    </div>
+    {% endif %}
     {% if game.pick_badge_label %}
-    <span class="today-pick {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>
+    <div><span class="tc-pick-badge {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span></div>
     {% endif %}
-    {% if game.top_pick %}
-    <span class="today-top">⭐ {{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }} {{ game.top_pick.label or game.top_pick.stat or '' }} <strong>{{ game.top_pick.confidence }}%</strong></span>
-    {% endif %}
-    {% if game.kickoff and game.kickoff|length > 10 %}
-    <span class="today-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+    {% if game.top_pick and game.top_pick.stat not in ['double_double','first_basket'] %}
+    <div class="tc-standout">
+      <span class="tc-standout-icon">⭐</span>
+      <span class="tc-standout-player">{{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }}</span>
+      <span class="tc-standout-stat">{{ game.top_pick.label or game.top_pick.stat or '' }} {{ game.top_pick.line }}</span>
+      <span class="pick-pill {{ game.top_pick.pick|lower }}">{{ game.top_pick.pick }}</span>
+      <strong class="conf-{{ 'high' if game.top_pick.confidence >= 72 else 'med' }}">{{ game.top_pick.confidence }}%</strong>
+      <span class="grade-badge grade-{{ game.top_pick.grade }}">{{ game.top_pick.grade }}</span>
+    </div>
     {% endif %}
   </a>
-  {% endfor %}
-  {% if mlb_games|length > 8 %}
-  <div class="today-offseason">+ {{ mlb_games|length - 8 }} more games — <a href="/mlb" style="color:#00d4ff;">view all</a></div>
-  {% endif %}
+{% endfor %}
 </div>
 {% else %}
-<div class="today-sport-section">
-  <div class="today-sport-header">⚾ MLB <a href="/mlb" class="view-all">View →</a></div>
-  <div class="today-offseason">No MLB games scheduled today.</div>
-</div>
+<div class="today-sport-hdr">⚾ MLB <a href="/mlb" class="view-all-link">View →</a></div>
+<div class="today-offseason-note">No MLB games scheduled today.</div>
 {% endif %}
 
 {# ── NHL ─────────────────────────────────────────────────────────────────── #}
-{% set total_props = namespace(n=0) %}
+{% set total_nhl_props = namespace(n=0) %}
 {% for game in nhl_games %}
-  {% for team_roster in [game.home_roster or [], game.away_roster or []] %}
-    {% for p in team_roster %}{% set total_props.n = total_props.n + (p.props|length) %}{% endfor %}
+  {% for roster in [game.home_roster or [], game.away_roster or []] %}
+    {% for p in roster %}{% set total_nhl_props.n = total_nhl_props.n + (p.props|length) %}{% endfor %}
   {% endfor %}
 {% endfor %}
 {% if nhl_games %}
-<div class="today-sport-section">
-  <div class="today-sport-header">
-    🏒 NHL
-    <span class="prop-count-badge">{{ nhl_games|length }} game{{ 's' if nhl_games|length != 1 else '' }} · {{ total_props.n }} props</span>
-    <a href="/nhl" class="view-all">View all →</a>
-  </div>
-  {% for game in nhl_games[:8] %}
-  <a href="/nhl?team={{ game.home_abbr }}" class="today-game-row">
-    <span class="today-matchup">{{ game.away_abbr }} @ {{ game.home_abbr }}</span>
+<div class="today-sport-hdr">
+  🏒 NHL
+  <span class="tsh-count">{{ nhl_games|length }} game{{ 's' if nhl_games|length != 1 else '' }} · {{ total_nhl_props.n }} props</span>
+  <a href="/nhl" class="view-all-link">View all →</a>
+</div>
+<div class="today-games">
+{% for game in nhl_games %}
+  {% set prop_count = namespace(n=0) %}
+  {% for roster in [game.home_roster or [], game.away_roster or []] %}
+    {% for p in roster %}{% set prop_count.n = prop_count.n + (p.props|length) %}{% endfor %}
+  {% endfor %}
+  <a href="/nhl?team={{ game.home_abbr }}" class="today-card">
+    <div class="tc-header">
+      <span class="tc-league" style="background:rgba(100,149,237,0.15);color:#6495ed;border-color:rgba(100,149,237,0.3);">NHL</span>
+      {% if game.kickoff and game.kickoff|length > 10 %}
+      <span class="tc-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+      {% endif %}
+      {% if prop_count.n > 0 %}
+      <span class="tc-props-badge">{{ prop_count.n }} props</span>
+      {% endif %}
+    </div>
+    <div class="tc-matchup">
+      <div class="tc-team">
+        <span class="tc-team-name">{{ game.home_team.split()[-1] if game.home_team else game.home_abbr }}</span>
+        <span class="tc-prob home">{{ game.home_prob }}%</span>
+        {% if game.home_ml %}<span class="tc-ml-row">{{ game.home_ml|format_american }}</span>{% endif %}
+      </div>
+      <div class="tc-vs">vs</div>
+      <div class="tc-team right">
+        <span class="tc-team-name">{{ game.away_team.split()[-1] if game.away_team else game.away_abbr }}</span>
+        <span class="tc-prob away">{{ game.away_prob }}%</span>
+        {% if game.away_ml %}<span class="tc-ml-row">{{ game.away_ml|format_american }}</span>{% endif %}
+      </div>
+    </div>
+    {% if game.home_spread is not none or game.total_line %}
+    <div class="tc-lines">
+      {% if game.home_spread is not none %}
+      <span class="tc-line">{{ (game.home_team or game.home_abbr).split()[-1] }} {{ game.home_spread }}</span>
+      {% endif %}
+      {% if game.total_line %}<span class="tc-line">O/U {{ game.total_line }}</span>{% endif %}
+    </div>
+    {% endif %}
     {% if game.pick_badge_label %}
-    <span class="today-pick {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>
+    <div><span class="tc-pick-badge {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span></div>
     {% endif %}
-    {% if game.top_pick %}
-    <span class="today-top">⭐ {{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }} {{ game.top_pick.label or game.top_pick.stat or '' }} <strong>{{ game.top_pick.confidence }}%</strong></span>
-    {% endif %}
-    {% if game.kickoff and game.kickoff|length > 10 %}
-    <span class="today-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+    {% if game.top_pick and game.top_pick.stat not in ['double_double','first_basket'] %}
+    <div class="tc-standout">
+      <span class="tc-standout-icon">⭐</span>
+      <span class="tc-standout-player">{{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }}</span>
+      <span class="tc-standout-stat">{{ game.top_pick.label or game.top_pick.stat or '' }} {{ game.top_pick.line }}</span>
+      <span class="pick-pill {{ game.top_pick.pick|lower }}">{{ game.top_pick.pick }}</span>
+      <strong class="conf-{{ 'high' if game.top_pick.confidence >= 72 else 'med' }}">{{ game.top_pick.confidence }}%</strong>
+      <span class="grade-badge grade-{{ game.top_pick.grade }}">{{ game.top_pick.grade }}</span>
+    </div>
     {% endif %}
   </a>
-  {% endfor %}
-  {% if nhl_games|length > 8 %}
-  <div class="today-offseason">+ {{ nhl_games|length - 8 }} more games — <a href="/nhl" style="color:#00d4ff;">view all</a></div>
-  {% endif %}
+{% endfor %}
 </div>
 {% else %}
-<div class="today-sport-section">
-  <div class="today-sport-header">🏒 NHL <a href="/nhl" class="view-all">View →</a></div>
-  <div class="today-offseason">No NHL games scheduled today.</div>
-</div>
+<div class="today-sport-hdr">🏒 NHL <a href="/nhl" class="view-all-link">View →</a></div>
+<div class="today-offseason-note">No NHL games scheduled today.</div>
 {% endif %}
 
 {% endif %}
@@ -249,14 +391,11 @@ setInterval(() => {
   if (cdEl) cdEl.textContent = `${m}:${s.toString().padStart(2,'0')}`;
 }, 1000);
 
-// Convert UTC game times to user's local timezone
+// Convert UTC game times to local
 document.querySelectorAll('.local-game-time').forEach(el => {
-  const utc = el.dataset.utc;
-  if (!utc) return;
   try {
-    const d = new Date(utc);
-    const local = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    el.textContent = local;
+    const d = new Date(el.dataset.utc);
+    el.textContent = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
   } catch(e) {}
 });
 </script>

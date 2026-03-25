@@ -444,7 +444,7 @@ def apply_calibration(confidence: float, sport: str, stat: str) -> float:
 # PART 4 — GRADING + SCORING SYSTEM
 # ════════════════════════════════════════════════════════════════════════════════
 
-def get_prop_grade(confidence: float, price: float = -110) -> Tuple[str, float]:
+def get_prop_grade(confidence: float, price: float = -110, prop: Dict = None) -> Tuple[str, float]:
     """A/B/Watch/Pass grade based on confidence + edge vs market."""
     if price > 0:
         market_prob = 100 / (price + 100)
@@ -464,31 +464,40 @@ def get_prop_grade(confidence: float, price: float = -110) -> Tuple[str, float]:
 
 
 def calculate_bet_score(prop: Dict) -> int:
-    """Bet quality score 0-100."""
+    """Bet quality score 0-100 using edge, confidence, market reliability, liquidity, price."""
     score = 0
     conf = prop.get("confidence", 50)
     edge = prop.get("edge", 0)
-    grade = prop.get("grade", "Pass")
-    # Confidence (40pts)
-    if conf >= 80:     score += 40
-    elif conf >= 72:   score += 32
-    elif conf >= 65:   score += 24
-    elif conf >= 58:   score += 16
-    else:              score += 8
-    # Edge (35pts)
-    if edge >= 12:     score += 35
-    elif edge >= 8:    score += 28
-    elif edge >= 5:    score += 21
-    elif edge >= 3:    score += 14
-    else:              score += 5
-    # Grade (15pts)
-    score += {"A": 15, "B": 10, "Watch": 5, "Pass": 1}.get(grade, 1)
-    # Line shopping bonus (10pts)
+    stat = prop.get("stat", "")
+    price = prop.get("price", -110)
     all_prices = prop.get("all_prices", {})
-    if len(all_prices) >= 3:
-        score += 10
-    elif len(all_prices) >= 2:
-        score += 5
+    # Confidence (35pts)
+    if conf >= 80:     score += 35
+    elif conf >= 72:   score += 28
+    elif conf >= 65:   score += 21
+    elif conf >= 58:   score += 14
+    else:              score += 7
+    # Edge (30pts)
+    if edge >= 12:     score += 30
+    elif edge >= 8:    score += 24
+    elif edge >= 5:    score += 18
+    elif edge >= 3:    score += 12
+    else:              score += 4
+    # Market reliability (20pts)
+    reliability = MARKET_RELIABILITY.get(stat, 0.75)
+    score += round(reliability * 20)
+    # Liquidity (10pts)
+    n_books = len(all_prices)
+    if n_books >= 4:    score += 10
+    elif n_books >= 3:  score += 8
+    elif n_books >= 2:  score += 5
+    else:               score += 2
+    # Price discipline (5pts)
+    if price >= -115:   score += 5
+    elif price >= -130: score += 4
+    elif price >= -150: score += 3
+    elif price >= -200: score += 2
+    elif price >= -300: score += 1
     return min(100, score)
 
 
@@ -588,6 +597,191 @@ def format_american(price) -> str:
     if price > 0:
         return f"+{round(price)}"
     return str(round(price))
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# PART 4b — MARKET CONSTANTS + FILTERING HELPERS
+# ════════════════════════════════════════════════════════════════════════════════
+
+MARKET_RELIABILITY: Dict[str, float] = {
+    # NBA
+    "player_points":        0.90,
+    "player_rebounds":      0.85,
+    "player_assists":       0.85,
+    "player_threes":        0.80,
+    "player_steals":        0.70,
+    "player_blocks":        0.70,
+    "player_turnovers":     0.65,
+    "player_pts_rebs_asts": 0.75,
+    "player_pts_rebs":      0.75,
+    "player_pts_asts":      0.75,
+    "player_rebs_asts":     0.75,
+    # MLB
+    "batter_hits":          0.85,
+    "batter_home_runs":     0.70,
+    "batter_rbis":          0.75,
+    "batter_runs_scored":   0.75,
+    "batter_strikeouts":    0.80,
+    "batter_walks":         0.70,
+    "batter_hits_runs_rbis":0.70,
+    "batter_total_bases":   0.80,
+    "pitcher_strikeouts":   0.90,
+    "pitcher_hits_allowed": 0.80,
+    "pitcher_walks":        0.75,
+    "pitcher_earned_runs":  0.75,
+    "pitcher_outs":         0.85,
+    # NHL
+    "player_shots_on_goal": 0.85,
+    "player_goals":         0.70,
+    "player_power_play_points": 0.65,
+    "player_blocked_shots": 0.70,
+    # Specialty
+    "first_basket":         0.40,
+    "double_double":        0.50,
+    "triple_double":        0.45,
+    "first_goal":           0.40,
+    "anytime_goal":         0.55,
+}
+
+SPECIALTY_MARKETS: set = {
+    "first_basket",
+    "double_double",
+    "triple_double",
+    "first_goal",
+    "anytime_goal",
+}
+
+
+def get_market_reliability(stat: str) -> float:
+    """Return reliability weight for a stat market (0.0–1.0)."""
+    return MARKET_RELIABILITY.get(stat, 0.75)
+
+
+def is_specialty_market(stat: str) -> bool:
+    """Return True if stat is a specialty/novelty market."""
+    return stat in SPECIALTY_MARKETS
+
+
+def is_bettable(prop: Dict, max_juice: int = -350) -> bool:
+    """Return True if prop passes basic bettability checks."""
+    price = prop.get("price", -110)
+    pick = prop.get("pick", "")
+    if pick == "FAIR":
+        return False
+    if isinstance(price, (int, float)) and price < 0 and price < max_juice:
+        return False
+    return True
+
+
+def dedupe_by_player(props: List[Dict], max_per_player: int = 2) -> List[Dict]:
+    """Max 2 props per player. Core markets preferred over specialty."""
+    seen: Dict[str, int] = {}
+    # Non-specialty first (preserves score order within each group)
+    sorted_props = sorted(
+        props,
+        key=lambda p: (1 if is_specialty_market(p.get("stat", "")) else 0, -p.get("score", 0)),
+    )
+    result = []
+    for prop in sorted_props:
+        name = prop.get("player_name", "")
+        count = seen.get(name, 0)
+        if count < max_per_player:
+            result.append(prop)
+            seen[name] = count + 1
+    return result
+
+
+def apply_game_cap(props: List[Dict], max_per_game: int = 3) -> Tuple[List[Dict], List[Dict]]:
+    """Return (capped, overflow). Max props per game in default view."""
+    game_counts: Dict[str, int] = {}
+    capped: List[Dict] = []
+    overflow: List[Dict] = []
+    for prop in props:
+        game = prop.get("game", "")
+        count = game_counts.get(game, 0)
+        if count < max_per_game:
+            capped.append(prop)
+            game_counts[game] = count + 1
+        else:
+            overflow.append(prop)
+    return capped, overflow
+
+
+def get_mycard_props(
+    games: List[Dict],
+    sport_key: str = "",
+    sport_emoji: str = "",
+    sport_label: str = "",
+) -> List[Dict]:
+    """Full filter pipeline: bettable → no specialty → no Pass → dedupe → sort by score → top 15."""
+    all_props: List[Dict] = []
+    for game in games:
+        game_label = f"{game.get('away_abbr', '')} @ {game.get('home_abbr', '')}"
+        for player in game.get("home_roster", []) + game.get("away_roster", []):
+            for prop in player.get("props", []):
+                p = {
+                    **prop,
+                    "sport_key":   sport_key,
+                    "sport_emoji": sport_emoji,
+                    "sport_label": sport_label,
+                    "player_name": player.get("name", prop.get("player_name", "")),
+                    "team":        player.get("team", prop.get("team", "")),
+                    "game":        game_label,
+                }
+                all_props.append(p)
+    all_props = [p for p in all_props if is_bettable(p)]
+    all_props = [p for p in all_props if not is_specialty_market(p.get("stat", ""))]
+    all_props = [p for p in all_props if p.get("grade", "Pass") != "Pass"]
+    all_props.sort(key=lambda x: x.get("score", 0), reverse=True)
+    all_props = dedupe_by_player(all_props)
+    return all_props[:15]
+
+
+def get_sharp_props(
+    games: List[Dict],
+    sport_key: str = "",
+    sport_emoji: str = "",
+    sport_label: str = "",
+) -> List[Dict]:
+    """A grade only, -300 max juice, edge≥6, max 2/game, max 1/player."""
+    all_props: List[Dict] = []
+    for game in games:
+        game_label = f"{game.get('away_abbr', '')} @ {game.get('home_abbr', '')}"
+        for player in game.get("home_roster", []) + game.get("away_roster", []):
+            for prop in player.get("props", []):
+                p = {
+                    **prop,
+                    "sport_key":   sport_key,
+                    "sport_emoji": sport_emoji,
+                    "sport_label": sport_label,
+                    "player_name": player.get("name", prop.get("player_name", "")),
+                    "team":        player.get("team", prop.get("team", "")),
+                    "game":        game_label,
+                }
+                all_props.append(p)
+    all_props = [p for p in all_props if is_bettable(p, max_juice=-300)]
+    all_props = [p for p in all_props if not is_specialty_market(p.get("stat", ""))]
+    all_props = [p for p in all_props if p.get("grade") == "A"]
+    all_props = [p for p in all_props if p.get("edge", 0) >= 6]
+    all_props.sort(key=lambda x: x.get("score", 0), reverse=True)
+    # Max 1/player
+    seen_players: set = set()
+    deduped: List[Dict] = []
+    for p in all_props:
+        pname = p.get("player_name", "")
+        if pname not in seen_players:
+            deduped.append(p)
+            seen_players.add(pname)
+    # Max 2/game
+    game_counts: Dict[str, int] = {}
+    result: List[Dict] = []
+    for p in deduped:
+        g = p.get("game", "")
+        if game_counts.get(g, 0) < 2:
+            result.append(p)
+            game_counts[g] = game_counts.get(g, 0) + 1
+    return result
+
 
 # Full team name → abbreviation (NBA, MLB, NHL combined)
 _TEAM_ABBR: Dict[str, str] = {
@@ -929,8 +1123,10 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                     "away_players": [],
                     "home_roster":  [],
                     "away_roster":  [],
-                    "top_props":    [],
-                    "top_pick":     None,
+                    "top_props":       [],
+                    "more_props":      [],
+                    "specialty_props": [],
+                    "top_pick":        None,
                     "is_soccer":    "soccer" in sport_name,
                     "predicted_winner": home_team if home_prob >= away_prob else away_team,
                     "win_prob":     best_prob,
@@ -1003,7 +1199,10 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                     "conf_label":     "Elite Pick" if display_conf >= 85 else "Strong Pick" if display_conf >= 78 else "Good Pick" if display_conf >= 68 else "Moderate" if display_conf >= 58 else "Use Caution",
                     "trend":          "->",
                 }
-                prop["score"] = calculate_bet_score(prop)
+                prop["is_specialty"]       = is_specialty_market(stat)
+                prop["market_reliability"] = get_market_reliability(stat)
+                prop["score"]              = calculate_bet_score(prop)
+                prop["is_bettable"]        = is_bettable(prop)
                 prop["score_label"], prop["score_class"] = get_score_label(prop["score"])
                 prop["stake_rec"] = get_stake_rec(grade, edge, prop["score"])
                 prop["red_flags"] = get_red_flags(prop)
@@ -1027,14 +1226,29 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
             home_players.sort(key=_best_conf, reverse=True)
             away_players.sort(key=_best_conf, reverse=True)
 
-            # Top props sorted by confidence
+            # Top props: score-sorted, filtered, capped
             all_game_props: list = []
             for pdata in player_data.values():
                 all_game_props.extend(pdata["props"])
-            all_game_props.sort(key=lambda x: x["confidence"], reverse=True)
-            prop_count = max(10, min(30, len(all_game_props)))
-            top_props = all_game_props[:prop_count]
-            top_pick = top_props[0] if top_props else None
+            all_game_props.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+            # Core props: bettable, non-specialty, non-Pass
+            core_props = [
+                p for p in all_game_props
+                if p.get("is_bettable") and not p.get("is_specialty") and p.get("grade") != "Pass"
+            ]
+            core_props = dedupe_by_player(core_props)
+            top_props, more_props = apply_game_cap(core_props, max_per_game=3)
+
+            # Specialty props: bettable specialty market props
+            specialty_props = [
+                p for p in all_game_props
+                if p.get("is_bettable") and p.get("is_specialty")
+            ]
+
+            # Top pick: best non-specialty bettable prop
+            non_spec = [p for p in all_game_props if p.get("is_bettable") and not p.get("is_specialty")]
+            top_pick = non_spec[0] if non_spec else (all_game_props[0] if all_game_props else None)
 
             print(f"[ODDS] {sport_name}: event {i+1} done - {len(player_data)} players, {len(top_props)} props")
 
@@ -1066,8 +1280,10 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 "away_players": away_players[:15],
                 "home_roster":  home_players[:15],
                 "away_roster":  away_players[:15],
-                "top_props":    top_props,
-                "top_pick":     top_pick,
+                "top_props":       top_props,
+                "more_props":      more_props,
+                "specialty_props": specialty_props,
+                "top_pick":        top_pick,
                 "is_soccer":    "soccer" in sport_name,
                 "predicted_winner": home_team if home_prob >= away_prob else away_team,
                 "win_prob":     best_prob,
