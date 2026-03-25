@@ -90,6 +90,7 @@ async def _startup_preload():
     Sports are loaded sequentially with 2s gaps to avoid Odds API rate limits.
     """
     def _preload():
+        _PAGE_CACHE.clear()
         from data.odds_api import fetch_odds_api_events
         today_str = date.today().strftime("%Y%m%d")
         print("[STARTUP] Preloading NBA / MLB / NHL sequentially… (Odds API source)")
@@ -594,7 +595,7 @@ async def soccer_page(request: Request):
 async def nba_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    data        = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str), ttl=3600) or {}
+    data        = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str), ttl=60) or {}
     games       = data.get("games", []) if isinstance(data, dict) else (data or [])
     display_props    = data.get("display_props", []) if isinstance(data, dict) else []
     best_value_prop  = data.get("best_value_prop") if isinstance(data, dict) else None
@@ -781,7 +782,7 @@ def _build_nhl_props(today_str: str) -> dict:
 async def mlb_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    data        = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str), ttl=3600) or {}
+    data        = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str), ttl=60) or {}
     games       = data.get("games", []) if isinstance(data, dict) else (data or [])
     display_props    = data.get("display_props", []) if isinstance(data, dict) else []
     best_value_prop  = data.get("best_value_prop") if isinstance(data, dict) else None
@@ -819,7 +820,7 @@ async def mlb_page(request: Request):
 async def nhl_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    data        = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str), ttl=3600) or {}
+    data        = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str), ttl=60) or {}
     games       = data.get("games", []) if isinstance(data, dict) else (data or [])
     display_props    = data.get("display_props", []) if isinstance(data, dict) else []
     best_value_prop  = data.get("best_value_prop") if isinstance(data, dict) else None
