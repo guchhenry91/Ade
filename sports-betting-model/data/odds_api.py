@@ -21,6 +21,18 @@ logger = logging.getLogger(__name__)
 
 ODDS_BASE = "https://api.the-odds-api.com/v4"
 
+# ── No-props skip cache ──────────────────────────────────────────────────────
+NO_PROPS_CACHE: Dict[str, float] = {}
+
+def mark_no_props(event_id: str) -> None:
+    NO_PROPS_CACHE[event_id] = time.time()
+
+def has_no_props(event_id: str, ttl: int = 7200) -> bool:
+    ts = NO_PROPS_CACHE.get(event_id)
+    if ts is None:
+        return False
+    return (time.time() - ts) < ttl
+
 SPORT_KEYS: Dict[str, str] = {
     "NBA":  "basketball_nba",
     "MLB":  "baseball_mlb",
@@ -880,17 +892,29 @@ def fetch_best_odds_props(sport_key: str, event_id: str,
     if not api_key:
         return {}
     markets_str = ",".join(markets)
-    data = fetch(
-        f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
-        params={
-            "apiKey":     api_key,
-            "regions":    "us",
-            "markets":    markets_str,
-            "oddsFormat": "american",
-        },
-        use_cache=False,
-        timeout=12,
-    )
+    try:
+        r = _requests.get(
+            f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
+            params={
+                "apiKey":     api_key,
+                "regions":    "us",
+                "markets":    markets_str,
+                "oddsFormat": "american",
+            },
+            timeout=12,
+        )
+        remaining = r.headers.get('x-requests-remaining', '?')
+        used = r.headers.get('x-requests-used', '?')
+        print(f"[QUOTA] Remaining: {remaining} | Used: {used}")
+        try:
+            if int(remaining) < 200:
+                print(f"[QUOTA] ⚠️ WARNING only {remaining} left!")
+        except Exception:
+            pass
+        r.raise_for_status()
+        data = r.json()
+    except Exception:
+        return {}
     if not data or not isinstance(data, dict):
         return {}
 
@@ -1059,6 +1083,11 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
     print(f"[ODDS] {sport_name}: processing {total_events} events")
 
     for i, event in enumerate(events[:15]):
+        event_id = event.get("id")
+        if has_no_props(event_id):
+            print(f"[ODDS] {sport_name}: event {i+1} skipped (no props)")
+            continue
+
         if i > 0 and i % 3 == 0:
             time.sleep(0.5)
 
@@ -1100,54 +1129,7 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
             best_odds = fetch_best_odds_props(sport_key, event_id, markets)
 
             if not best_odds:
-                # No props — still include game with game lines
-                results.append({
-                    "event_id":    event_id,
-                    "sport":       cfg.get("sport_label", ""),
-                    "league":      cfg.get("league", ""),
-                    "sport_icon":  cfg.get("icon", ""),
-                    "home_team":   home_team,
-                    "away_team":   away_team,
-                    "home_abbr":   home_abbr,
-                    "away_abbr":   away_abbr,
-                    "home_prob":   home_prob,
-                    "away_prob":   away_prob,
-                    "draw_prob":   draw_prob,
-                    "home_ml":     lines.get("home_ml"),
-                    "away_ml":     lines.get("away_ml"),
-                    "home_spread": lines.get("home_spread"),
-                    "away_spread": lines.get("away_spread"),
-                    "home_spread_price": lines.get("home_spread_price", -110),
-                    "away_spread_price": lines.get("away_spread_price", -110),
-                    "total_line":  lines.get("total_line"),
-                    "total_over_price": lines.get("total_over_price", -110),
-                    "pick_badge_label": badge_label,
-                    "pick_badge_class": badge_class,
-                    "kickoff":     event.get("commence_time", ""),
-                    "status":      "STATUS_SCHEDULED",
-                    "home_players": [],
-                    "away_players": [],
-                    "home_roster":  [],
-                    "away_roster":  [],
-                    "top_props":       [],
-                    "more_props":      [],
-                    "specialty_props": [],
-                    "top_pick":        None,
-                    "is_soccer":    "soccer" in sport_name,
-                    "predicted_winner": home_team if home_prob >= away_prob else away_team,
-                    "win_prob":     best_prob,
-                    "confidence":   "HIGH" if best_prob >= 65 else "MEDIUM" if best_prob >= 55 else "LOW",
-                    "home_score":   None, "away_score": None,
-                    "home_wins": 0, "home_losses": 0,
-                    "away_wins": 0, "away_losses": 0,
-                    "bookmaker": "",
-                    "book_home_ml": format_american(lines.get("home_ml")),
-                    "book_away_ml": format_american(lines.get("away_ml")),
-                    "book_home_spread": lines.get("home_spread"),
-                    "book_total":  lines.get("total_line"),
-                    "spread":      lines.get("home_spread"),
-                    "over_under":  lines.get("total_line"),
-                })
+                mark_no_props(event_id)
                 print(f"[ODDS] {sport_name}: event {i+1} - no props")
                 continue
 

@@ -101,7 +101,7 @@ async def _startup_preload():
                 print(f"[STARTUP] {key} preloaded OK")
             except Exception as _e:
                 print(f"[STARTUP] {key} preload failed: {_e}")
-            _time.sleep(2)  # 2s gap between sports to avoid rate limiting
+            _time.sleep(3)  # 3s gap between sports to avoid rate limiting
     threading.Thread(target=_preload, daemon=True).start()
 
 
@@ -549,7 +549,7 @@ async def soccer_page(request: Request):
 async def nba_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    games       = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str))
+    games       = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str), ttl=3600)
     return TEMPLATES.TemplateResponse(request, "nba.html", {
         "games": games or [], "today": today_label,
         "total": len(games or []), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
@@ -594,7 +594,7 @@ async def mycard_preview():
             ("nhl", lambda: _build_nhl_props(today_str)),
         ]:
             try:
-                games = _cached(f"{sport_key}_{today_str}", build_fn, ttl=900) or []
+                games = _cached(f"{sport_key}_{today_str}", build_fn, ttl=1800) or []
             except Exception:
                 continue
             for game in games:
@@ -660,9 +660,9 @@ async def today_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
     try:
-        nba_games = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str), ttl=900) or []
-        mlb_games = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str), ttl=900) or []
-        nhl_games = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str), ttl=900) or []
+        nba_games = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str), ttl=1800) or []
+        mlb_games = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str), ttl=1800) or []
+        nhl_games = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str), ttl=1800) or []
     except Exception as _e:
         print(f"[TODAY] Error building games: {_e}")
         traceback.print_exc()
@@ -700,7 +700,7 @@ def _build_nhl_props(today_str: str) -> list:
 async def mlb_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    games       = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str))
+    games       = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str), ttl=3600)
     return TEMPLATES.TemplateResponse(request, "mlb.html", {
         "games":        games or [],
         "total":        len(games or []),
@@ -717,7 +717,7 @@ async def mlb_page(request: Request):
 async def nhl_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    games       = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str))
+    games       = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str), ttl=3600)
     return TEMPLATES.TemplateResponse(request, "nhl.html", {
         "games":        games or [],
         "total":        len(games or []),
@@ -1100,7 +1100,7 @@ async def mycard_page(request: Request):
                 games = _cached(
                     f"{sport_key}_{today_str}",
                     lambda sk=sport_key: build_sport_props(sk),
-                    ttl=900,
+                    ttl=1800,
                 ) or []
             except Exception as _se:
                 print(f"[MYCARD] {sport_key}: {_se}")
@@ -1152,7 +1152,7 @@ async def mycard_page(request: Request):
 
         # Soccer (unchanged — no get_mycard_props support for soccer)
         try:
-            soccer_result = _cached("soccer", build_soccer_props, ttl=900) or {}
+            soccer_result = _cached("soccer", build_soccer_props, ttl=1800) or {}
             soccer_games_raw = soccer_result.get("games", []) if isinstance(soccer_result, dict) else []
             soccer_props: list = []
             for league_block in soccer_games_raw:
