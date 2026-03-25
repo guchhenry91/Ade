@@ -268,22 +268,6 @@
         <td><button class="log-btn" onclick="logBet({player:'{{ prop.player_name }}',stat:'{{ prop.label }}',line:{{ prop.line }},pick:'{{ prop.pick }}',odds:'{{ prop.price }}',grade:'{{ prop.grade }}',score:{{ prop.score }},sport:'{{ prop.sport_key }}',game:'{{ prop.game }}',confidence:{{ prop.confidence }}})">Log</button></td>
       </tr>
       {% endfor %}
-      {% for prop in sdata.sharp %}
-      <tr class="prop-row mc-prop-row sharp-row grade-border-A" data-grade="A" data-sport="{{ sk }}" style="display:none;">
-        <td class="pr-player">⚡ {{ prop.player_name }}</td>
-        <td class="pr-game">{{ prop.game }}</td>
-        <td>{{ prop.label }}</td>
-        <td style="font-weight:700;">{{ prop.line }}</td>
-        <td><span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span></td>
-        <td><span class="conf-high">{{ prop.confidence }}%</span></td>
-        <td><span class="grade-badge grade-A">A</span></td>
-        <td><span class="score-badge {{ prop.score_class }}">{{ prop.score }}</span></td>
-        <td class="edge-pos">+{{ prop.edge }}%</td>
-        <td class="pr-book hide-mobile">{{ prop.best_book|upper if prop.best_book else '-' }}</td>
-        <td class="pr-stake">{{ prop.stake_rec }}</td>
-        <td><button class="log-btn" onclick="logBet({player:'{{ prop.player_name }}',stat:'{{ prop.label }}',line:{{ prop.line }},pick:'{{ prop.pick }}',odds:'{{ prop.price }}',grade:'A',score:{{ prop.score }},sport:'{{ prop.sport_key }}',game:'{{ prop.game }}',confidence:{{ prop.confidence }}})">Log</button></td>
-      </tr>
-      {% endfor %}
     </tbody>
   </table>
   </div>
@@ -314,8 +298,10 @@ const sharpLabel  = document.getElementById('sharp-mode-label');
 const sharpBadge  = document.getElementById('sharp-mode-badge');
 
 function applySharpMode(isSharp) {
-  document.querySelectorAll('.standard-row').forEach(r => r.style.display = isSharp ? 'none' : '');
-  document.querySelectorAll('.sharp-row').forEach(r => r.style.display = isSharp ? '' : 'none');
+  // Filter existing rows by grade — no separate sharp-row set needed
+  document.querySelectorAll('.standard-row').forEach(r => {
+    r.style.display = (!isSharp || r.dataset.grade === 'A') ? '' : 'none';
+  });
   sharpLabel.textContent = isSharp ? 'Sharp Mode (A Grade · ≥6% edge)' : 'Standard (A + B Grade)';
   sharpBadge.style.display = isSharp ? '' : 'none';
   // Update All panel best3 visibility

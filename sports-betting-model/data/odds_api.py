@@ -752,7 +752,16 @@ def get_mycard_props(
     all_props = [p for p in all_props if p.get("grade", "Pass") != "Pass"]
     all_props.sort(key=lambda x: x.get("score", 0), reverse=True)
     all_props = dedupe_by_player(all_props)
-    return all_props[:15]
+    # Game diversity: max 3 props per game
+    game_counts: Dict[str, int] = {}
+    diverse: List[Dict] = []
+    for p in all_props:
+        game = p.get("game", "")
+        count = game_counts.get(game, 0)
+        if count < 3:
+            diverse.append(p)
+            game_counts[game] = count + 1
+    return diverse[:15]
 
 
 def get_sharp_props(
