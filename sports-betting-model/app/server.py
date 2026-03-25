@@ -87,13 +87,18 @@ async def _startup_preload():
     Sports are loaded sequentially with 2s gaps to avoid Odds API rate limits.
     """
     def _preload():
+        from data.odds_api import fetch_odds_api_events
         today_str = date.today().strftime("%Y%m%d")
         print("[STARTUP] Preloading NBA / MLB / NHL sequentially… (Odds API source)")
-        for key, fn in [
-            (f"nba_{today_str}", lambda: _build_nba_games(today_str)),
-            (f"mlb_{today_str}", lambda: _build_mlb_props(today_str)),
-            (f"nhl_{today_str}", lambda: _build_nhl_props(today_str)),
+        for sport, sport_api_key, key, fn in [
+            ("NBA", "basketball_nba",   f"nba_{today_str}", lambda: _build_nba_games(today_str)),
+            ("MLB", "baseball_mlb",     f"mlb_{today_str}", lambda: _build_mlb_props(today_str)),
+            ("NHL", "icehockey_nhl",    f"nhl_{today_str}", lambda: _build_nhl_props(today_str)),
         ]:
+            events = fetch_odds_api_events(sport_api_key)
+            if not events:
+                print(f"[STARTUP] {sport}: no events, skipping")
+                continue
             try:
                 data = fn()
                 with _CACHE_LOCK:
@@ -103,6 +108,38 @@ async def _startup_preload():
                 print(f"[STARTUP] {key} preload failed: {_e}")
             _time.sleep(3)  # 3s gap between sports to avoid rate limiting
     threading.Thread(target=_preload, daemon=True).start()
+
+
+@app.get("/api/quota")
+def check_quota():
+    import requests as req, os
+    api_key = os.getenv(
+        "ODDS_API_KEY",
+        "17b4d42651ab4e81ef298300544f5a21"
+    )
+    url = (
+        "https://api.the-odds-api.com/v4/sports"
+        f"?apiKey={api_key}"
+    )
+    try:
+        r = req.get(url, timeout=8)
+        remaining = r.headers.get(
+            'x-requests-remaining', 'unknown'
+        )
+        used = r.headers.get(
+            'x-requests-used', 'unknown'
+        )
+        return {
+            "remaining": remaining,
+            "used":      used,
+            "warning": (
+                "LOW" if remaining != 'unknown'
+                and int(remaining) < 200
+                else None
+            )
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.exception_handler(Exception)

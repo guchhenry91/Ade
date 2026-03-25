@@ -1037,6 +1037,20 @@ def fetch_game_lines(sport_key: str) -> Dict[str, Dict]:
     return lines
 
 
+def fetch_odds_api_events(sport_key: str) -> list:
+    """Return today's events list for a sport_key (e.g. 'basketball_nba'), or []."""
+    api_key = _key()
+    if not api_key:
+        return []
+    data = fetch(
+        f"{ODDS_BASE}/sports/{sport_key}/events",
+        params={"apiKey": api_key, "dateFormat": "iso"},
+        use_cache=True,
+        timeout=12,
+    )
+    return data if isinstance(data, list) else []
+
+
 # ════════════════════════════════════════════════════════════════════════════════
 # PART 5 — REWRITTEN build_sport_props() INTEGRATING ALL SYSTEMS
 # ════════════════════════════════════════════════════════════════════════════════
@@ -1211,8 +1225,20 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
 
             def _best_conf(player):
                 return player["props"][0]["confidence"] if player["props"] else 0
-            home_players.sort(key=_best_conf, reverse=True)
-            away_players.sort(key=_best_conf, reverse=True)
+
+            def _top_players(player_list, max_n=8):
+                return sorted(
+                    player_list,
+                    key=lambda p: max(
+                        (prop.get("confidence", 0)
+                         for prop in p.get("props", [])),
+                        default=0
+                    ),
+                    reverse=True
+                )[:max_n]
+
+            home_players = _top_players(home_players, 8)
+            away_players = _top_players(away_players, 8)
 
             # Top props: score-sorted, filtered, capped
             all_game_props: list = []
@@ -1227,6 +1253,7 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
             ]
             core_props = dedupe_by_player(core_props)
             top_props, more_props = apply_game_cap(core_props, max_per_game=3)
+            top_props = top_props[:25]
 
             # Specialty props: bettable specialty market props
             specialty_props = [
@@ -1264,10 +1291,10 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 "pick_badge_class": badge_class,
                 "kickoff":     event.get("commence_time", ""),
                 "status":      "STATUS_SCHEDULED",
-                "home_players": home_players[:15],
-                "away_players": away_players[:15],
-                "home_roster":  home_players[:15],
-                "away_roster":  away_players[:15],
+                "home_players": home_players[:8],
+                "away_players": away_players[:8],
+                "home_roster":  home_players[:8],
+                "away_roster":  away_players[:8],
                 "top_props":       top_props,
                 "more_props":      more_props,
                 "specialty_props": specialty_props,
