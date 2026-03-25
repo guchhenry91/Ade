@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Reports – Sports Betting Model{% endblock %}
+{% block content %}
+
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-white">📊 Reports</h1>
+  <p class="text-slate-400 text-sm mt-1">Saved analysis reports</p>
+</div>
+
+{% if not reports %}
+<div class="card rounded-xl p-8 text-center text-slate-500">
+  No reports yet. Run the <a href="/demo" class="text-indigo-400 hover:underline">demo</a> or analyse a fixture to generate one.
+</div>
+{% else %}
+
+<div class="flex gap-4 mb-4 text-sm">
+  <span class="text-slate-500">{{ reports | length }} report(s)</span>
+</div>
+
+<div class="space-y-4">
+  {% for r in reports %}
+  <details class="card rounded-xl group">
+    <summary class="px-5 py-4 cursor-pointer flex items-center justify-between select-none">
+      <div class="flex items-center gap-3">
+        <span class="text-xl">📄</span>
+        <div>
+          <p class="font-semibold text-white">{{ r.date }}</p>
+          <p class="text-xs text-slate-500">{{ r.name }}</p>
+        </div>
+      </div>
+      <span class="text-slate-500 text-sm group-open:rotate-180 transition-transform">▼</span>
+    </summary>
+    <div class="px-5 pb-5">
+      <pre class="text-xs text-slate-400 bg-slate-900/50 rounded-lg p-4 overflow-x-auto whitespace-pre-wrap">{{ r.content }}</pre>
+    </div>
+  </details>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}

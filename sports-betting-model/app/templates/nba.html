@@ -1,0 +1,626 @@
+{% extends "base.html" %}
+{% block title %}NBA Props – BetModel Pro{% endblock %}
+
+{% block head %}
+<style>
+/* ── Game header ─────────────────────────────── */
+.game-section { margin-bottom: 14px; }
+.game-header {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px); padding: 14px 16px;
+  cursor: pointer; transition: background 0.15s, border-color 0.15s;
+}
+.game-header:hover { border-color: var(--border-light); background: var(--bg-hover); }
+.game-section.expanded .game-header { border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0; }
+.gh-row1 { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.gh-matchup { font-size: 18px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.5px; }
+.gh-time { font-size: 13px; color: var(--text-muted); margin-left: auto; }
+.gh-toggle { font-size: 11px; color: var(--text-muted); transition: transform 0.2s; }
+.game-section.expanded .gh-toggle { transform: rotate(180deg); }
+.gh-probs { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.gh-team { display: flex; align-items: center; gap: 8px; }
+.gh-team.right { flex-direction: row-reverse; }
+.gh-tname { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
+.gh-prob { font-size: 22px; font-weight: 900; }
+.gh-prob.home { color: var(--over); }
+.gh-prob.away { color: var(--accent); }
+.gh-ml { font-size: 12px; color: #555; font-weight: 500; }
+.gh-center { flex: 1; text-align: center; font-size: 11px; color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
+.gh-spread, .gh-total { font-size: 11px; font-weight: 600; color: #666; background: #1a1a2e; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+.gh-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.game-pick-badge { display:inline-flex;align-items:center;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:700;white-space:nowrap; }
+.badge-strong   { background:var(--over-dim); color:var(--over); border:1px solid var(--over); }
+.badge-favoured { background:var(--accent-dim); color:var(--accent); border:1px solid var(--accent); }
+.badge-slight   { background:var(--hot-dim, #ff950018); color:var(--hot, #ff9500); border:1px solid var(--hot, #ff9500); }
+.badge-pickem   { background:var(--fair-dim, #88889918); color:var(--fair, #888899); border:1px solid var(--border); }
+.gh-top-prop { font-size: 12px; color: var(--text-secondary); }
+.gh-top-prop strong { color: var(--over); }
+
+/* ── Collapsible content ─────────────────────── */
+.game-props {
+  display: none; background: var(--bg-elevated);
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 var(--radius-lg, 12px) var(--radius-lg, 12px);
+  padding: 14px;
+}
+.game-section.expanded .game-props { display: block; }
+.game-standout {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: 12px; color: var(--text-secondary);
+}
+.game-standout strong { color: var(--over); }
+.no-props-msg { padding: 12px 0; font-size: 12px; color: var(--text-muted); text-align: center; }
+.show-more-section { margin-top: 4px; }
+.more-props-container { margin-top: 4px; }
+.specialty-section { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 4px; }
+.specialty-toggle {
+  display: block; width: 100%; padding: 6px 14px; text-align: left;
+  background: transparent; border: none; color: var(--text-muted);
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; cursor: pointer;
+}
+.specialty-toggle:hover { color: var(--text-secondary); }
+.specialty-container { margin-top: 4px; }
+
+/* ── Player cards ────────────────────────────── */
+.player-card {
+  background: #111130; border: 1px solid #1e1e3f;
+  border-radius: 12px; margin-bottom: 10px; overflow: hidden;
+}
+.player-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; background: #16162e;
+  border-bottom: 1px solid #1e1e3f;
+}
+.player-name { font-size: 15px; font-weight: 700; color: #f0f0ff; flex: 1; }
+.player-team-badge {
+  font-size: 11px; font-weight: 700; color: #00d4ff;
+  background: rgba(0,212,255,0.12); border: 1px solid rgba(0,212,255,0.3);
+  border-radius: 20px; padding: 2px 8px; flex-shrink: 0;
+}
+.player-top-pick { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; flex-shrink: 0; }
+.player-top-pick.hot   { background: var(--over-dim); color: var(--over); }
+.player-top-pick.solid { background: var(--accent-dim); color: var(--accent); }
+.player-top-pick.lean  { background: var(--hot-dim, #ff950018); color: var(--hot, #ff9500); }
+
+/* ── Stat rows ───────────────────────────────── */
+.stat-row {
+  display: block; padding: 10px 14px;
+  border-bottom: 1px solid var(--border); transition: background 0.12s;
+}
+.stat-row:last-child { border-bottom: none; }
+.stat-row:hover { background: var(--bg-hover); }
+/* Grade-based left border */
+.stat-row[data-grade="A"]     { border-left: 3px solid var(--over); }
+.stat-row[data-grade="B"]     { border-left: 3px solid var(--accent); }
+.stat-row[data-grade="Watch"] { border-left: 3px solid var(--hot, #ff9500); opacity: 0.8; }
+/* Watch rows are shown by default; JS controls visibility */
+
+/* Player name in flat prop row */
+.sr-player { font-size: 11px; color: var(--text-muted); min-width: 80px; }
+
+/* Two-line layout */
+.sr-main {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+}
+.sr-detail {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding-left: 2px;
+}
+.sr-label { font-size: 14px; font-weight: 600; color: var(--text-primary); flex: 1; }
+.sr-line  { font-size: 15px; font-weight: 800; color: var(--text-primary); width: 38px; text-align: center; flex-shrink: 0; }
+.pick-pill {
+  font-size: 11px; font-weight: 700; padding: 3px 9px;
+  border-radius: 10px; min-width: 54px; text-align: center; flex-shrink: 0;
+}
+.pick-pill.over  { background: var(--over-dim); color: var(--over); border: 1px solid var(--over); }
+.pick-pill.under { background: var(--under-dim); color: var(--under); border: 1px solid var(--under); }
+.pick-pill.fair  { background: var(--fair-dim, #88889918); color: var(--fair, #888899); border: 1px solid var(--border); }
+.sr-conf { font-size: 15px; font-weight: 800; width: 48px; text-align: center; flex-shrink: 0; }
+.sr-conf.high { color: var(--over); }
+.sr-conf.med  { color: var(--hot, #ff9500); }
+.sr-conf.low  { color: var(--text-muted); }
+.grade-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; flex-shrink: 0; }
+.grade-badge.grade-A     { background: var(--over-dim); color: var(--over); }
+.grade-badge.grade-B     { background: var(--accent-dim); color: var(--accent); }
+.grade-badge.grade-Watch { background: var(--hot-dim, #ff950018); color: var(--hot, #ff9500); }
+.grade-badge.grade-Pass  { background: var(--fair-dim, #88889918); color: var(--fair, #888899); opacity: 0.6; }
+.sr-edge { font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.edge-pos { color: var(--over); }
+.edge-neg { color: var(--under); }
+.sr-book { font-size: 11px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+.sr-playable { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+.sr-stake { font-size: 12px; font-weight: 700; color: var(--over); flex-shrink: 0; }
+.sr-add {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-muted); cursor: pointer; font-size: 16px;
+  transition: all 0.12s; display: flex; align-items: center; justify-content: center;
+  margin-left: auto; flex-shrink: 0;
+}
+.sr-add:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.sr-add.added { border-color: var(--over); color: var(--over); background: var(--over-dim); }
+
+/* ── Team section labels ─────────────────────── */
+.team-label-compact {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; background: #0d0d22; border-bottom: 1px solid #1e1e3f;
+}
+.ts-name { font-size: 13px; font-weight: 700; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
+.ts-count { font-size: 12px; color: #555; background: #1a1a2e; padding: 2px 8px; border-radius: 10px; }
+
+
+/* ── Filter bar ──────────────────────────────── */
+.filter-bar { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 14px; }
+.filter-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.fpill, .ppill, .gpill {
+  padding: 8px 16px; border-radius: 20px; border: 1px solid #252545;
+  background: #111128; color: #777; font-size: 13px;
+  font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: all 0.15s; min-height: 36px;
+  display: inline-flex; align-items: center;
+}
+.fpill.active, .gpill.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.ppill.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.ppill.over.active  { background: var(--over-dim); border-color: var(--over); color: var(--over); }
+.ppill.under.active { background: var(--under-dim); border-color: var(--under); color: var(--under); }
+.ppill.fair.active  { background: var(--fair-dim, #88889918); border-color: var(--border); color: var(--fair, #888899); }
+.ppill .badge { background: rgba(255,255,255,.1); border-radius: 8px; padding: 0 5px; font-size: 10px; margin-left: 3px; }
+
+/* ── Best picks strip ────────────────────────── */
+.best-picks-strip {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px 14px 6px; border-bottom: 1px solid var(--border);
+}
+.bp-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 20px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+}
+.bp-pill.grade-A { border-color: var(--over); color: var(--over); background: var(--over-dim); }
+.bp-pill.grade-B { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* ── Show more button ────────────────────────── */
+.show-more-btn {
+  display: block; width: 100%; padding: 8px; text-align: center;
+  background: var(--bg-elevated); border: 1px dashed var(--border);
+  color: var(--text-muted); font-size: 12px; font-weight: 600;
+  cursor: pointer; border-radius: 8px; margin: 8px 0; transition: all 0.15s;
+}
+.show-more-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Specialty section ───────────────────────── */
+.specialty-label {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; font-size: 11px; font-weight: 700;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+  border-top: 1px dashed var(--border); margin-top: 4px;
+}
+
+/* ── Curated picks section ──────────────────── */
+.curated-section {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px); padding: 16px; margin-bottom: 16px;
+}
+.curated-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.curated-title { font-size: 16px; font-weight: 800; color: var(--text-primary); }
+.curated-count { font-size: 12px; color: var(--text-muted); background: #1a1a2e; padding: 2px 10px; border-radius: 10px; }
+.curated-best {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 10px;
+  background: var(--over-dim); border: 1px solid var(--over);
+  border-radius: 10px; font-size: 13px; color: var(--text-secondary);
+}
+.curated-best strong { color: var(--over); }
+
+/* ── Game picks section ────────────────────── */
+.picks-section {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px); padding: 16px; margin-bottom: 16px;
+}
+.picks-title { font-size: 15px; font-weight: 800; color: var(--text-primary); margin-bottom: 10px; }
+.pick-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 0;
+  border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.pick-row:last-child { border-bottom: none; }
+.pick-matchup { font-weight: 700; color: var(--text-primary); min-width: 100px; }
+.pick-lean { font-weight: 700; color: var(--over); }
+.pick-conf { font-size: 12px; color: var(--text-muted); }
+.pick-spread { font-size: 12px; color: var(--text-secondary); background: #1a1a2e; padding: 2px 8px; border-radius: 6px; }
+.pick-total { font-size: 12px; color: var(--text-secondary); background: #1a1a2e; padding: 2px 8px; border-radius: 6px; }
+
+/* ── Mobile ──────────────────────────────────── */
+@media (max-width: 600px) {
+  .filter-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .filter-row::-webkit-scrollbar { display: none; }
+  .sr-main { gap: 7px; }
+  .sr-label { font-size: 13px; }
+  .sr-line { font-size: 14px; width: 32px; }
+  .sr-conf { font-size: 14px; width: 42px; }
+  .sr-playable { display: none; }
+  .gh-matchup { font-size: 16px; }
+  .gh-prob { font-size: 20px; }
+  .fpill, .ppill, .gpill { padding: 6px 12px; font-size: 12px; min-height: 32px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+  <div>
+    <div class="section-hdr">🏀 NBA Player Props</div>
+    <div class="section-sub">
+      {{ today }} · <strong style="color:var(--accent)">{{ total }}</strong> game{{ 's' if total != 1 else '' }}
+      {% if not has_odds_key %} · <span style="color:#ff8800;font-size:11px;">Set <code>ODDS_API_KEY</code></span>{% endif %}
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <a href="/nba" class="btn btn-accent">↻ Refresh</a>
+    {% if generated_at %}
+    <div class="updated-bar" style="justify-content:flex-end;">
+      <span class="dot"></span><span data-generated-at="{{ generated_at }}"></span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% if deploy_ts %}
+<div style="font-size:10px;color:#333;padding:2px 8px;background:#0a0a1a;border-radius:4px;margin-bottom:8px;font-family:monospace;">
+  build: {{ deploy_ts }}
+</div>
+{% endif %}
+
+{% if total == 0 %}
+<div class="card" style="padding:56px;text-align:center;">
+  <div style="font-size:48px;margin-bottom:12px;">😴</div>
+  <div style="font-size:18px;font-weight:700;color:var(--text-primary);">No NBA games today</div>
+  <div style="color:var(--text-secondary);margin-top:6px;font-size:13px;">Check back on a game day for live picks and player props.</div>
+</div>
+{% else %}
+
+<!-- Filter bar -->
+<div class="filter-bar">
+  <div class="filter-row" id="nba-stat-pills">
+    {% for label, val in [('All','all'),('Points','pts'),('Rebounds','reb'),('Assists','ast'),('3PM','3pm'),('Blocks','blk'),('Steals','stl'),('PRA','pra')] %}
+    <button class="fpill {% if loop.first %}active{% endif %}" data-filter="{{ val }}">{{ label }}</button>
+    {% endfor %}
+  </div>
+  <div class="filter-row" id="nba-pick-pills">
+    <button class="ppill active" data-pick="all">All <span class="badge" id="nba-cnt-all" data-pick-count="all"></span></button>
+    <button class="ppill over"   data-pick="OVER">▲ OVER <span class="badge" id="nba-cnt-over" data-pick-count="over"></span></button>
+    <button class="ppill under"  data-pick="UNDER">▼ UNDER <span class="badge" id="nba-cnt-under" data-pick-count="under"></span></button>
+    <button class="ppill fair"   data-pick="FAIR">↔ FAIR <span class="badge" id="nba-cnt-fair" data-pick-count="fair"></span></button>
+  </div>
+  <div class="filter-row" id="nba-grade-pills">
+    <button class="gpill active" data-grade="all">All Grade</button>
+    <button class="gpill" data-grade="A">A Grade</button>
+    <button class="gpill" data-grade="B">B Grade</button>
+    <button class="gpill" data-grade="Watch">Watch</button>
+  </div>
+</div>
+
+<!-- ── Curated Top Picks (sport-level) ────────────────── -->
+{% if display_props %}
+<div class="curated-section">
+  <div class="curated-header">
+    <span class="curated-title">Today's Best Props</span>
+    <span class="curated-count">{{ display_props|length }} pick{{ 's' if display_props|length != 1 else '' }}</span>
+  </div>
+  {% if best_value_prop %}
+  <div class="curated-best">
+    ⭐ <strong>Best Value:</strong>
+    {{ best_value_prop.player_name }} — {{ best_value_prop.label or best_value_prop.stat }} {{ best_value_prop.line }}
+    <span class="pick-pill {{ best_value_prop.pick|lower }}">{{ best_value_prop.pick }}</span>
+    <strong>{{ best_value_prop.confidence }}%</strong>
+    <span class="grade-badge grade-{{ best_value_prop.grade }}">{{ best_value_prop.grade }}</span>
+    <span style="font-size:11px;color:var(--text-muted)">{{ best_value_prop.game }}</span>
+  </div>
+  {% endif %}
+  <div class="top-props-section">
+  {% for prop in display_props %}
+  <div class="stat-row grade-border-{{ prop.grade }}"
+       data-stat="{{ prop.stat|lower }}"
+       data-pick="{{ prop.pick }}"
+       data-grade="{{ prop.grade }}"
+       data-odds="{{ prop.price|default(-110) }}">
+    <div class="sr-main">
+      <span class="sr-player">{{ prop.player_name }}</span>
+      <span class="sr-label">{{ prop.label or prop.stat }}</span>
+      <span class="sr-line">{{ prop.line }}</span>
+      <span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span>
+      <span class="sr-conf conf-{{ 'high' if prop.confidence >= 72 else 'med' if prop.confidence >= 62 else 'low' }}">{{ prop.confidence }}%</span>
+      <button class="sr-add"
+              data-player="{{ prop.player_name }}" data-team="{{ prop.team or '' }}" data-sport="NBA"
+              data-game="{{ prop.game }}"
+              data-stat="{{ prop.stat }}" data-line="{{ prop.line }}"
+              data-pick="{{ prop.pick }}" data-confidence="{{ prop.confidence }}"
+              data-grade="{{ prop.grade }}" data-score="{{ prop.score|default(50) }}"
+              data-stars="" data-trend="" data-last5="" data-avg="{{ prop.line }}"
+              onclick="addToParlay(this)">+</button>
+    </div>
+    <div class="sr-detail">
+      <span class="grade-badge grade-{{ prop.grade }}">{{ prop.grade }}</span>
+      <span class="sr-edge {{ 'edge-pos' if prop.edge > 0 else 'edge-neg' }}">{% if prop.edge > 0 %}+{% endif %}{{ prop.edge }}% edge</span>
+      {% if prop.best_book %}<span class="sr-book">{{ prop.best_book|upper }}</span>{% endif %}
+      <span class="sr-price">{{ prop.price|default('') }}</span>
+      <span style="font-size:11px;color:var(--text-muted)">{{ prop.game }}</span>
+    </div>
+  </div>
+  {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Game Picks / Winners ──────────────────────────── -->
+{% if game_picks %}
+<div class="picks-section">
+  <div class="picks-title">Game Picks</div>
+  {% for gp in game_picks %}
+  <div class="pick-row">
+    <span class="pick-matchup">{{ gp.matchup }}</span>
+    <span class="pick-lean">{{ gp.ml_lean }}</span>
+    <span class="game-pick-badge {{ gp.badge_class }}">{{ gp.badge_label }}</span>
+    {% if gp.spread is not none %}<span class="pick-spread">{{ gp.home_abbr }} {{ gp.spread }}</span>{% endif %}
+    {% if gp.total %}<span class="pick-total">O/U {{ gp.total }}</span>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% for game in games %}
+{% set gid = loop.index0|string %}
+<div class="game-section {% if loop.first %}expanded{% endif %} game-card"
+     data-teams="{{ game.home_abbr }},{{ game.away_abbr }}">
+
+  <!-- Game header -->
+  <div class="game-header" onclick="toggleGame(this)">
+    <div class="gh-row1">
+      <span class="gh-matchup">{{ game.away_abbr }} @ {{ game.home_abbr }}</span>
+      {% if game.kickoff and game.kickoff|length > 10 %}
+      <span class="gh-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+      {% endif %}
+      <span class="gh-toggle">▼</span>
+    </div>
+    <div class="gh-probs">
+      <div class="gh-team">
+        <span class="gh-tname">{{ game.home_team.split()[-1] }}</span>
+        <span class="gh-prob home">{{ game.home_prob }}%</span>
+        {% if game.home_ml %}<span class="gh-ml">{{ game.home_ml|format_american }}</span>{% endif %}
+      </div>
+      <div class="gh-center">
+        {% if game.home_spread is not none %}
+        <div class="gh-spread">{{ game.home_team.split()[-1] }} {{ game.home_spread }} ({{ game.home_spread_price|format_american }})</div>
+        {% endif %}
+        {% if game.total_line %}
+        <div class="gh-total">O/U {{ game.total_line }}</div>
+        {% endif %}
+      </div>
+      <div class="gh-team right">
+        <span class="gh-prob away">{{ game.away_prob }}%</span>
+        {% if game.away_ml %}<span class="gh-ml">{{ game.away_ml|format_american }}</span>{% endif %}
+        <span class="gh-tname">{{ game.away_team.split()[-1] }}</span>
+      </div>
+    </div>
+    <div class="gh-meta">
+      {% if game.pick_badge_label %}<span class="game-pick-badge {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>{% endif %}
+      {% if game.top_pick %}
+      <div class="game-standout">
+        ⭐ {{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }}
+        {{ game.top_pick.label or game.top_pick.stat or '' }} {{ game.top_pick.line }}
+        <span class="pick-pill {{ game.top_pick.pick|lower }}">{{ game.top_pick.pick }}</span>
+        <strong>{{ game.top_pick.confidence }}%</strong>
+        <span class="grade-badge grade-{{ game.top_pick.grade }}">{{ game.top_pick.grade }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="game-props">
+
+  {% if game.top_props %}
+  <div class="top-props-section">
+    {% for prop in game.top_props %}
+    <div class="stat-row grade-border-{{ prop.grade }}"
+         data-stat="{{ prop.stat|lower }}"
+         data-pick="{{ prop.pick }}"
+         data-grade="{{ prop.grade }}"
+         data-odds="{{ prop.price|default(-110) }}">
+      <div class="sr-main">
+        <span class="sr-player">{{ prop.player_name }}</span>
+        <span class="sr-label">{{ prop.label or prop.stat }}</span>
+        <span class="sr-line">{{ prop.line }}</span>
+        <span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span>
+        <span class="sr-conf conf-{{ 'high' if prop.confidence >= 72 else 'med' if prop.confidence >= 62 else 'low' }}">{{ prop.confidence }}%</span>
+        <button class="sr-add"
+                data-player="{{ prop.player_name }}" data-team="{{ prop.team or '' }}" data-sport="NBA"
+                data-game="{{ game.away_team }} @ {{ game.home_team }}"
+                data-stat="{{ prop.stat }}" data-line="{{ prop.line }}"
+                data-pick="{{ prop.pick }}" data-confidence="{{ prop.confidence }}"
+                data-grade="{{ prop.grade }}" data-score="{{ prop.score|default(50) }}"
+                data-stars="" data-trend="" data-last5="" data-avg="{{ prop.line }}"
+                onclick="addToParlay(this)">+</button>
+      </div>
+      <div class="sr-detail">
+        <span class="grade-badge grade-{{ prop.grade }}">{{ prop.grade }}</span>
+        <span class="sr-edge {{ 'edge-pos' if prop.edge > 0 else 'edge-neg' }}">{% if prop.edge > 0 %}+{% endif %}{{ prop.edge }}% edge</span>
+        {% if prop.best_book %}<span class="sr-book">{{ prop.best_book|upper }}</span>{% endif %}
+        <span class="sr-price">{{ prop.price|default('') }}</span>
+        <span class="sr-stake">{{ prop.stake_rec|default('') }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="no-props-msg">No A/B grade props available yet. Check back closer to game time.</div>
+  {% endif %}
+
+  {% if game.more_props %}
+  <div class="show-more-section">
+    <button class="show-more-btn" onclick="toggleMoreProps(this)">+ Show {{ game.more_props|length }} more prop{{ 's' if game.more_props|length != 1 else '' }} ▼</button>
+    <div class="more-props-container" style="display:none">
+      {% for prop in game.more_props %}
+      <div class="stat-row grade-border-{{ prop.grade }}"
+           data-stat="{{ prop.stat|lower }}"
+           data-pick="{{ prop.pick }}"
+           data-grade="{{ prop.grade }}"
+           data-odds="{{ prop.price|default(-110) }}">
+        <div class="sr-main">
+          <span class="sr-player">{{ prop.player_name }}</span>
+          <span class="sr-label">{{ prop.label or prop.stat }}</span>
+          <span class="sr-line">{{ prop.line }}</span>
+          <span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span>
+          <span class="sr-conf conf-{{ 'high' if prop.confidence >= 72 else 'med' if prop.confidence >= 62 else 'low' }}">{{ prop.confidence }}%</span>
+          <button class="sr-add"
+                  data-player="{{ prop.player_name }}" data-team="{{ prop.team or '' }}" data-sport="NBA"
+                  data-game="{{ game.away_team }} @ {{ game.home_team }}"
+                  data-stat="{{ prop.stat }}" data-line="{{ prop.line }}"
+                  data-pick="{{ prop.pick }}" data-confidence="{{ prop.confidence }}"
+                  data-grade="{{ prop.grade }}" data-score="{{ prop.score|default(50) }}"
+                  data-stars="" data-trend="" data-last5="" data-avg="{{ prop.line }}"
+                  onclick="addToParlay(this)">+</button>
+        </div>
+        <div class="sr-detail">
+          <span class="grade-badge grade-{{ prop.grade }}">{{ prop.grade }}</span>
+          <span class="sr-edge {{ 'edge-pos' if prop.edge > 0 else 'edge-neg' }}">{% if prop.edge > 0 %}+{% endif %}{{ prop.edge }}% edge</span>
+          {% if prop.best_book %}<span class="sr-book">{{ prop.best_book|upper }}</span>{% endif %}
+          <span class="sr-price">{{ prop.price|default('') }}</span>
+          <span class="sr-stake">{{ prop.stake_rec|default('') }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if game.specialty_props %}
+  <div class="specialty-section">
+    <button class="specialty-toggle" onclick="toggleSpecialty(this)">🔬 Advanced Markets ({{ game.specialty_props|length }}) ▼</button>
+    <div class="specialty-container" style="display:none">
+      {% for prop in game.specialty_props %}
+      <div class="stat-row"
+           data-stat="{{ prop.stat|lower }}"
+           data-pick="{{ prop.pick }}"
+           data-grade="{{ prop.grade }}">
+        <div class="sr-main">
+          <span class="sr-player">{{ prop.player_name }}</span>
+          <span class="sr-label">{{ prop.label or prop.stat }}</span>
+          <span class="sr-line">{{ prop.line }}</span>
+          <span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span>
+          <span class="sr-conf">{{ prop.confidence }}%</span>
+        </div>
+        <div class="sr-detail">
+          <span class="grade-badge grade-{{ prop.grade }}">{{ prop.grade }}</span>
+          <span class="sr-edge">{% if prop.edge > 0 %}+{% endif %}{{ prop.edge }}%</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  </div>
+
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  let activeStat  = 'all';
+  let activePick  = 'all';
+  let activeGrade = 'all';
+
+  function applyFilters() {
+    let counts = {all: 0, OVER: 0, UNDER: 0, FAIR: 0};
+    document.querySelectorAll('.top-props-section .stat-row').forEach(row => {
+      const grade = row.dataset.grade;
+      const stat  = row.dataset.stat;
+      const pick  = row.dataset.pick;
+      let gradeMatch = activeGrade === 'all' ? true : grade === activeGrade;
+      const statMatch = activeStat === 'all' || stat === activeStat;
+      const pickMatch = activePick === 'all' || pick === activePick;
+      const show = gradeMatch && statMatch && pickMatch;
+      row.style.display = show ? '' : 'none';
+      if (show) {
+        counts.all++;
+        if (pick) counts[pick] = (counts[pick] || 0) + 1;
+      }
+    });
+    ['all', 'OVER', 'UNDER', 'FAIR'].forEach(k => {
+      const el = document.getElementById('nba-cnt-' + k.toLowerCase());
+      if (el) el.textContent = counts[k] || 0;
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Stat pills
+    document.querySelectorAll('#nba-stat-pills .fpill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#nba-stat-pills .fpill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeStat = btn.dataset.filter;
+        applyFilters();
+      });
+    });
+    // Pick pills
+    document.querySelectorAll('#nba-pick-pills .ppill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#nba-pick-pills .ppill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activePick = btn.dataset.pick;
+        applyFilters();
+      });
+    });
+    // Grade pills
+    document.querySelectorAll('#nba-grade-pills .gpill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#nba-grade-pills .gpill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeGrade = btn.dataset.grade;
+        applyFilters();
+      });
+    });
+
+    // Convert UTC times
+    document.querySelectorAll('.local-game-time').forEach(el => {
+      try {
+        const d = new Date(el.dataset.utc);
+        el.textContent = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+      } catch(e) {}
+    });
+
+    applyFilters();
+  });
+
+  window.toggleGame = function(hdr) {
+    hdr.closest('.game-section').classList.toggle('expanded');
+  };
+
+  window.addToParlay = function(btn) {
+    if (window.parlayState) parlayState.toggleLeg(btn);
+  };
+
+  window.toggleMoreProps = function(btn) {
+    const container = btn.nextElementSibling;
+    const showing = container.style.display !== 'none';
+    container.style.display = showing ? 'none' : '';
+    btn.textContent = showing
+      ? btn.textContent.replace(/^Hide/, '+ Show').replace('▲', '▼')
+      : btn.textContent.replace(/^\+ Show/, 'Hide').replace('▼', '▲');
+  };
+
+  window.toggleSpecialty = function(btn) {
+    const container = btn.nextElementSibling;
+    const showing = container.style.display !== 'none';
+    container.style.display = showing ? 'none' : '';
+    btn.textContent = btn.textContent.replace(showing ? '▲' : '▼', showing ? '▼' : '▲');
+  };
+})();
+</script>
+{% endblock %}

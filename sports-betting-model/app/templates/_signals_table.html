@@ -1,0 +1,62 @@
+{% if rows %}
+<div class="overflow-x-auto rounded-xl border border-border mt-6">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-left text-xs uppercase text-slate-500 bg-slate-900/60">
+        <th class="px-4 py-3">League</th>
+        <th class="px-4 py-3">Market</th>
+        <th class="px-4 py-3">Selection</th>
+        <th class="px-4 py-3 text-right">Prob</th>
+        <th class="px-4 py-3 text-right">Odds</th>
+        <th class="px-4 py-3 text-right">Edge</th>
+        <th class="px-4 py-3 text-right">Kelly</th>
+        <th class="px-4 py-3 text-center">Conf</th>
+        <th class="px-4 py-3">Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="table-row border-t border-border/40">
+        <td class="px-4 py-2 font-mono text-xs text-slate-400">{{ r.league }}</td>
+        <td class="px-4 py-2">
+          <span class="text-xs font-medium text-indigo-400 bg-indigo-900/30 px-2 py-0.5 rounded">
+            {{ r.market | replace('_', ' ') }}
+          </span>
+        </td>
+        <td class="px-4 py-2 font-medium text-white max-w-xs">{{ r.selection }}</td>
+        <td class="px-4 py-2 text-right font-mono font-bold text-white">{{ r.model_prob }}</td>
+        <td class="px-4 py-2 text-right font-mono text-slate-300">{{ r.market_odds or '–' }}</td>
+        <td class="px-4 py-2 text-right font-mono">
+          {% if r.edge_pct and r.edge_pct != 'N/A' %}
+            {% set edge_val = r.edge_pct | replace('%','') | float %}
+            <span class="{% if edge_val > 0 %}text-green-400{% else %}text-red-400{% endif %}">
+              {{ r.edge_pct }}
+            </span>
+          {% else %}
+            <span class="text-slate-600">–</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-2 text-right font-mono text-slate-400">{{ r.kelly_frac or '–' }}</td>
+        <td class="px-4 py-2 text-center">
+          {% set conf = r.confidence %}
+          <span class="text-xs font-semibold px-2 py-0.5 rounded
+            {% if conf == 'HIGH' %}badge-high
+            {% elif conf == 'MEDIUM' %}badge-medium
+            {% else %}badge-low{% endif %}">
+            {{ conf }}
+          </span>
+        </td>
+        <td class="px-4 py-2 text-xs text-slate-500 max-w-xs truncate" title="{{ r.notes }}">
+          {{ r.notes }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="text-xs text-slate-600 mt-2">{{ rows | length }} signals generated</p>
+{% elif submitted %}
+<div class="card rounded-xl p-6 mt-6 text-center text-slate-500">
+  No signals generated. Check inputs and try again.
+</div>
+{% endif %}
