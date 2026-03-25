@@ -1672,14 +1672,25 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 reverse=True,
             )
 
-            # top_props: max 2 per game via same diversity pipeline — NO raw fallback
+            # top_props: max 2 per game via same diversity pipeline
             _per_game_playable = [p for p in all_game_props_clean if is_playable_prop(p)]
             _per_game_playable.sort(key=prop_rank_score, reverse=True)
             _per_game_deduped = dedupe_best_per_player(_per_game_playable)
             _per_game_deduped.sort(key=prop_rank_score, reverse=True)
             top_props = _balance_game_props(_per_game_deduped, target=2)
-            # No fallback — if is_playable_prop returns nothing for this game,
-            # render no top_props rather than backfilling with raw A/B props
+            print(f"[DEBUG] {away_abbr} @ {home_abbr}: "
+                  f"top_props={len(top_props)}, "
+                  f"all_clean={len(all_game_props_clean)}, "
+                  f"all_game={len(all_game_props)}")
+            # Fallback: if all filters left nothing, use best 2 raw props by score
+            if not top_props:
+                fallback = sorted(
+                    all_game_props,
+                    key=lambda x: x.get("score", 0),
+                    reverse=True
+                )[:2]
+                top_props = fallback
+                print(f"[DEBUG] Used fallback for {away_abbr} @ {home_abbr}")
 
             # more_props: remaining A/B after top 3, plus Watch grade
             ab_rest = [
