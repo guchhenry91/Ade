@@ -671,14 +671,28 @@ SPECIALTY_MARKETS: set = {
 
 
 MINIMUM_LINES: Dict[str, float] = {
-    "hits":          1.5,
-    "total_bases":   1.5,
-    "rbi":           1.5,
-    "runs":          0.5,
-    "strikeouts":    4.5,
-    "hits_allowed":  4.5,
-    "earned_runs":   1.5,
-    "pitcher_outs":  15.0,
+    # MLB
+    "hits":           1.5,
+    "total_bases":    1.5,
+    "rbi":            1.5,
+    "runs":           0.5,
+    "strikeouts":     4.5,
+    "hits_allowed":   4.5,
+    "earned_runs":    1.5,
+    "pitcher_outs":   15.0,
+    # NBA
+    "points":         10.5,
+    "rebounds":        3.5,
+    "assists":         2.5,
+    "threes":          1.5,
+    "blocks":          0.5,
+    "steals":          0.5,
+    "pts_rebs_asts":  15.5,
+    # NHL
+    "shots":           2.5,
+    "goals":           0.5,
+    "pp_points":       0.5,
+    "blocked_shots":   0.5,
 }
 
 
@@ -712,12 +726,17 @@ def _num(v, default=0):
 
 
 def is_bettable(prop: Dict, max_juice: int = -200) -> bool:
-    """Return True if prop passes basic bettability checks."""
+    """
+    Returns True if prop has practical odds.
+    Excludes heavy juice AND extreme plus money.
+    """
     price = prop.get("price", -110)
-    pick = prop.get("pick", "")
-    if pick == "FAIR":
-        return False
+    # Exclude heavy juice (worse than -200)
     if isinstance(price, (int, float)) and price < 0 and price < max_juice:
+        return False
+    # Exclude extreme plus money (worse than +500)
+    # +2000 on Hits UNDER 0.5 is not a real bet
+    if isinstance(price, (int, float)) and price > 0 and price > 500:
         return False
     return True
 
@@ -1288,11 +1307,12 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
 
             _NOVELTY_STATS = {"double_double", "first_basket", "triple_double"}
 
-            # Clean list: exclude novelty stats and extreme juice (< -300)
+            # Clean list: exclude novelty stats, bad odds, and unrealistic lines
             all_game_props_clean = [
                 p for p in all_game_props
                 if p.get("stat") not in _NOVELTY_STATS
-                and not (_num(p.get("price", -110)) < -300)
+                and meets_minimum_line(p)
+                and is_bettable(p)
             ]
             all_game_props_clean.sort(
                 key=lambda x: (_num(x.get("score")), _num(x.get("edge"))),
