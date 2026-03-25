@@ -243,7 +243,7 @@ _SPORT_CONFIG: Dict[str, Dict] = {
         "markets": [
             "player_points", "player_goals", "player_assists",
             "player_shots_on_goal", "player_power_play_points",
-            "player_blocked_shots", "player_saves",
+            "player_blocked_shots",
         ],
         "stat_map": {
             "player_points":            "points",
@@ -252,7 +252,6 @@ _SPORT_CONFIG: Dict[str, Dict] = {
             "player_shots_on_goal":     "shots",
             "player_power_play_points": "pp_points",
             "player_blocked_shots":     "blocked_shots",
-            "player_saves":             "saves",
         },
     },
     "nfl": {
@@ -332,7 +331,7 @@ STAT_LABELS: Dict[str, str] = {
     # NHL
     "points": "Points", "goals": "Goals", "assists": "Assists",
     "shots": "Shots on Goal", "pp_points": "PP Points",
-    "blocked_shots": "Blocked Shots", "saves": "Saves",
+    "blocked_shots": "Blocked Shots",
     # NFL
     "pass_yds": "Pass Yards", "pass_tds": "Pass TDs",
     "pass_comp": "Completions", "pass_att": "Pass Attempts",
@@ -611,106 +610,50 @@ _TEAM_ABBR: Dict[str, str] = {
     "Utah Jazz": "UTA", "Washington Wizards": "WAS",
 }
 
-_ROSTER_CACHE: Dict[str, Tuple[set, float]] = {}
-_ROSTER_LOCK = threading.Lock()
-_ROSTER_TTL = 86400  # 24 h
+def _assign_players_to_teams(
+    player_data: dict,
+    home_abbr: str, away_abbr: str,
+) -> tuple:
+    """Assign players to home/away teams without ESPN roster lookups.
 
-
-def _get_team_roster_names(espn_path: str, team_full_name: str) -> set:
-    """Return set of player display names for a team via ESPN roster endpoint.
-
-    Results cached 24 h in-process. On any error returns empty set.
+    Strategy:
+    1. Check if player name contains a team hint like "LaMelo Ball (CHA)"
+    2. Fall back to even split: whoever has fewer players gets the next one.
+    Returns (home_players, away_players) lists.
     """
-    cache_key = f"{espn_path}|{team_full_name}"
-    now = time.time()
-    with _ROSTER_LOCK:
-        cached = _ROSTER_CACHE.get(cache_key)
-        if cached:
-            names, expires = cached
-            if now < expires:
-                return names
+    home_players: list = []
+    away_players: list = []
 
-    names: set = set()
-    try:
-        # Step 1: find team ID
-        teams_data = fetch(
-            f"https://site.api.espn.com/apis/site/v2/sports/{espn_path}/teams",
-            params={"limit": 40},
-            timeout=8,
-        )
-        if not teams_data:
-            return names
+    for pdata in player_data.values():
+        name = pdata["name"]
+        team = None
 
-        team_id = None
-        team_lower = team_full_name.lower()
-        for sport in teams_data.get("sports", [teams_data]):
-            for league in sport.get("leagues", [sport]):
-                for t in league.get("teams", []):
-                    info = t.get("team", t)
-                    display = (info.get("displayName") or "").lower()
-                    if team_lower in display or display in team_lower:
-                        team_id = info.get("id")
-                        break
-                if team_id:
-                    break
-            if team_id:
-                break
+        # Check for embedded team abbreviation hint "(ABBR)"
+        if "(" in name and ")" in name:
+            hint = name[name.find("(") + 1: name.find(")")]
+            if hint == home_abbr:
+                team = home_abbr
+            elif hint == away_abbr:
+                team = away_abbr
+            # Strip hint from display name
+            pdata["name"] = name[: name.find("(")].strip()
+            for p in pdata.get("props", []):
+                p["player_name"] = pdata["name"]
 
-        if not team_id:
-            return names
+        # Even split fallback
+        if not team:
+            team = home_abbr if len(home_players) <= len(away_players) else away_abbr
 
-        # Step 2: fetch roster
-        roster_data = fetch(
-            f"https://site.api.espn.com/apis/site/v2/sports/{espn_path}"
-            f"/teams/{team_id}/roster",
-            timeout=8,
-        )
-        if not roster_data:
-            return names
+        pdata["team"] = team
+        for p in pdata.get("props", []):
+            p["team"] = team
 
-        for group in roster_data.get("athletes", []):
-            if isinstance(group, dict):
-                items = group.get("items", [group])
-                for item in items:
-                    if isinstance(item, dict):
-                        name = item.get("displayName", "")
-                        if name:
-                            names.add(name)
+        if team == home_abbr:
+            home_players.append(pdata)
+        else:
+            away_players.append(pdata)
 
-        print(f"[ROSTER] {team_full_name}: {len(names)} players")
-    except Exception as e:
-        logger.debug("Roster fetch failed %s: %s", team_full_name, e)
-
-    with _ROSTER_LOCK:
-        _ROSTER_CACHE[cache_key] = (names, now + _ROSTER_TTL)
-    return names
-
-
-def _assign_to_team(player_name: str,
-                    home_team: str, home_abbr: str, home_roster: set,
-                    away_team: str, away_abbr: str, away_roster: set) -> str:
-    """Assign a player to home or away abbr using roster fuzzy matching."""
-    if player_name in home_roster:
-        return home_abbr
-    if player_name in away_roster:
-        return away_abbr
-    # Last-name match
-    last = player_name.split()[-1].lower()
-    for n in home_roster:
-        if n.split()[-1].lower() == last:
-            return home_abbr
-    for n in away_roster:
-        if n.split()[-1].lower() == last:
-            return away_abbr
-    # Substring match
-    pl = player_name.lower()
-    for n in home_roster:
-        if pl in n.lower() or n.lower() in pl:
-            return home_abbr
-    for n in away_roster:
-        if pl in n.lower() or n.lower() in pl:
-            return away_abbr
-    return home_abbr  # default to home
+    return home_players, away_players
 
 
 def _team_abbr(team_full_name: str) -> str:
@@ -907,48 +850,189 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
     game_lines_map = fetch_game_lines(sport_key)
 
     results: list = []
+    total_events = min(len(events), 15)
+    print(f"[ODDS] {sport_name}: processing {total_events} events")
 
     for i, event in enumerate(events[:15]):
         if i > 0 and i % 3 == 0:
             time.sleep(0.5)
 
-        event_id  = event.get("id", "")
-        home_team = event.get("home_team", "")
-        away_team = event.get("away_team", "")
-        if not home_team or not away_team:
-            continue
+        try:
+            event_id  = event.get("id", "")
+            home_team = event.get("home_team", "")
+            away_team = event.get("away_team", "")
+            print(f"[ODDS] {sport_name}: event {i+1}/{total_events} - {away_team} @ {home_team}")
+            if not home_team or not away_team:
+                continue
 
-        # Game lines
-        line_key = f"{home_team}|{away_team}"
-        lines = game_lines_map.get(line_key, {})
-        home_prob = lines.get("home_prob", 50.0)
-        away_prob = lines.get("away_prob", 50.0)
-        draw_prob = lines.get("draw_prob", 0.0)
+            # Game lines
+            line_key = f"{home_team}|{away_team}"
+            lines = game_lines_map.get(line_key, {})
+            home_prob = lines.get("home_prob", 50.0)
+            away_prob = lines.get("away_prob", 50.0)
+            draw_prob = lines.get("draw_prob", 0.0)
 
-        home_abbr = _team_abbr(home_team)
-        away_abbr = _team_abbr(away_team)
+            home_abbr = _team_abbr(home_team)
+            away_abbr = _team_abbr(away_team)
 
-        # Badge
-        best_prob = max(home_prob, away_prob)
-        fav_team = (home_team if home_prob > away_prob else away_team).split()[-1]
-        if best_prob >= 70:
-            badge_label = f"Strong Fav - {fav_team}"
-            badge_class = "badge-strong"
-        elif best_prob >= 60:
-            badge_label = f"Favoured - {fav_team}"
-            badge_class = "badge-favoured"
-        elif best_prob >= 55:
-            badge_label = f"Slight Edge - {fav_team}"
-            badge_class = "badge-slight"
-        else:
-            badge_label = "Pick'em"
-            badge_class = "badge-pickem"
+            # Badge
+            best_prob = max(home_prob, away_prob)
+            fav_team = (home_team if home_prob > away_prob else away_team).split()[-1]
+            if best_prob >= 70:
+                badge_label = f"Strong Fav - {fav_team}"
+                badge_class = "badge-strong"
+            elif best_prob >= 60:
+                badge_label = f"Favoured - {fav_team}"
+                badge_class = "badge-favoured"
+            elif best_prob >= 55:
+                badge_label = f"Slight Edge - {fav_team}"
+                badge_class = "badge-slight"
+            else:
+                badge_label = "Pick'em"
+                badge_class = "badge-pickem"
 
-        # Step 3: player props with line shopping
-        best_odds = fetch_best_odds_props(sport_key, event_id, markets)
+            # Step 3: player props with line shopping
+            best_odds = fetch_best_odds_props(sport_key, event_id, markets)
 
-        if not best_odds:
-            # No props — still include game with game lines
+            if not best_odds:
+                # No props — still include game with game lines
+                results.append({
+                    "event_id":    event_id,
+                    "sport":       cfg.get("sport_label", ""),
+                    "league":      cfg.get("league", ""),
+                    "sport_icon":  cfg.get("icon", ""),
+                    "home_team":   home_team,
+                    "away_team":   away_team,
+                    "home_abbr":   home_abbr,
+                    "away_abbr":   away_abbr,
+                    "home_prob":   home_prob,
+                    "away_prob":   away_prob,
+                    "draw_prob":   draw_prob,
+                    "home_ml":     lines.get("home_ml"),
+                    "away_ml":     lines.get("away_ml"),
+                    "home_spread": lines.get("home_spread"),
+                    "away_spread": lines.get("away_spread"),
+                    "home_spread_price": lines.get("home_spread_price", -110),
+                    "away_spread_price": lines.get("away_spread_price", -110),
+                    "total_line":  lines.get("total_line"),
+                    "total_over_price": lines.get("total_over_price", -110),
+                    "pick_badge_label": badge_label,
+                    "pick_badge_class": badge_class,
+                    "kickoff":     event.get("commence_time", ""),
+                    "status":      "STATUS_SCHEDULED",
+                    "home_players": [],
+                    "away_players": [],
+                    "home_roster":  [],
+                    "away_roster":  [],
+                    "top_props":    [],
+                    "top_pick":     None,
+                    "is_soccer":    "soccer" in sport_name,
+                    "predicted_winner": home_team if home_prob >= away_prob else away_team,
+                    "win_prob":     best_prob,
+                    "confidence":   "HIGH" if best_prob >= 65 else "MEDIUM" if best_prob >= 55 else "LOW",
+                    "home_score":   None, "away_score": None,
+                    "home_wins": 0, "home_losses": 0,
+                    "away_wins": 0, "away_losses": 0,
+                    "bookmaker": "",
+                    "book_home_ml": format_american(lines.get("home_ml")),
+                    "book_away_ml": format_american(lines.get("away_ml")),
+                    "book_home_spread": lines.get("home_spread"),
+                    "book_total":  lines.get("total_line"),
+                    "spread":      lines.get("home_spread"),
+                    "over_under":  lines.get("total_line"),
+                })
+                print(f"[ODDS] {sport_name}: event {i+1} - no props")
+                continue
+
+            # Step 4: Build player props with grading + scoring
+            player_data: Dict[str, Dict] = {}
+            for key, odds in best_odds.items():
+                player_name = odds["player"]
+                stat        = odds["stat"]
+                line        = odds["line"]
+                over_prob   = odds["over_prob"]
+                price       = odds["price"]
+                all_prices  = odds["all_prices"]
+                best_book   = odds["best_book"]
+
+                raw_conf = round(over_prob * 100, 1)
+                conf = apply_calibration(raw_conf, sport_name, stat)
+                cal_factor = get_calibration_factor(sport_name, stat)
+
+                if conf >= 55:
+                    pick = "OVER"
+                    display_conf = conf
+                elif conf <= 45:
+                    pick = "UNDER"
+                    under_raw = round((1 - over_prob) * 100, 1)
+                    display_conf = apply_calibration(under_raw, sport_name, stat)
+                else:
+                    pick = "FAIR"
+                    display_conf = round(max(conf, (1 - over_prob) * 100), 1)
+
+                grade, edge = get_prop_grade(display_conf, price)
+                playable = get_playable_price(display_conf / 100)
+
+                prop = {
+                    "player_name":    player_name,
+                    "stat":           stat,
+                    "label":          STAT_LABELS.get(stat, stat),
+                    "line":           line,
+                    "pick":           pick,
+                    "confidence":     display_conf,
+                    "raw_confidence": raw_conf,
+                    "cal_factor":     cal_factor,
+                    "over_prob":      round(over_prob * 100, 1),
+                    "under_prob":     round((1 - over_prob) * 100, 1),
+                    "price":          price,
+                    "best_book":      best_book,
+                    "all_prices":     all_prices,
+                    "grade":          grade,
+                    "edge":           edge,
+                    "playable_to":     format_american(playable),
+                    "playable_to_raw": float(playable),
+                    "sport":          sport_name,
+                    "game":           f"{away_abbr} @ {home_abbr}",
+                    "avg":            line,
+                    "stars":          5 if display_conf >= 85 else 4 if display_conf >= 78 else 3 if display_conf >= 68 else 2 if display_conf >= 58 else 1,
+                    "conf_label":     "Elite Pick" if display_conf >= 85 else "Strong Pick" if display_conf >= 78 else "Good Pick" if display_conf >= 68 else "Moderate" if display_conf >= 58 else "Use Caution",
+                    "trend":          "->",
+                }
+                prop["score"] = calculate_bet_score(prop)
+                prop["score_label"], prop["score_class"] = get_score_label(prop["score"])
+                prop["stake_rec"] = get_stake_rec(grade, edge, prop["score"])
+                prop["red_flags"] = get_red_flags(prop)
+                prop["reasons"]   = get_bet_reasons(prop)
+
+                if player_name not in player_data:
+                    player_data[player_name] = {"name": player_name, "props": []}
+                player_data[player_name]["props"].append(prop)
+
+            # Step 5: Sort each player's props by confidence
+            for pdata in player_data.values():
+                pdata["props"].sort(key=lambda x: x["confidence"], reverse=True)
+
+            # Step 6: Assign players to teams (no ESPN roster calls — even split)
+            home_players, away_players = _assign_players_to_teams(
+                player_data, home_abbr, away_abbr,
+            )
+
+            def _best_conf(player):
+                return player["props"][0]["confidence"] if player["props"] else 0
+            home_players.sort(key=_best_conf, reverse=True)
+            away_players.sort(key=_best_conf, reverse=True)
+
+            # Top props sorted by confidence
+            all_game_props: list = []
+            for pdata in player_data.values():
+                all_game_props.extend(pdata["props"])
+            all_game_props.sort(key=lambda x: x["confidence"], reverse=True)
+            prop_count = max(10, min(30, len(all_game_props)))
+            top_props = all_game_props[:prop_count]
+            top_pick = top_props[0] if top_props else None
+
+            print(f"[ODDS] {sport_name}: event {i+1} done - {len(player_data)} players, {len(top_props)} props")
+
             results.append({
                 "event_id":    event_id,
                 "sport":       cfg.get("sport_label", ""),
@@ -973,21 +1057,20 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 "pick_badge_class": badge_class,
                 "kickoff":     event.get("commence_time", ""),
                 "status":      "STATUS_SCHEDULED",
-                "home_players": [],
-                "away_players": [],
-                "home_roster":  [],
-                "away_roster":  [],
-                "top_props":    [],
-                "top_pick":     None,
+                "home_players": home_players[:15],
+                "away_players": away_players[:15],
+                "home_roster":  home_players[:15],
+                "away_roster":  away_players[:15],
+                "top_props":    top_props,
+                "top_pick":     top_pick,
                 "is_soccer":    "soccer" in sport_name,
-                # today.html compat
                 "predicted_winner": home_team if home_prob >= away_prob else away_team,
                 "win_prob":     best_prob,
                 "confidence":   "HIGH" if best_prob >= 65 else "MEDIUM" if best_prob >= 55 else "LOW",
                 "home_score":   None, "away_score": None,
                 "home_wins": 0, "home_losses": 0,
                 "away_wins": 0, "away_losses": 0,
-                "bookmaker": "",
+                "bookmaker":    "",
                 "book_home_ml": format_american(lines.get("home_ml")),
                 "book_away_ml": format_american(lines.get("away_ml")),
                 "book_home_spread": lines.get("home_spread"),
@@ -995,160 +1078,15 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 "spread":      lines.get("home_spread"),
                 "over_under":  lines.get("total_line"),
             })
+
+        except Exception as _ev_err:
+            import traceback as _tb
+            print(f"[ODDS] {sport_name}: event {i+1} FAILED - {_ev_err}")
+            _tb.print_exc()
             continue
 
-        # Step 4: ESPN rosters for team assignment
-        home_roster_names = _get_team_roster_names(espn_path, home_team) if espn_path else set()
-        away_roster_names = _get_team_roster_names(espn_path, away_team) if espn_path else set()
-
-        # Build player props with grading + scoring
-        player_data: Dict[str, Dict] = {}
-        for key, odds in best_odds.items():
-            player_name = odds["player"]
-            stat        = odds["stat"]
-            line        = odds["line"]
-            over_prob   = odds["over_prob"]
-            price       = odds["price"]
-            all_prices  = odds["all_prices"]
-            best_book   = odds["best_book"]
-
-            raw_conf = round(over_prob * 100, 1)
-            conf = apply_calibration(raw_conf, sport_name, stat)
-            cal_factor = get_calibration_factor(sport_name, stat)
-
-            if conf >= 55:
-                pick = "OVER"
-                display_conf = conf
-            elif conf <= 45:
-                pick = "UNDER"
-                under_raw = round((1 - over_prob) * 100, 1)
-                display_conf = apply_calibration(under_raw, sport_name, stat)
-            else:
-                pick = "FAIR"
-                display_conf = round(max(conf, (1 - over_prob) * 100), 1)
-
-            grade, edge = get_prop_grade(display_conf, price)
-            playable = get_playable_price(display_conf / 100)
-
-            prop = {
-                "player_name":    player_name,
-                "stat":           stat,
-                "label":          STAT_LABELS.get(stat, stat),
-                "line":           line,
-                "pick":           pick,
-                "confidence":     display_conf,
-                "raw_confidence": raw_conf,
-                "cal_factor":     cal_factor,
-                "over_prob":      round(over_prob * 100, 1),
-                "under_prob":     round((1 - over_prob) * 100, 1),
-                "price":          price,
-                "best_book":      best_book,
-                "all_prices":     all_prices,
-                "grade":          grade,
-                "edge":           edge,
-                "playable_to":     format_american(playable),
-                "playable_to_raw": float(playable),
-                "sport":          sport_name,
-                "game":           f"{away_abbr} @ {home_abbr}",
-                # Legacy compat
-                "avg":            line,
-                "stars":          5 if display_conf >= 85 else 4 if display_conf >= 78 else 3 if display_conf >= 68 else 2 if display_conf >= 58 else 1,
-                "conf_label":     "Elite Pick" if display_conf >= 85 else "Strong Pick" if display_conf >= 78 else "Good Pick" if display_conf >= 68 else "Moderate" if display_conf >= 58 else "Use Caution",
-                "trend":          "->",
-            }
-            prop["score"] = calculate_bet_score(prop)
-            prop["score_label"], prop["score_class"] = get_score_label(prop["score"])
-            prop["stake_rec"] = get_stake_rec(grade, edge, prop["score"])
-            prop["red_flags"] = get_red_flags(prop)
-            prop["reasons"]   = get_bet_reasons(prop)
-
-            if player_name not in player_data:
-                player_data[player_name] = {"name": player_name, "props": []}
-            player_data[player_name]["props"].append(prop)
-
-        # Assign players to teams
-        home_players: list = []
-        away_players: list = []
-        all_game_props: list = []
-
-        for player_name, pdata in player_data.items():
-            team = _assign_to_team(
-                player_name,
-                home_team, home_abbr, home_roster_names,
-                away_team, away_abbr, away_roster_names,
-            )
-            pdata["team"] = team
-            pdata["props"].sort(key=lambda x: x["confidence"], reverse=True)
-            for p in pdata["props"]:
-                p["team"] = team
-                all_game_props.append(p)
-            if team == home_abbr:
-                home_players.append(pdata)
-            else:
-                away_players.append(pdata)
-
-        def _best_conf(player):
-            return player["props"][0]["confidence"] if player["props"] else 0
-        home_players.sort(key=_best_conf, reverse=True)
-        away_players.sort(key=_best_conf, reverse=True)
-
-        # Top props sorted by confidence
-        all_game_props.sort(key=lambda x: x["confidence"], reverse=True)
-        prop_count = max(10, min(30, len(all_game_props)))
-        top_props = all_game_props[:prop_count]
-        top_pick = top_props[0] if top_props else None
-
-        print(f"[ODDS] {away_team} @ {home_team}: {len(player_data)} players, {len(top_props)} top props")
-
-        results.append({
-            "event_id":    event_id,
-            "sport":       cfg.get("sport_label", ""),
-            "league":      cfg.get("league", ""),
-            "sport_icon":  cfg.get("icon", ""),
-            "home_team":   home_team,
-            "away_team":   away_team,
-            "home_abbr":   home_abbr,
-            "away_abbr":   away_abbr,
-            "home_prob":   home_prob,
-            "away_prob":   away_prob,
-            "draw_prob":   draw_prob,
-            "home_ml":     lines.get("home_ml"),
-            "away_ml":     lines.get("away_ml"),
-            "home_spread": lines.get("home_spread"),
-            "away_spread": lines.get("away_spread"),
-            "home_spread_price": lines.get("home_spread_price", -110),
-            "away_spread_price": lines.get("away_spread_price", -110),
-            "total_line":  lines.get("total_line"),
-            "total_over_price": lines.get("total_over_price", -110),
-            "pick_badge_label": badge_label,
-            "pick_badge_class": badge_class,
-            "kickoff":     event.get("commence_time", ""),
-            "status":      "STATUS_SCHEDULED",
-            "home_players": home_players[:15],
-            "away_players": away_players[:15],
-            "home_roster":  home_players[:15],
-            "away_roster":  away_players[:15],
-            "top_props":    top_props,
-            "top_pick":     top_pick,
-            "is_soccer":    "soccer" in sport_name,
-            # today.html compat
-            "predicted_winner": home_team if home_prob >= away_prob else away_team,
-            "win_prob":     best_prob,
-            "confidence":   "HIGH" if best_prob >= 65 else "MEDIUM" if best_prob >= 55 else "LOW",
-            "home_score":   None, "away_score": None,
-            "home_wins": 0, "home_losses": 0,
-            "away_wins": 0, "away_losses": 0,
-            "bookmaker":    "",
-            "book_home_ml": format_american(lines.get("home_ml")),
-            "book_away_ml": format_american(lines.get("away_ml")),
-            "book_home_spread": lines.get("home_spread"),
-            "book_total":  lines.get("total_line"),
-            "spread":      lines.get("home_spread"),
-            "over_under":  lines.get("total_line"),
-        })
-
     games_with = sum(1 for g in results if g.get("top_props"))
-    print(f"[ODDS] {sport_name}: {len(results)} games, {games_with} with props")
+    print(f"[ODDS] {sport_name}: complete - {len(results)} games built, {games_with} with props")
     return results
 
 
