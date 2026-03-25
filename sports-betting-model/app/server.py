@@ -78,6 +78,9 @@ def _format_american_filter(price):
 TEMPLATES.env.filters["format_american"] = _format_american_filter
 
 app = FastAPI(title="Sports Betting Model", version="1.0")
+
+# Build marker — changes on every deploy, confirms Render is serving new code
+_DEPLOY_TS = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
@@ -596,6 +599,22 @@ async def nba_page(request: Request):
     display_props    = data.get("display_props", []) if isinstance(data, dict) else []
     best_value_prop  = data.get("best_value_prop") if isinstance(data, dict) else None
     game_picks       = data.get("game_picks", []) if isinstance(data, dict) else []
+    # ── Render-path audit ──────────────────────────────────────────────────
+    print(f"[RENDER:NBA] display_props={len(display_props)}")
+    for p in display_props[:10]:
+        print(f"  [DP] {p.get('player_name','?')} | stat={p.get('stat','?')} "
+              f"| pick={p.get('pick','?')} | grade={p.get('grade','?')} | edge={p.get('edge','?')}")
+    for g in games[:3]:
+        tp = g.get("top_props", [])
+        print(f"  [GAME] {g.get('away_abbr','?')}@{g.get('home_abbr','?')} "
+              f"top_props={len(tp)} "
+              f"_all_clean={len(g.get('_all_clean_props',[]))} "
+              f"more={len(g.get('more_props',[]))} "
+              f"specialty={len(g.get('specialty_props',[]))}")
+        for tp_p in tp[:5]:
+            print(f"    [TP] {tp_p.get('player_name','?')} | stat={tp_p.get('stat','?')} "
+                  f"| pick={tp_p.get('pick','?')} | grade={tp_p.get('grade','?')} | edge={tp_p.get('edge','?')}")
+    # ──────────────────────────────────────────────────────────────────────
     return TEMPLATES.TemplateResponse(request, "nba.html", {
         "games": games, "today": today_label,
         "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
@@ -603,6 +622,7 @@ async def nba_page(request: Request):
         "display_props": display_props,
         "best_value_prop": best_value_prop,
         "game_picks": game_picks,
+        "deploy_ts": _DEPLOY_TS,
     })
 
 
@@ -766,6 +786,19 @@ async def mlb_page(request: Request):
     display_props    = data.get("display_props", []) if isinstance(data, dict) else []
     best_value_prop  = data.get("best_value_prop") if isinstance(data, dict) else None
     game_picks       = data.get("game_picks", []) if isinstance(data, dict) else []
+    # ── Render-path audit ──────────────────────────────────────────────────
+    print(f"[RENDER:MLB] display_props={len(display_props)}")
+    for p in display_props[:10]:
+        print(f"  [DP] {p.get('player_name','?')} | stat={p.get('stat','?')} "
+              f"| pick={p.get('pick','?')} | grade={p.get('grade','?')} | edge={p.get('edge','?')}")
+    for g in games[:3]:
+        tp = g.get("top_props", [])
+        print(f"  [GAME] {g.get('away_abbr','?')}@{g.get('home_abbr','?')} "
+              f"top_props={len(tp)} _all_clean={len(g.get('_all_clean_props',[]))}")
+        for tp_p in tp[:5]:
+            print(f"    [TP] {tp_p.get('player_name','?')} | stat={tp_p.get('stat','?')} "
+                  f"| pick={tp_p.get('pick','?')} | grade={tp_p.get('grade','?')} | edge={tp_p.get('edge','?')}")
+    # ──────────────────────────────────────────────────────────────────────
     return TEMPLATES.TemplateResponse(request, "mlb.html", {
         "games":        games,
         "total":        len(games),
@@ -774,6 +807,7 @@ async def mlb_page(request: Request):
         "display_props": display_props,
         "best_value_prop": best_value_prop,
         "game_picks": game_picks,
+        "deploy_ts": _DEPLOY_TS,
     })
 
 
@@ -790,6 +824,19 @@ async def nhl_page(request: Request):
     display_props    = data.get("display_props", []) if isinstance(data, dict) else []
     best_value_prop  = data.get("best_value_prop") if isinstance(data, dict) else None
     game_picks       = data.get("game_picks", []) if isinstance(data, dict) else []
+    # ── Render-path audit ──────────────────────────────────────────────────
+    print(f"[RENDER:NHL] display_props={len(display_props)}")
+    for p in display_props[:10]:
+        print(f"  [DP] {p.get('player_name','?')} | stat={p.get('stat','?')} "
+              f"| pick={p.get('pick','?')} | grade={p.get('grade','?')} | edge={p.get('edge','?')}")
+    for g in games[:3]:
+        tp = g.get("top_props", [])
+        print(f"  [GAME] {g.get('away_abbr','?')}@{g.get('home_abbr','?')} "
+              f"top_props={len(tp)} _all_clean={len(g.get('_all_clean_props',[]))}")
+        for tp_p in tp[:5]:
+            print(f"    [TP] {tp_p.get('player_name','?')} | stat={tp_p.get('stat','?')} "
+                  f"| pick={tp_p.get('pick','?')} | grade={tp_p.get('grade','?')} | edge={tp_p.get('edge','?')}")
+    # ──────────────────────────────────────────────────────────────────────
     return TEMPLATES.TemplateResponse(request, "nhl.html", {
         "games":        games or [],
         "total":        len(games or []),
@@ -798,6 +845,7 @@ async def nhl_page(request: Request):
         "display_props": display_props,
         "best_value_prop": best_value_prop,
         "game_picks": game_picks,
+        "deploy_ts": _DEPLOY_TS,
     })
 
 

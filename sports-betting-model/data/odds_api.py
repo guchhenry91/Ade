@@ -991,7 +991,7 @@ def balance_prop_sides(
 
 
 def _balance_props(props: List[Dict], target: int = 15) -> List[Dict]:
-    """Force OVER/UNDER balance. Max 60% from one side. Re-sorts by score."""
+    """Force OVER/UNDER balance. Max 60% from one side. Re-sorts by prop_rank_score."""
     overs  = [p for p in props if p.get("pick") == "OVER"]
     unders = [p for p in props if p.get("pick") == "UNDER"]
     max_one_side = int(target * 0.60)   # max 9 of 15
@@ -1000,7 +1000,9 @@ def _balance_props(props: List[Dict], target: int = 15) -> List[Dict]:
     remaining = target - len(unders)
     overs = overs[:remaining]
     merged = unders + overs
-    merged.sort(key=lambda x: x.get("score", 0), reverse=True)
+    # MUST sort by prop_rank_score (not the old `score` field which ignores
+    # low-signal penalties and mainstream bonuses)
+    merged.sort(key=prop_rank_score, reverse=True)
     return merged[:target]
 
 
@@ -1058,23 +1060,38 @@ def build_display_props(
     deduped = dedupe_best_per_player(playable)
     deduped.sort(key=prop_rank_score, reverse=True)
 
+    # ── Stat key audit: confirm actual stat names hitting the caps ──────────
+    unique_stats_playable = sorted({p.get("stat", "?") for p in playable})
+    print(f"[CURATE-STATS] {sport} playable stat keys: {unique_stats_playable}")
+
     # Debug: log pool composition before final selection
     over_ct  = sum(1 for p in deduped if p.get("pick") == "OVER")
     under_ct = sum(1 for p in deduped if p.get("pick") == "UNDER")
     print(
-        f"[CURATE] {sport}: {len(playable)} playable, {len(deduped)} deduped "
-        f"({over_ct} OVER / {under_ct} UNDER)"
+        f"[CURATE] {sport}: {len(all_props)} raw, {len(playable)} playable, "
+        f"{len(deduped)} deduped ({over_ct} OVER / {under_ct} UNDER)"
     )
+    for p in deduped[:10]:
+        print(
+            f"  [POOL] {p.get('player_name','?')} | stat={p.get('stat','?')} "
+            f"| pick={p.get('pick','?')} | rank={prop_rank_score(p):.1f} "
+            f"| edge={p.get('edge','?')} | grade={p.get('grade','?')}"
+        )
 
-    # Step 1: diversity + game cap
+    # Step 1: diversity + game cap (large pool so _balance_props has full choice)
     selected = _final_diversity_select(
         deduped,
-        target=30,          # large pool; _balance_props does the hard 15 cap
+        target=30,
         max_per_game=max_per_game,
         max_side_ratio=0.70,
     )
+    print(
+        f"[CURATE] {sport}: after _final_diversity_select: {len(selected)} "
+        f"({sum(1 for p in selected if p.get('pick')=='OVER')} OVER / "
+        f"{sum(1 for p in selected if p.get('pick')=='UNDER')} UNDER)"
+    )
 
-    # Step 2: force OVER/UNDER balance then hard-cap to 15
+    # Step 2: force OVER/UNDER balance (max 60% one side) then hard-cap to 15
     top_props = _balance_props(selected, target=15)
 
     # Debug: log final composition
@@ -1085,9 +1102,16 @@ def build_display_props(
         s = p.get("stat", "?")
         stat_dist[s] = stat_dist.get(s, 0) + 1
     print(
-        f"[CURATE] {sport}: final {len(top_props)} props "
+        f"[CURATE] {sport}: FINAL {len(top_props)} props "
         f"({final_over} OVER / {final_under} UNDER) stats={stat_dist}"
     )
+    for p in top_props[:10]:
+        print(
+            f"  [FINAL] {p.get('player_name','?')} | stat={p.get('stat','?')} "
+            f"| pick={p.get('pick','?')} | rank={prop_rank_score(p):.1f} "
+            f"| score={p.get('score','?')} | edge={p.get('edge','?')} "
+            f"| grade={p.get('grade','?')}"
+        )
 
     # Best value: prefer A/B grade OVER, fall back to any A/B
     best_value: Optional[Dict] = None
@@ -1648,16 +1672,14 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 reverse=True,
             )
 
-            # top_props: max 2 per game, 1 OVER + 1 UNDER where possible
+            # top_props: max 2 per game via same diversity pipeline — NO raw fallback
             _per_game_playable = [p for p in all_game_props_clean if is_playable_prop(p)]
             _per_game_playable.sort(key=prop_rank_score, reverse=True)
             _per_game_deduped = dedupe_best_per_player(_per_game_playable)
             _per_game_deduped.sort(key=prop_rank_score, reverse=True)
             top_props = _balance_game_props(_per_game_deduped, target=2)
-            # Fallback: if playable filter too strict, show best A/B grade props
-            if not top_props:
-                _ab = [p for p in all_game_props_clean if p.get("grade") in ("A", "B")]
-                top_props = _balance_game_props(_ab, target=2)
+            # No fallback — if is_playable_prop returns nothing for this game,
+            # render no top_props rather than backfilling with raw A/B props
 
             # more_props: remaining A/B after top 3, plus Watch grade
             ab_rest = [

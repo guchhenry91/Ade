@@ -254,6 +254,7 @@
     {% if generated_at %}<div class="updated-bar" style="justify-content:flex-end;"><span class="dot"></span><span data-generated-at="{{ generated_at }}"></span></div>{% endif %}
   </div>
 </div>
+{% if deploy_ts %}<div style="font-size:10px;color:#333;padding:2px 8px;background:#0a0a1a;border-radius:4px;margin-bottom:8px;font-family:monospace;">build: {{ deploy_ts }}</div>{% endif %}
 
 {% if total == 0 %}
 <div class="card" style="padding:56px;text-align:center;">
