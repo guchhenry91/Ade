@@ -133,25 +133,6 @@
 .ts-name { font-size: 13px; font-weight: 700; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
 .ts-count { font-size: 12px; color: #555; background: #1a1a2e; padding: 2px 8px; border-radius: 10px; }
 
-/* ── Team grid ───────────────────────────────── */
-.team-grid {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  padding: 10px 16px; background: #0a0a18;
-  border-bottom: 1px solid #1e1e3f;
-  margin-bottom: 14px;
-}
-.team-btn {
-  padding: 5px 14px; border-radius: 20px;
-  border: 1px solid #252545; background: #111128;
-  color: #777; font-size: 12px; font-weight: 700;
-  cursor: pointer; transition: all 0.12s; min-height: 32px;
-}
-.team-btn:hover  { border-color: var(--accent); color: var(--accent); }
-.team-btn.active { background: rgba(0,212,255,0.15); border-color: #00d4ff; color: #00d4ff; }
-@media (max-width: 640px) {
-  .team-grid { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .team-grid::-webkit-scrollbar { display: none; }
-}
 
 /* ── Filter bar ──────────────────────────────── */
 .filter-bar { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 14px; }
@@ -243,15 +224,6 @@
   <div style="color:var(--text-secondary);margin-top:6px;font-size:13px;">Check back on a game day for live picks and player props.</div>
 </div>
 {% else %}
-
-<!-- Team filter -->
-<div class="team-grid" id="nba-team-grid">
-  <button class="team-btn active" data-team="all">All</button>
-  {% for game in games %}
-  <button class="team-btn" data-team="{{ game.home_abbr }}">{{ game.home_abbr }}</button>
-  <button class="team-btn" data-team="{{ game.away_abbr }}">{{ game.away_abbr }}</button>
-  {% endfor %}
-</div>
 
 <!-- Filter bar -->
 <div class="filter-bar">
@@ -535,19 +507,6 @@
         btn.classList.add('active');
         activeGrade = btn.dataset.grade;
         applyFilters();
-      });
-    });
-    // Team filter
-    document.querySelectorAll('#nba-team-grid .team-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('#nba-team-grid .team-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const team = btn.dataset.team;
-        document.querySelectorAll('.game-card').forEach(card => {
-          if (team === 'all') { card.style.display = ''; return; }
-          const teams = (card.dataset.teams || '').split(',');
-          card.style.display = teams.includes(team) ? '' : 'none';
-        });
       });
     });
 
