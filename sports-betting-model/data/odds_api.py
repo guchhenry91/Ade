@@ -732,7 +732,7 @@ def fetch_best_odds_props(sport_key: str, event_id: str,
         f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
         params={
             "apiKey":     api_key,
-            "regions":    "us,uk,eu",
+            "regions":    "us",
             "markets":    markets_str,
             "oddsFormat": "american",
         },
