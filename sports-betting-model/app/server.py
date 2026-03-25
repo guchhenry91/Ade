@@ -616,7 +616,7 @@ async def nba_page(request: Request):
             print(f"    [TP] {tp_p.get('player_name','?')} | stat={tp_p.get('stat','?')} "
                   f"| pick={tp_p.get('pick','?')} | grade={tp_p.get('grade','?')} | edge={tp_p.get('edge','?')}")
     # ──────────────────────────────────────────────────────────────────────
-    return TEMPLATES.TemplateResponse(request, "nba.html", {
+    response = TEMPLATES.TemplateResponse(request, "nba.html", {
         "games": games, "today": today_label,
         "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
         "generated_at": _now_iso(),
@@ -625,6 +625,10 @@ async def nba_page(request: Request):
         "game_picks": game_picks,
         "deploy_ts": _DEPLOY_TS,
     })
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 # ─────────────────────────────────────────────
@@ -800,7 +804,7 @@ async def mlb_page(request: Request):
             print(f"    [TP] {tp_p.get('player_name','?')} | stat={tp_p.get('stat','?')} "
                   f"| pick={tp_p.get('pick','?')} | grade={tp_p.get('grade','?')} | edge={tp_p.get('edge','?')}")
     # ──────────────────────────────────────────────────────────────────────
-    return TEMPLATES.TemplateResponse(request, "mlb.html", {
+    response = TEMPLATES.TemplateResponse(request, "mlb.html", {
         "games":        games,
         "total":        len(games),
         "today":        today_label,
@@ -810,6 +814,10 @@ async def mlb_page(request: Request):
         "game_picks": game_picks,
         "deploy_ts": _DEPLOY_TS,
     })
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 # ─────────────────────────────────────────────
@@ -838,7 +846,7 @@ async def nhl_page(request: Request):
             print(f"    [TP] {tp_p.get('player_name','?')} | stat={tp_p.get('stat','?')} "
                   f"| pick={tp_p.get('pick','?')} | grade={tp_p.get('grade','?')} | edge={tp_p.get('edge','?')}")
     # ──────────────────────────────────────────────────────────────────────
-    return TEMPLATES.TemplateResponse(request, "nhl.html", {
+    response = TEMPLATES.TemplateResponse(request, "nhl.html", {
         "games":        games or [],
         "total":        len(games or []),
         "today":        today_label,
@@ -848,6 +856,10 @@ async def nhl_page(request: Request):
         "game_picks": game_picks,
         "deploy_ts": _DEPLOY_TS,
     })
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/api/debug/mlb-markets")
