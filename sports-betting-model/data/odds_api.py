@@ -688,11 +688,13 @@ MINIMUM_LINES: Dict[str, float] = {
     "blocks":          0.5,
     "steals":          0.5,
     "pts_rebs_asts":  15.5,
-    # NHL
-    "shots":           2.5,
-    "goals":           0.5,
-    "pp_points":       0.5,
-    "blocked_shots":   0.5,
+    # NHL — standard lines are 0.5 for most markets
+    "player_goals":               0.5,
+    "player_assists":             0.5,
+    "player_points":              0.5,
+    "player_shots_on_goal":       2.5,
+    "player_power_play_points":   0.5,
+    "player_blocked_shots":       0.5,
 }
 
 
@@ -1412,12 +1414,9 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
 
 
 SOCCER_LEAGUES: Dict[str, Dict] = {
-    "epl":        {"sport_key": "soccer_epl",                "league": "Premier League",   "icon": "🏴󠁧󠁢󠁥󠁮󠁧󠁿"},
-    "laliga":     {"sport_key": "soccer_spain_la_liga",      "league": "La Liga",          "icon": "🇪🇸"},
-    "ucl":        {"sport_key": "soccer_uefa_champs_league", "league": "Champions League", "icon": "⭐"},
-    "seriea":     {"sport_key": "soccer_italy_serie_a",      "league": "Serie A",          "icon": "🇮🇹"},
-    "bundesliga": {"sport_key": "soccer_germany_bundesliga", "league": "Bundesliga",       "icon": "🇩🇪"},
-    "ligue1":     {"sport_key": "soccer_france_ligue_one",   "league": "Ligue 1",          "icon": "🇫🇷"},
+    "epl":    {"sport_key": "soccer_epl",                "league": "Premier League",   "icon": "🏴󠁧󠁢󠁥󠁮󠁧󠁿"},
+    "laliga": {"sport_key": "soccer_spain_la_liga",      "league": "La Liga",          "icon": "🇪🇸"},
+    "ucl":    {"sport_key": "soccer_uefa_champs_league", "league": "Champions League", "icon": "⭐"},
 }
 
 _SOCCER_CACHE: Dict[str, Tuple] = {}
@@ -1748,7 +1747,7 @@ def build_soccer_props(ttl: int = 900) -> dict:
             params={"apiKey": api_key, "dateFormat": "iso"},
             use_cache=True, timeout=12,
         )
-        time.sleep(1)  # 1s gap between leagues to avoid rate limiting
+        time.sleep(2)  # 2s gap between leagues to avoid rate limiting
         if not events or not isinstance(events, list):
             continue
         print(f"[SOCCER] {league_name}: {len(events)} events")
