@@ -670,6 +670,30 @@ SPECIALTY_MARKETS: set = {
 }
 
 
+MINIMUM_LINES: Dict[str, float] = {
+    "hits":          1.5,
+    "total_bases":   1.5,
+    "rbi":           1.5,
+    "runs":          0.5,
+    "strikeouts":    4.5,
+    "hits_allowed":  4.5,
+    "earned_runs":   1.5,
+    "pitcher_outs":  15.0,
+}
+
+
+def meets_minimum_line(prop: Dict) -> bool:
+    """Return True if prop line is at or above the minimum sensible line for that stat."""
+    stat    = prop.get("stat", "")
+    minimum = MINIMUM_LINES.get(stat)
+    if minimum is None:
+        return True
+    try:
+        return float(prop.get("line", 0)) >= minimum
+    except (TypeError, ValueError):
+        return True
+
+
 def get_market_reliability(stat: str) -> float:
     """Return reliability weight for a stat market (0.0–1.0)."""
     return MARKET_RELIABILITY.get(stat, 0.75)
@@ -680,7 +704,7 @@ def is_specialty_market(stat: str) -> bool:
     return stat in SPECIALTY_MARKETS
 
 
-def is_bettable(prop: Dict, max_juice: int = -350) -> bool:
+def is_bettable(prop: Dict, max_juice: int = -200) -> bool:
     """Return True if prop passes basic bettability checks."""
     price = prop.get("price", -110)
     pick = prop.get("pick", "")
@@ -750,6 +774,7 @@ def get_mycard_props(
     all_props = [p for p in all_props if is_bettable(p)]
     all_props = [p for p in all_props if not is_specialty_market(p.get("stat", ""))]
     all_props = [p for p in all_props if p.get("grade", "Pass") != "Pass"]
+    all_props = [p for p in all_props if meets_minimum_line(p)]
     all_props.sort(key=lambda x: x.get("score", 0), reverse=True)
     all_props = dedupe_by_player(all_props)
     # Game diversity: max 3 props per game
@@ -1270,9 +1295,16 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 if p.get("is_bettable") and p.get("is_specialty")
             ]
 
-            # Top pick: best non-specialty bettable prop
-            non_spec = [p for p in all_game_props if p.get("is_bettable") and not p.get("is_specialty")]
-            top_pick = non_spec[0] if non_spec else (all_game_props[0] if all_game_props else None)
+            # Top pick: A/B grade, bettable odds, no specialty or novelty stats
+            _NOVELTY_STATS = {"double_double", "first_basket", "triple_double"}
+            non_spec = [
+                p for p in all_game_props
+                if p.get("is_bettable")
+                and not p.get("is_specialty")
+                and p.get("grade") in ("A", "B")
+                and p.get("stat") not in _NOVELTY_STATS
+            ]
+            top_pick = non_spec[0] if non_spec else None
 
             print(f"[ODDS] {sport_name}: event {i+1} done - {len(player_data)} players, {len(top_props)} props")
 
