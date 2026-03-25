@@ -203,6 +203,39 @@
   border-top: 1px dashed var(--border); margin-top: 4px;
 }
 
+/* ── Curated picks section ──────────────────── */
+.curated-section {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px); padding: 16px; margin-bottom: 16px;
+}
+.curated-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.curated-title { font-size: 16px; font-weight: 800; color: var(--text-primary); }
+.curated-count { font-size: 12px; color: var(--text-muted); background: #1a1a2e; padding: 2px 10px; border-radius: 10px; }
+.curated-best {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 10px;
+  background: var(--over-dim); border: 1px solid var(--over);
+  border-radius: 10px; font-size: 13px; color: var(--text-secondary);
+}
+.curated-best strong { color: var(--over); }
+.picks-section {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px); padding: 16px; margin-bottom: 16px;
+}
+.picks-title { font-size: 15px; font-weight: 800; color: var(--text-primary); margin-bottom: 10px; }
+.pick-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 0;
+  border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.pick-row:last-child { border-bottom: none; }
+.pick-matchup { font-weight: 700; color: var(--text-primary); min-width: 100px; }
+.pick-lean { font-weight: 700; color: var(--over); }
+.pick-spread { font-size: 12px; color: var(--text-secondary); background: #1a1a2e; padding: 2px 8px; border-radius: 6px; }
+.pick-total { font-size: 12px; color: var(--text-secondary); background: #1a1a2e; padding: 2px 8px; border-radius: 6px; }
+
 /* ── Mobile ──────────────────────────────────── */
 @media (max-width: 600px) {
   .filter-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
@@ -259,7 +292,75 @@
   </div>
 </div>
 
-{% if not games|selectattr('top_props')|list %}
+<!-- ── Curated Top Picks (sport-level) ────────────────── -->
+{% if display_props %}
+<div class="curated-section">
+  <div class="curated-header">
+    <span class="curated-title">Today's Best Props</span>
+    <span class="curated-count">{{ display_props|length }} pick{{ 's' if display_props|length != 1 else '' }}</span>
+  </div>
+  {% if best_value_prop %}
+  <div class="curated-best">
+    ⭐ <strong>Best Value:</strong>
+    {{ best_value_prop.player_name }} — {{ best_value_prop.label or best_value_prop.stat }} {{ best_value_prop.line }}
+    <span class="pick-pill {{ best_value_prop.pick|lower }}">{{ best_value_prop.pick }}</span>
+    <strong>{{ best_value_prop.confidence }}%</strong>
+    <span class="grade-badge grade-{{ best_value_prop.grade }}">{{ best_value_prop.grade }}</span>
+    <span style="font-size:11px;color:var(--text-muted)">{{ best_value_prop.game }}</span>
+  </div>
+  {% endif %}
+  <div class="top-props-section">
+  {% for prop in display_props %}
+  <div class="stat-row grade-border-{{ prop.grade }}"
+       data-stat="{{ prop.stat|lower }}"
+       data-pick="{{ prop.pick }}"
+       data-grade="{{ prop.grade }}"
+       data-odds="{{ prop.price|default(-110) }}">
+    <div class="sr-main">
+      <span class="sr-player">{{ prop.player_name }}</span>
+      <span class="sr-label">{{ prop.label or prop.stat }}</span>
+      <span class="sr-line">{{ prop.line }}</span>
+      <span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span>
+      <span class="sr-conf conf-{{ 'high' if prop.confidence >= 72 else 'med' if prop.confidence >= 62 else 'low' }}">{{ prop.confidence }}%</span>
+      <button class="sr-add"
+              data-player="{{ prop.player_name }}" data-team="{{ prop.team or '' }}" data-sport="NHL"
+              data-game="{{ prop.game }}"
+              data-stat="{{ prop.stat }}" data-line="{{ prop.line }}"
+              data-pick="{{ prop.pick }}" data-confidence="{{ prop.confidence }}"
+              data-grade="{{ prop.grade }}" data-score="{{ prop.score|default(50) }}"
+              data-stars="" data-trend="" data-last5="" data-avg="{{ prop.line }}"
+              onclick="addToParlay(this)">+</button>
+    </div>
+    <div class="sr-detail">
+      <span class="grade-badge grade-{{ prop.grade }}">{{ prop.grade }}</span>
+      <span class="sr-edge {{ 'edge-pos' if prop.edge > 0 else 'edge-neg' }}">{% if prop.edge > 0 %}+{% endif %}{{ prop.edge }}% edge</span>
+      {% if prop.best_book %}<span class="sr-book">{{ prop.best_book|upper }}</span>{% endif %}
+      <span class="sr-price">{{ prop.price|default('') }}</span>
+      <span style="font-size:11px;color:var(--text-muted)">{{ prop.game }}</span>
+    </div>
+  </div>
+  {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Game Picks / Winners ──────────────────────────── -->
+{% if game_picks %}
+<div class="picks-section">
+  <div class="picks-title">Game Picks</div>
+  {% for gp in game_picks %}
+  <div class="pick-row">
+    <span class="pick-matchup">{{ gp.matchup }}</span>
+    <span class="pick-lean">{{ gp.ml_lean }}</span>
+    <span class="game-pick-badge {{ gp.badge_class }}">{{ gp.badge_label }}</span>
+    {% if gp.spread is not none %}<span class="pick-spread">{{ gp.home_abbr }} {{ gp.spread }}</span>{% endif %}
+    {% if gp.total %}<span class="pick-total">O/U {{ gp.total }}</span>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if not games|selectattr('top_props')|list and not display_props %}
 <div class="no-props-banner">
   <div class="npb-icon">📊</div>
   <div class="npb-title">No player props available yet</div>

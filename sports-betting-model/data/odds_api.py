@@ -777,6 +777,199 @@ def apply_game_cap(props: List[Dict], max_per_game: int = 3) -> Tuple[List[Dict]
     return capped, overflow
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# PART 4c — CURATED DISPLAY PIPELINE
+# ════════════════════════════════════════════════════════════════════════════════
+
+# Stats that are low-signal / low-frequency — penalised in ranking
+_LOW_SIGNAL_STATS: set = {
+    "blocks", "steals", "player_blocks", "player_steals",
+    "pp_points", "player_power_play_points",
+    "player_blocked_shots", "blocked_shots",
+    "double_double", "triple_double", "first_basket", "first_goal",
+    "anytime_goal",
+}
+
+# Sport-level prop caps  (min, max)
+_SPORT_PROP_CAPS: Dict[str, Tuple[int, int]] = {
+    "nba": (12, 18),
+    "mlb": (10, 15),
+    "nhl": (6, 10),
+}
+
+
+def is_playable_prop(prop: Dict, min_edge: float = 4.0, min_prob: float = 0.53) -> bool:
+    """Return True if a prop is worth showing on the curated board."""
+    # Must have a real side
+    pick = prop.get("pick", "")
+    if pick not in ("OVER", "UNDER"):
+        return False
+    # Must be bettable (odds quality)
+    if not is_bettable(prop):
+        return False
+    # Must meet minimum line
+    if not meets_minimum_line(prop):
+        return False
+    # Must not be specialty / novelty
+    if is_specialty_market(prop.get("stat", "")):
+        return False
+    # Edge must be positive and above threshold
+    edge = _num(prop.get("edge", 0))
+    if edge < min_edge:
+        return False
+    # Probability / confidence threshold
+    prob = _num(prop.get("probability", prop.get("confidence", 0)))
+    # confidence is 0-100 scale, probability is 0-1
+    if prob > 1:
+        prob = prob / 100.0
+    if prob < min_prob:
+        return False
+    # If heavily juiced, require stronger edge
+    price = _num(prop.get("price", -110))
+    if price < -180 and edge < 10:
+        return False
+    # Grade must not be Pass
+    if prop.get("grade") == "Pass":
+        return False
+    return True
+
+
+def prop_rank_score(prop: Dict) -> float:
+    """Weighted score for display ranking.  Higher = better display pick."""
+    edge  = _num(prop.get("edge", 0))
+    conf  = _num(prop.get("confidence", 50))
+    grade = prop.get("grade", "Watch")
+    price = _num(prop.get("price", -110))
+    stat  = prop.get("stat", "")
+
+    # Base: edge is most important signal
+    score = edge * 3.0
+
+    # Confidence contributes moderately
+    score += (conf - 50) * 0.5
+
+    # Grade bonus
+    if grade == "A":
+        score += 12
+    elif grade == "B":
+        score += 6
+
+    # Odds quality: favour -110 to +150 range
+    if -150 <= price <= 150:
+        score += 4
+    elif price < -180:
+        score -= 5
+
+    # Penalise low-signal stats
+    if stat in _LOW_SIGNAL_STATS:
+        score -= 8
+
+    # Small bonus for OVER to help balance
+    if prop.get("pick") == "OVER":
+        score += 2
+
+    return score
+
+
+def dedupe_best_per_player(props: List[Dict]) -> List[Dict]:
+    """Keep only the single best prop per player (by rank score)."""
+    best: Dict[str, Dict] = {}
+    for p in props:
+        name = p.get("player_name", "unknown")
+        if name not in best or prop_rank_score(p) > prop_rank_score(best[name]):
+            best[name] = p
+    return list(best.values())
+
+
+def cap_props_per_game(props: List[Dict], max_per_game: int = 2) -> List[Dict]:
+    """Keep at most max_per_game props from any single game."""
+    counts: Dict[str, int] = {}
+    result: List[Dict] = []
+    for p in props:
+        game = p.get("game", "")
+        c = counts.get(game, 0)
+        if c < max_per_game:
+            result.append(p)
+            counts[game] = c + 1
+    return result
+
+
+def balance_prop_sides(
+    props: List[Dict],
+    max_props: int,
+    max_under_ratio: float = 0.65,
+) -> List[Dict]:
+    """Ensure no more than max_under_ratio of displayed props are one side."""
+    if not props:
+        return props
+
+    overs  = [p for p in props if p.get("pick") == "OVER"]
+    unders = [p for p in props if p.get("pick") == "UNDER"]
+
+    max_under = int(max_props * max_under_ratio)
+    max_over  = int(max_props * max_under_ratio)
+
+    # Trim the dominant side if needed
+    if len(unders) > max_under and len(overs) > 0:
+        unders = unders[:max_under]
+    if len(overs) > max_over and len(unders) > 0:
+        overs = overs[:max_over]
+
+    # Merge and re-sort by rank score
+    merged = overs + unders
+    merged.sort(key=lambda p: prop_rank_score(p), reverse=True)
+    return merged[:max_props]
+
+
+def build_display_props(
+    games: List[Dict],
+    sport: str = "nba",
+    max_per_game: int = 2,
+) -> Tuple[List[Dict], Optional[Dict]]:
+    """
+    Cross-slate curation: take the full list of games (each with all_game_props_clean)
+    and return (top_props, best_value_prop).
+
+    This is the ONLY function that decides what appears on the default sport tab.
+    """
+    min_cap, max_cap = _SPORT_PROP_CAPS.get(sport, (10, 18))
+
+    # Collect all clean props across all games, attaching game context
+    all_props: List[Dict] = []
+    for game in games:
+        game_label = f"{game.get('away_abbr', '')} @ {game.get('home_abbr', '')}"
+        for p in game.get("_all_clean_props", []):
+            p_copy = {**p, "game": game_label}
+            all_props.append(p_copy)
+
+    # Step 1: Only playable props
+    playable = [p for p in all_props if is_playable_prop(p)]
+
+    # Step 2: Rank by weighted score
+    playable.sort(key=lambda p: prop_rank_score(p), reverse=True)
+
+    # Step 3: One prop per player
+    deduped = dedupe_best_per_player(playable)
+
+    # Step 4: Cap per game
+    capped = cap_props_per_game(deduped, max_per_game=max_per_game)
+
+    # Step 5: Balance OVER/UNDER
+    balanced = balance_prop_sides(capped, max_props=max_cap, max_under_ratio=0.65)
+
+    # Step 6: Ensure at least min_cap if enough exist, but never pad with junk
+    top_props = balanced[:max_cap]
+
+    # Best value prop: highest edge among A/B grade
+    best_value = None
+    for p in top_props:
+        if p.get("grade") in ("A", "B") and _num(p.get("edge", 0)) > 0:
+            best_value = p
+            break
+
+    return top_props, best_value
+
+
 def get_mycard_props(
     games: List[Dict],
     sport_key: str = "",
@@ -1402,6 +1595,7 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 "more_props":      more_props,
                 "specialty_props": specialty_props,
                 "top_pick":        top_pick,
+                "_all_clean_props": all_game_props_clean,
                 "is_soccer":    "soccer" in sport_name,
                 "predicted_winner": home_team if home_prob >= away_prob else away_team,
                 "win_prob":     best_prob,
@@ -1424,9 +1618,49 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
             _tb.print_exc()
             continue
 
+    # ── Sport-level curation ──────────────────────────────────────────────
+    display_props, best_value_prop = build_display_props(results, sport=sport_name)
+
+    # Build game picks summary (one entry per game)
+    game_picks = []
+    for g in results:
+        home = g.get("home_team", "").split()[-1]
+        away = g.get("away_team", "").split()[-1]
+        hp   = g.get("home_prob", 50)
+        ap   = g.get("away_prob", 50)
+        fav  = home if hp >= ap else away
+        game_picks.append({
+            "matchup":    f"{g.get('away_abbr','')} @ {g.get('home_abbr','')}",
+            "home_team":  g.get("home_team", ""),
+            "away_team":  g.get("away_team", ""),
+            "home_abbr":  g.get("home_abbr", ""),
+            "away_abbr":  g.get("away_abbr", ""),
+            "home_prob":  hp,
+            "away_prob":  ap,
+            "ml_lean":    fav,
+            "home_ml":    g.get("home_ml"),
+            "away_ml":    g.get("away_ml"),
+            "spread":     g.get("home_spread"),
+            "total":      g.get("total_line"),
+            "confidence": g.get("confidence", "LOW"),
+            "badge_label": g.get("pick_badge_label", ""),
+            "badge_class": g.get("pick_badge_class", ""),
+        })
+
     games_with = sum(1 for g in results if g.get("top_props"))
-    print(f"[ODDS] {sport_name}: complete - {len(results)} games built, {games_with} with props")
-    return results
+    print(f"[ODDS] {sport_name}: complete - {len(results)} games, {games_with} with props, {len(display_props)} curated")
+
+    return {
+        "games":           results,
+        "display_props":   display_props,
+        "best_value_prop": best_value_prop,
+        "game_picks":      game_picks,
+        "counts": {
+            "games":    len(results),
+            "curated":  len(display_props),
+            "with_props": games_with,
+        },
+    }
 
 
 SOCCER_LEAGUES: Dict[str, Dict] = {

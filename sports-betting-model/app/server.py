@@ -222,9 +222,14 @@ def _normalize_games(games: list) -> list:
     return games
 
 
-def _build_nba_games(today_str: str) -> list:
+def _build_nba_games(today_str: str) -> dict:
     from data.odds_api import build_sport_props
-    return _normalize_games(build_sport_props("nba"))
+    result = build_sport_props("nba")
+    if isinstance(result, list):
+        # Legacy fallback
+        return {"games": _normalize_games(result), "display_props": [], "best_value_prop": None, "game_picks": [], "counts": {}}
+    result["games"] = _normalize_games(result.get("games", []))
+    return result
 
 
 def _build_nfl_games() -> list:
@@ -586,11 +591,18 @@ async def soccer_page(request: Request):
 async def nba_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    games       = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str), ttl=3600)
+    data        = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str), ttl=3600) or {}
+    games       = data.get("games", []) if isinstance(data, dict) else (data or [])
+    display_props    = data.get("display_props", []) if isinstance(data, dict) else []
+    best_value_prop  = data.get("best_value_prop") if isinstance(data, dict) else None
+    game_picks       = data.get("game_picks", []) if isinstance(data, dict) else []
     return TEMPLATES.TemplateResponse(request, "nba.html", {
-        "games": games or [], "today": today_label,
-        "total": len(games or []), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+        "games": games, "today": today_label,
+        "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
         "generated_at": _now_iso(),
+        "display_props": display_props,
+        "best_value_prop": best_value_prop,
+        "game_picks": game_picks,
     })
 
 
@@ -631,7 +643,8 @@ async def mycard_preview():
             ("nhl", lambda: _build_nhl_props(today_str)),
         ]:
             try:
-                games = _cached(f"{sport_key}_{today_str}", build_fn, ttl=1800) or []
+                raw = _cached(f"{sport_key}_{today_str}", build_fn, ttl=1800) or {}
+                games = raw.get("games", []) if isinstance(raw, dict) else (raw or [])
             except Exception:
                 continue
             for game in games:
@@ -697,9 +710,12 @@ async def today_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
     try:
-        nba_games = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str), ttl=1800) or []
-        mlb_games = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str), ttl=1800) or []
-        nhl_games = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str), ttl=1800) or []
+        _nba_raw = _cached(f"nba_{today_str}", lambda: _build_nba_games(today_str), ttl=1800) or {}
+        _mlb_raw = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str), ttl=1800) or {}
+        _nhl_raw = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str), ttl=1800) or {}
+        nba_games = _nba_raw.get("games", []) if isinstance(_nba_raw, dict) else (_nba_raw or [])
+        mlb_games = _mlb_raw.get("games", []) if isinstance(_mlb_raw, dict) else (_mlb_raw or [])
+        nhl_games = _nhl_raw.get("games", []) if isinstance(_nhl_raw, dict) else (_nhl_raw or [])
     except Exception as _e:
         print(f"[TODAY] Error building games: {_e}")
         traceback.print_exc()
@@ -717,16 +733,24 @@ async def today_page(request: Request):
     })
 
 
-def _build_mlb_props(today_str: str) -> list:
+def _build_mlb_props(today_str: str) -> dict:
     """Build MLB player props using Odds API as single source of truth."""
     from data.odds_api import build_sport_props
-    return _normalize_games(build_sport_props("mlb"))
+    result = build_sport_props("mlb")
+    if isinstance(result, list):
+        return {"games": _normalize_games(result), "display_props": [], "best_value_prop": None, "game_picks": [], "counts": {}}
+    result["games"] = _normalize_games(result.get("games", []))
+    return result
 
 
-def _build_nhl_props(today_str: str) -> list:
+def _build_nhl_props(today_str: str) -> dict:
     """Build NHL player props using Odds API as single source of truth."""
     from data.odds_api import build_sport_props
-    return _normalize_games(build_sport_props("nhl"))
+    result = build_sport_props("nhl")
+    if isinstance(result, list):
+        return {"games": _normalize_games(result), "display_props": [], "best_value_prop": None, "game_picks": [], "counts": {}}
+    result["games"] = _normalize_games(result.get("games", []))
+    return result
 
 
 # ─────────────────────────────────────────────
@@ -737,12 +761,19 @@ def _build_nhl_props(today_str: str) -> list:
 async def mlb_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    games       = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str), ttl=3600)
+    data        = _cached(f"mlb_{today_str}", lambda: _build_mlb_props(today_str), ttl=3600) or {}
+    games       = data.get("games", []) if isinstance(data, dict) else (data or [])
+    display_props    = data.get("display_props", []) if isinstance(data, dict) else []
+    best_value_prop  = data.get("best_value_prop") if isinstance(data, dict) else None
+    game_picks       = data.get("game_picks", []) if isinstance(data, dict) else []
     return TEMPLATES.TemplateResponse(request, "mlb.html", {
-        "games":        games or [],
-        "total":        len(games or []),
+        "games":        games,
+        "total":        len(games),
         "today":        today_label,
         "generated_at": _now_iso(),
+        "display_props": display_props,
+        "best_value_prop": best_value_prop,
+        "game_picks": game_picks,
     })
 
 
@@ -754,12 +785,19 @@ async def mlb_page(request: Request):
 async def nhl_page(request: Request):
     today_str   = date.today().strftime("%Y%m%d")
     today_label = date.today().strftime("%A, %B %d %Y")
-    games       = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str), ttl=3600)
+    data        = _cached(f"nhl_{today_str}", lambda: _build_nhl_props(today_str), ttl=3600) or {}
+    games       = data.get("games", []) if isinstance(data, dict) else (data or [])
+    display_props    = data.get("display_props", []) if isinstance(data, dict) else []
+    best_value_prop  = data.get("best_value_prop") if isinstance(data, dict) else None
+    game_picks       = data.get("game_picks", []) if isinstance(data, dict) else []
     return TEMPLATES.TemplateResponse(request, "nhl.html", {
         "games":        games or [],
         "total":        len(games or []),
         "today":        today_label,
         "generated_at": _now_iso(),
+        "display_props": display_props,
+        "best_value_prop": best_value_prop,
+        "game_picks": game_picks,
     })
 
 
@@ -1016,7 +1054,8 @@ async def sanity_check():
 
     # ── NBA checks ────────────────────────────────────────────────────────────
     try:
-        nba_games = _build_nba_games(today_str)
+        _nba_raw = _build_nba_games(today_str)
+        nba_games = _nba_raw.get("games", []) if isinstance(_nba_raw, dict) else (_nba_raw or [])
         if not nba_games:
             _warn("NBA: no games today")
         else:
@@ -1047,7 +1086,8 @@ async def sanity_check():
 
     # ── MLB checks ────────────────────────────────────────────────────────────
     try:
-        mlb_games = _build_mlb_props(today_str)
+        _mlb_raw = _build_mlb_props(today_str)
+        mlb_games = _mlb_raw.get("games", []) if isinstance(_mlb_raw, dict) else (_mlb_raw or [])
         if not mlb_games:
             _warn("MLB: no games today")
         else:
@@ -1090,7 +1130,8 @@ async def sanity_check():
     # ── NHL checks ────────────────────────────────────────────────────────────
     _MMA_STATS = {"rounds", "strikes", "takedowns", "knockdowns", "submission"}
     try:
-        nhl_games = _build_nhl_props(today_str)
+        _nhl_raw = _build_nhl_props(today_str)
+        nhl_games = _nhl_raw.get("games", []) if isinstance(_nhl_raw, dict) else (_nhl_raw or [])
         if nhl_games:
             for g in nhl_games:
                 for roster in [g.get("home_roster", []), g.get("away_roster", [])]:
@@ -1134,11 +1175,12 @@ async def mycard_page(request: Request):
         today_str = date.today().strftime("%Y%m%d")
         for sport_key, emoji, label in sports_to_load:
             try:
-                games = _cached(
+                raw = _cached(
                     f"{sport_key}_{today_str}",
                     lambda sk=sport_key: build_sport_props(sk),
                     ttl=1800,
-                ) or []
+                ) or {}
+                games = raw.get("games", []) if isinstance(raw, dict) else (raw or [])
             except Exception as _se:
                 print(f"[MYCARD] {sport_key}: {_se}")
                 games = []
