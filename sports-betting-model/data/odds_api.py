@@ -1692,14 +1692,15 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 top_props = fallback
                 print(f"[DEBUG] Used fallback for {away_abbr} @ {home_abbr}")
 
-            # more_props: remaining A/B after top 3, plus Watch grade
-            ab_rest = [
-                p for p in all_game_props_clean if p.get("grade") in ("A", "B")
-            ][3:]
-            watch_props = [
-                p for p in all_game_props_clean if p.get("grade") == "Watch"
-            ]
-            more_props = ab_rest + watch_props
+            # more_props: remaining clean props, excluding specialty/heavy juice, capped at 10
+            _SPECIALTY_STATS = {"double_double", "first_basket", "triple_double"}
+            more_props = [
+                p for p in all_game_props_clean
+                if p not in top_props
+                and p.get("grade") in ("A", "B", "Watch")
+                and p.get("stat") not in _SPECIALTY_STATS
+                and p.get("price", -110) > -300
+            ][:10]
 
             # Specialty props: novelty stats only
             specialty_props = [
