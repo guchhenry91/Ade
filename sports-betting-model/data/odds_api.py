@@ -1374,7 +1374,6 @@ SOCCER_LEAGUES: Dict[str, Dict] = {
     "seriea":     {"sport_key": "soccer_italy_serie_a",      "league": "Serie A",          "icon": "🇮🇹"},
     "bundesliga": {"sport_key": "soccer_germany_bundesliga", "league": "Bundesliga",       "icon": "🇩🇪"},
     "ligue1":     {"sport_key": "soccer_france_ligue_one",   "league": "Ligue 1",          "icon": "🇫🇷"},
-    "mls":        {"sport_key": "soccer_usa_mls",            "league": "MLS",              "icon": "🇺🇸"},
 }
 
 _SOCCER_CACHE: Dict[str, Tuple] = {}
@@ -1699,12 +1698,13 @@ def build_soccer_props(ttl: int = 900) -> dict:
         league_name = league_cfg["league"]
         icon        = league_cfg["icon"]
 
-        # Events list
+        # Events list — cached 2h to avoid 429 on repeated soccer fetches
         events = fetch(
             f"{ODDS_BASE}/sports/{sport_key}/events",
             params={"apiKey": api_key, "dateFormat": "iso"},
-            use_cache=False, timeout=12,
+            use_cache=True, timeout=12,
         )
+        time.sleep(1)  # 1s gap between leagues to avoid rate limiting
         if not events or not isinstance(events, list):
             continue
         print(f"[SOCCER] {league_name}: {len(events)} events")

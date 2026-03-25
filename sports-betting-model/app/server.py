@@ -542,7 +542,7 @@ async def home(request: Request):
 async def soccer_page(request: Request):
     from data.odds_api import build_soccer_props
     today_label = date.today().strftime("%A, %B %d %Y")
-    result      = _cached("soccer", build_soccer_props, ttl=600)
+    result      = _cached("soccer", build_soccer_props, ttl=7200)
     league_blocks: list = []
     upcoming: list = []
     if isinstance(result, dict):
