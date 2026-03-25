@@ -704,6 +704,13 @@ def is_specialty_market(stat: str) -> bool:
     return stat in SPECIALTY_MARKETS
 
 
+def _num(v, default=0):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def is_bettable(prop: Dict, max_juice: int = -200) -> bool:
     """Return True if prop passes basic bettability checks."""
     price = prop.get("price", -110)
@@ -1274,37 +1281,54 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
             home_players = _top_players(home_players, 8)
             away_players = _top_players(away_players, 8)
 
-            # Top props: score-sorted, filtered, capped
+            # Collect all props for this game
             all_game_props: list = []
             for pdata in player_data.values():
                 all_game_props.extend(pdata["props"])
-            all_game_props.sort(key=lambda x: x.get("score", 0), reverse=True)
 
-            # Core props: bettable, non-specialty, non-Pass
-            core_props = [
+            _NOVELTY_STATS = {"double_double", "first_basket", "triple_double"}
+
+            # Clean list: exclude novelty stats and extreme juice (< -300)
+            all_game_props_clean = [
                 p for p in all_game_props
-                if p.get("is_bettable") and not p.get("is_specialty") and p.get("grade") != "Pass"
+                if p.get("stat") not in _NOVELTY_STATS
+                and not (_num(p.get("price", -110)) < -300)
             ]
-            core_props = dedupe_by_player(core_props)
-            top_props, more_props = apply_game_cap(core_props, max_per_game=25)
-            top_props = top_props[:25]
+            all_game_props_clean.sort(
+                key=lambda x: (_num(x.get("score")), _num(x.get("edge"))),
+                reverse=True,
+            )
 
-            # Specialty props: bettable specialty market props
+            # top_props: first 3 A/B-grade props from clean list
+            top_props = [
+                p for p in all_game_props_clean if p.get("grade") in ("A", "B")
+            ][:3]
+
+            # more_props: remaining A/B after top 3, plus Watch grade
+            ab_rest = [
+                p for p in all_game_props_clean if p.get("grade") in ("A", "B")
+            ][3:]
+            watch_props = [
+                p for p in all_game_props_clean if p.get("grade") == "Watch"
+            ]
+            more_props = ab_rest + watch_props
+
+            # Specialty props: novelty stats only
             specialty_props = [
                 p for p in all_game_props
-                if p.get("is_bettable") and p.get("is_specialty")
+                if p.get("stat") in _NOVELTY_STATS
             ]
 
-            # Top pick: A/B grade, bettable odds, no specialty or novelty stats
-            _NOVELTY_STATS = {"double_double", "first_basket", "triple_double"}
-            non_spec = [
-                p for p in all_game_props
-                if p.get("is_bettable")
-                and not p.get("is_specialty")
-                and p.get("grade") in ("A", "B")
-                and p.get("stat") not in _NOVELTY_STATS
-            ]
-            top_pick = non_spec[0] if non_spec else None
+            # Top pick: A/B grade, price >= -200, positive edge, from clean list
+            top_pick = next(
+                (
+                    p for p in all_game_props_clean
+                    if p.get("grade") in ("A", "B")
+                    and _num(p.get("price", -110)) >= -200
+                    and _num(p.get("edge", 0)) > 0
+                ),
+                None,
+            )
 
             print(f"[ODDS] {sport_name}: event {i+1} done - {len(player_data)} players, {len(top_props)} props")
 

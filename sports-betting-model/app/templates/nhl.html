@@ -77,11 +77,10 @@
 .stat-row[data-grade="A"]     { border-left: 3px solid var(--over); }
 .stat-row[data-grade="B"]     { border-left: 3px solid var(--accent); }
 .stat-row[data-grade="Watch"] { border-left: 3px solid var(--hot, #ff9500); opacity: 0.8; }
-/* Hide Pass, double_double, first_basket always */
-.stat-row[data-grade="Pass"] { display: none !important; }
-.stat-row[data-stat="double_double"] { display: none !important; }
-.stat-row[data-stat="first_basket"]  { display: none !important; }
 /* Watch rows are shown by default; JS controls visibility */
+
+/* Player name in flat prop row */
+.sr-player { font-size: 11px; color: var(--text-muted); min-width: 80px; }
 
 /* Two-line layout */
 .sr-main {
@@ -243,13 +242,7 @@
   </div>
 </div>
 
-{% set total_nhl_props = namespace(count=0) %}
-{% for game in games %}
-  {% for roster in [game.home_roster or [], game.away_roster or []] %}
-    {% for p in roster %}{% set total_nhl_props.count = total_nhl_props.count + (p.props|length) %}{% endfor %}
-  {% endfor %}
-{% endfor %}
-{% if total_nhl_props.count == 0 %}
+{% if not games|selectattr('top_props')|list %}
 <div class="no-props-banner">
   <div class="npb-icon">📊</div>
   <div class="npb-title">No player props available yet</div>
@@ -303,74 +296,45 @@
     </div>
   </div>
 
+  <!-- Props (flat list, Python-filtered) -->
   <div class="game-players">
 
   {% if game.top_props %}
-  <div class="best-picks-strip">
+  <div class="top-props-section">
     {% for prop in game.top_props %}
-    <span class="bp-pill grade-{{ prop.grade }}">
-      {{ prop.player_name.split()[-1] }} · {{ prop.label }} {{ prop.line }}
-      <span class="pick-pill {{ prop.pick|lower }}" style="font-size:10px;padding:1px 6px;">{{ prop.pick }}</span>
-      {{ prop.confidence }}%
-    </span>
-    {% endfor %}
-  </div>
-  {% endif %}
-
-  {% for team_label, roster, abbr in [(game.home_team, game.home_roster, game.home_abbr),(game.away_team, game.away_roster, game.away_abbr)] %}
-  {% if roster %}
-  <div class="team-label-compact">
-    <span class="ts-name">{{ team_label }}</span>
-    <span class="ts-count">{{ roster|length }} player{{ 's' if roster|length != 1 else '' }}</span>
-  </div>
-  {% for p in roster %}
-  {% set best = namespace(val=0) %}
-  {% for pr in p.props %}{% if pr.confidence > best.val %}{% set best.val = pr.confidence %}{% endif %}{% endfor %}
-  <div class="player-card" data-group="nhl"
-       data-stats="{% for pr in p.props %}{{ pr.stat|lower }} {% endfor %}"
-       data-conf="{{ best.val }}" data-team="{{ abbr }}">
-    <div class="player-header">
-      <span class="player-name">{{ p.name }}</span>
-      <span class="player-team-badge">{{ abbr }}</span>
-      {% if best.val >= 75 %}<span class="player-top-pick hot">🔥 HOT</span>
-      {% elif best.val >= 65 %}<span class="player-top-pick solid">✅ SOLID</span>
-      {% elif best.val >= 58 %}<span class="player-top-pick lean">📊 LEAN</span>{% endif %}
-    </div>
-    {% for pr in p.props %}
     <div class="stat-row"
-         data-stat="{{ pr.stat|lower }}"
-         data-pick="{{ pr.pick }}"
-         data-grade="{{ pr.grade or 'B' }}"
-         data-odds="{{ pr.price|default(-110) }}">
+         data-stat="{{ prop.stat|lower }}"
+         data-pick="{{ prop.pick }}"
+         data-grade="{{ prop.grade }}"
+         data-odds="{{ prop.price|default(-110) }}">
       <div class="sr-main">
-        <span class="sr-label">{{ pr.label or pr.stat }}</span>
-        <span class="sr-line">{{ pr.line }}</span>
-        <span class="pick-pill {{ pr.pick|lower }}">{{ pr.pick }}</span>
-        <span class="sr-conf {% if pr.confidence >= 70 %}high{% elif pr.confidence >= 58 %}med{% else %}low{% endif %}">{{ pr.confidence }}%</span>
+        <span class="sr-player">{{ prop.player_name }}</span>
+        <span class="sr-label">{{ prop.label or prop.stat }}</span>
+        <span class="sr-line">{{ prop.line }}</span>
+        <span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span>
+        <span class="sr-conf {% if prop.confidence >= 70 %}high{% elif prop.confidence >= 58 %}med{% else %}low{% endif %}">{{ prop.confidence }}%</span>
         <button class="sr-add parlay-add-btn"
-                data-player="{{ p.name }}" data-team="{{ abbr }}" data-sport="NHL"
+                data-player="{{ prop.player_name }}" data-team="{{ prop.team or '' }}" data-sport="NHL"
                 data-game="{{ game.away_team }} @ {{ game.home_team }}"
-                data-stat="{{ pr.stat }}" data-line="{{ pr.line }}"
-                data-pick="{{ pr.pick }}" data-confidence="{{ pr.confidence }}"
-                data-stars="{{ pr.stars }}" data-trend="{{ pr.trend or '' }}"
-                data-last5="" data-avg="{{ pr.line }}"
+                data-stat="{{ prop.stat }}" data-line="{{ prop.line }}"
+                data-pick="{{ prop.pick }}" data-confidence="{{ prop.confidence }}"
+                data-stars="{{ prop.stars }}" data-trend="{{ prop.trend or '' }}"
+                data-last5="" data-avg="{{ prop.line }}"
                 onclick="parlayState.toggleLeg(this)">+</button>
       </div>
       <div class="sr-detail">
-        <span class="grade-badge grade-{{ pr.grade }}">{{ pr.grade }}</span>
-        <span class="sr-edge {{ 'edge-pos' if pr.edge > 0 else 'edge-neg' }}">{% if pr.edge > 0 %}+{% endif %}{{ pr.edge }}% edge</span>
-        {% if pr.best_book %}<span class="sr-book">{{ pr.best_book|upper }}</span>{% endif %}
-        <span class="sr-stake">{{ pr.stake_rec }}</span>
-        <span class="sr-playable">max {{ pr.playable_to }}</span>
+        <span class="grade-badge grade-{{ prop.grade }}">{{ prop.grade }}</span>
+        <span class="sr-edge {{ 'edge-pos' if prop.edge > 0 else 'edge-neg' }}">{% if prop.edge > 0 %}+{% endif %}{{ prop.edge }}% edge</span>
+        {% if prop.best_book %}<span class="sr-book">{{ prop.best_book|upper }}</span>{% endif %}
+        <span class="sr-stake">{{ prop.stake_rec }}</span>
+        <span class="sr-playable">max {{ prop.playable_to }}</span>
       </div>
     </div>
     {% endfor %}
   </div>
-  {% endfor %}
   {% else %}
-  <div style="padding:10px 0;font-size:12px;color:var(--text-muted);">No props for {{ abbr }} tonight.</div>
+  <div style="padding:10px 0;font-size:12px;color:var(--text-muted);">No props available for this game.</div>
   {% endif %}
-  {% endfor %}
 
   {% if game.more_props %}
   <div class="more-props-section" id="more-nhl-{{ gid }}" style="display:none;">
@@ -444,37 +408,19 @@
 
   function applyFilters() {
     let counts = {all: 0, OVER: 0, UNDER: 0, FAIR: 0};
-    document.querySelectorAll('.player-card[data-group="nhl"]').forEach(card => {
-      let vis = 0;
-      card.querySelectorAll('.stat-row').forEach(row => {
-        const grade = row.dataset.grade;
-        const stat  = row.dataset.stat;
-        const pick  = row.dataset.pick;
-        // Always hide Pass
-        if (grade === 'Pass') { row.style.display = 'none'; return; }
-        // Always hide double_double and first_basket
-        if (stat === 'double_double' || stat === 'first_basket') { row.style.display = 'none'; return; }
-        // Hide props with juice worse than -400
-        const odds = parseFloat(row.dataset.odds || '-110');
-        if (odds < 0 && odds < -400) { row.style.display = 'none'; return; }
-        // Grade filter: "all" shows A, B, and Watch (hides only Pass)
-        let gradeMatch = false;
-        if (activeGrade === 'all') {
-          gradeMatch = grade === 'A' || grade === 'B' || grade === 'Watch';
-        } else {
-          gradeMatch = grade === activeGrade;
-        }
-        const statMatch = activeStat === 'all' || stat === activeStat;
-        const pickMatch = activePick === 'all' || pick === activePick;
-        const show = gradeMatch && statMatch && pickMatch;
-        row.style.display = show ? 'block' : 'none';
-        if (show) {
-          vis++;
-          counts.all++;
-          if (pick) counts[pick] = (counts[pick] || 0) + 1;
-        }
-      });
-      card.style.display = vis > 0 ? '' : 'none';
+    document.querySelectorAll('.top-props-section .stat-row').forEach(row => {
+      const grade = row.dataset.grade;
+      const stat  = row.dataset.stat;
+      const pick  = row.dataset.pick;
+      let gradeMatch = activeGrade === 'all' ? true : grade === activeGrade;
+      const statMatch = activeStat === 'all' || stat === activeStat;
+      const pickMatch = activePick === 'all' || pick === activePick;
+      const show = gradeMatch && statMatch && pickMatch;
+      row.style.display = show ? '' : 'none';
+      if (show) {
+        counts.all++;
+        if (pick) counts[pick] = (counts[pick] || 0) + 1;
+      }
     });
     ['all', 'OVER', 'UNDER', 'FAIR'].forEach(k => {
       const el = document.getElementById('nhl-cnt-' + k.toLowerCase());
