@@ -21,12 +21,12 @@
 .gh-team { display: flex; align-items: center; gap: 8px; }
 .gh-team.right { flex-direction: row-reverse; }
 .gh-tname { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
-.gh-prob { font-size: 20px; font-weight: 800; }
+.gh-prob { font-size: 22px; font-weight: 900; }
 .gh-prob.home { color: var(--over); }
 .gh-prob.away { color: var(--accent); }
-.gh-ml { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.gh-ml { font-size: 12px; color: #555; font-weight: 500; }
 .gh-center { flex: 1; text-align: center; font-size: 11px; color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
-.gh-spread, .gh-total { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.gh-spread, .gh-total { font-size: 11px; font-weight: 600; color: #666; background: #1a1a2e; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
 .gh-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .game-pick-badge { display:inline-flex;align-items:center;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:700;white-space:nowrap; }
 .badge-strong   { background:var(--over-dim); color:var(--over); border:1px solid var(--over); }
@@ -47,19 +47,19 @@
 
 /* ── Player cards ────────────────────────────── */
 .player-card {
-  background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: 10px; margin-bottom: 8px; overflow: hidden;
+  background: #111130; border: 1px solid #1e1e3f;
+  border-radius: 12px; margin-bottom: 10px; overflow: hidden;
 }
 .player-header {
-  display: flex; align-items: center; gap: 8px;
-  padding: 9px 14px; background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; background: #16162e;
+  border-bottom: 1px solid #1e1e3f;
 }
-.player-name { font-size: 14px; font-weight: 700; color: var(--text-primary); flex: 1; }
+.player-name { font-size: 15px; font-weight: 700; color: #f0f0ff; flex: 1; }
 .player-team-badge {
-  font-size: 11px; font-weight: 700; color: var(--accent);
-  background: var(--accent-dim); border: 1px solid var(--accent);
-  border-radius: 6px; padding: 2px 7px; flex-shrink: 0;
+  font-size: 11px; font-weight: 700; color: #00d4ff;
+  background: rgba(0,212,255,0.12); border: 1px solid rgba(0,212,255,0.3);
+  border-radius: 20px; padding: 2px 8px; flex-shrink: 0;
 }
 .player-top-pick { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; flex-shrink: 0; }
 .player-top-pick.hot   { background: var(--over-dim); color: var(--over); }
@@ -68,24 +68,40 @@
 
 /* ── Stat rows ───────────────────────────────── */
 .stat-row {
-  display: flex; align-items: center; padding: 7px 14px;
-  border-bottom: 1px solid var(--border); gap: 8px; transition: background 0.12s;
+  display: block; padding: 10px 14px;
+  border-bottom: 1px solid var(--border); transition: background 0.12s;
 }
 .stat-row:last-child { border-bottom: none; }
 .stat-row:hover { background: var(--bg-hover); }
-/* Hide Pass props by default */
-.stat-row[data-grade="Pass"] { display: none; }
+/* Grade-based left border */
+.stat-row[data-grade="A"]     { border-left: 3px solid var(--over); }
+.stat-row[data-grade="B"]     { border-left: 3px solid var(--accent); }
+.stat-row[data-grade="Watch"] { border-left: 3px solid var(--hot, #ff9500); opacity: 0.8; }
+/* Hide Pass, double_double, first_basket always */
+.stat-row[data-grade="Pass"] { display: none !important; }
+.stat-row[data-stat="double_double"] { display: none !important; }
+.stat-row[data-stat="first_basket"]  { display: none !important; }
+/* Hide Watch by default; shown only when Watch filter active */
+.stat-row[data-grade="Watch"] { display: none; }
 
-.sr-label { font-size: 13px; color: var(--text-secondary); width: 60px; flex-shrink: 0; }
-.sr-line  { font-size: 14px; font-weight: 700; color: var(--text-primary); width: 36px; text-align: center; flex-shrink: 0; }
+/* Two-line layout */
+.sr-main {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+}
+.sr-detail {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding-left: 2px;
+}
+.sr-label { font-size: 14px; font-weight: 600; color: var(--text-primary); flex: 1; }
+.sr-line  { font-size: 15px; font-weight: 800; color: var(--text-primary); width: 38px; text-align: center; flex-shrink: 0; }
 .pick-pill {
-  font-size: 11px; font-weight: 700; padding: 2px 9px;
-  border-radius: 10px; width: 50px; text-align: center; flex-shrink: 0;
+  font-size: 11px; font-weight: 700; padding: 3px 9px;
+  border-radius: 10px; min-width: 54px; text-align: center; flex-shrink: 0;
 }
 .pick-pill.over  { background: var(--over-dim); color: var(--over); border: 1px solid var(--over); }
 .pick-pill.under { background: var(--under-dim); color: var(--under); border: 1px solid var(--under); }
 .pick-pill.fair  { background: var(--fair-dim, #88889918); color: var(--fair, #888899); border: 1px solid var(--border); }
-.sr-conf { font-size: 13px; font-weight: 700; width: 42px; text-align: center; flex-shrink: 0; }
+.sr-conf { font-size: 15px; font-weight: 800; width: 48px; text-align: center; flex-shrink: 0; }
 .sr-conf.high { color: var(--over); }
 .sr-conf.med  { color: var(--hot, #ff9500); }
 .sr-conf.low  { color: var(--text-muted); }
@@ -94,14 +110,14 @@
 .grade-badge.grade-B     { background: var(--accent-dim); color: var(--accent); }
 .grade-badge.grade-Watch { background: var(--hot-dim, #ff950018); color: var(--hot, #ff9500); }
 .grade-badge.grade-Pass  { background: var(--fair-dim, #88889918); color: var(--fair, #888899); opacity: 0.6; }
-.sr-edge { font-size: 12px; font-weight: 600; width: 42px; text-align: center; flex-shrink: 0; }
+.sr-edge { font-size: 12px; font-weight: 600; flex-shrink: 0; }
 .edge-pos { color: var(--over); }
 .edge-neg { color: var(--under); }
-.sr-book { font-size: 11px; font-weight: 700; color: var(--accent); width: 36px; flex-shrink: 0; }
-.sr-playable { font-size: 11px; color: var(--text-muted); width: 40px; flex-shrink: 0; }
-.sr-stake { font-size: 12px; font-weight: 700; color: var(--over); width: 44px; flex-shrink: 0; }
+.sr-book { font-size: 11px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+.sr-playable { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+.sr-stake { font-size: 12px; font-weight: 700; color: var(--over); flex-shrink: 0; }
 .sr-add {
-  width: 26px; height: 26px; border-radius: 50%;
+  width: 28px; height: 28px; border-radius: 50%;
   border: 1px solid var(--border); background: transparent;
   color: var(--text-muted); cursor: pointer; font-size: 16px;
   transition: all 0.12s; display: flex; align-items: center; justify-content: center;
@@ -110,26 +126,29 @@
 .sr-add:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
 .sr-add.added { border-color: var(--over); color: var(--over); background: var(--over-dim); }
 
-/* ── Team label ──────────────────────────────── */
+/* ── Team section labels ─────────────────────── */
 .team-label-compact {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .08em; color: var(--accent); padding: 6px 0 8px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; background: #0d0d22; border-bottom: 1px solid #1e1e3f;
 }
+.ts-name { font-size: 13px; font-weight: 700; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; }
+.ts-count { font-size: 12px; color: #555; background: #1a1a2e; padding: 2px 8px; border-radius: 10px; }
 
 /* ── Team grid ───────────────────────────────── */
 .team-grid {
   display: flex; flex-wrap: wrap; gap: 6px;
-  padding: 10px 0 14px; border-bottom: 1px solid var(--border);
+  padding: 10px 16px; background: #0a0a18;
+  border-bottom: 1px solid #1e1e3f;
   margin-bottom: 14px;
 }
 .team-btn {
-  padding: 3px 11px; border-radius: 14px;
-  border: 1px solid var(--border); background: var(--bg-card);
-  color: var(--text-muted); font-size: 12px; font-weight: 700;
-  cursor: pointer; transition: all 0.12s;
+  padding: 5px 14px; border-radius: 20px;
+  border: 1px solid #252545; background: #111128;
+  color: #777; font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: all 0.12s; min-height: 32px;
 }
 .team-btn:hover  { border-color: var(--accent); color: var(--accent); }
-.team-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.team-btn.active { background: rgba(0,212,255,0.15); border-color: #00d4ff; color: #00d4ff; }
 @media (max-width: 640px) {
   .team-grid { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .team-grid::-webkit-scrollbar { display: none; }
@@ -139,9 +158,11 @@
 .filter-bar { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 14px; }
 .filter-row { display: flex; gap: 4px; flex-wrap: wrap; }
 .fpill, .ppill, .gpill {
-  padding: 4px 12px; border-radius: 16px; border: 1px solid var(--border);
-  background: var(--bg-card); color: var(--text-muted); font-size: 12px;
-  font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.12s;
+  padding: 8px 16px; border-radius: 20px; border: 1px solid #252545;
+  background: #111128; color: #777; font-size: 13px;
+  font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: all 0.15s; min-height: 36px;
+  display: inline-flex; align-items: center;
 }
 .fpill.active, .gpill.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
 .ppill.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
@@ -149,10 +170,19 @@
 .ppill.under.active { background: var(--under-dim); border-color: var(--under); color: var(--under); }
 .ppill.fair.active  { background: var(--fair-dim, #88889918); border-color: var(--border); color: var(--fair, #888899); }
 .ppill .badge { background: rgba(255,255,255,.1); border-radius: 8px; padding: 0 5px; font-size: 10px; margin-left: 3px; }
-@media (max-width: 640px) {
+
+/* ── Mobile ──────────────────────────────────── */
+@media (max-width: 600px) {
   .filter-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .filter-row::-webkit-scrollbar { display: none; }
-  .sr-book, .sr-playable, .sr-stake { display: none; }
+  .sr-main { gap: 7px; }
+  .sr-label { font-size: 13px; }
+  .sr-line { font-size: 14px; width: 32px; }
+  .sr-conf { font-size: 14px; width: 42px; }
+  .sr-playable { display: none; }
+  .gh-matchup { font-size: 16px; }
+  .gh-prob { font-size: 20px; }
+  .fpill, .ppill, .gpill { padding: 6px 12px; font-size: 12px; min-height: 32px; }
 }
 </style>
 {% endblock %}
@@ -268,7 +298,10 @@
       (game.away_team, game.away_roster, game.away_abbr),
   ] %}
   {% if roster %}
-  <div class="team-label-compact">{{ team_label }} · {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}</div>
+  <div class="team-label-compact">
+    <span class="ts-name">{{ team_label }}</span>
+    <span class="ts-count">{{ roster|length }} player{{ 's' if roster|length != 1 else '' }}</span>
+  </div>
   {% for p in roster %}
   {% set best = namespace(val=0) %}
   {% for pr in p.props %}
@@ -292,23 +325,27 @@
          data-stat="{{ pr.stat|lower }}"
          data-pick="{{ pr.pick }}"
          data-grade="{{ pr.grade }}">
-      <span class="sr-label">{{ pr.label or pr.stat }}</span>
-      <span class="sr-line">{{ pr.line }}</span>
-      <span class="pick-pill {{ pr.pick|lower }}">{{ pr.pick }}</span>
-      <span class="sr-conf {% if pr.confidence >= 70 %}high{% elif pr.confidence >= 58 %}med{% else %}low{% endif %}">{{ pr.confidence }}%</span>
-      <span class="grade-badge grade-{{ pr.grade }}">{{ pr.grade }}</span>
-      <span class="sr-edge {{ 'edge-pos' if pr.edge > 0 else 'edge-neg' }}">{% if pr.edge > 0 %}+{% endif %}{{ pr.edge }}%</span>
-      {% if pr.best_book %}<span class="sr-book">{{ pr.best_book|upper }}</span>{% endif %}
-      <span class="sr-playable">{{ pr.playable_to }}</span>
-      <span class="sr-stake">{{ pr.stake_rec }}</span>
-      <button class="sr-add parlay-add-btn"
-              data-player="{{ p.name }}" data-team="{{ abbr }}" data-sport="NBA"
-              data-game="{{ game.away_team }} @ {{ game.home_team }}"
-              data-stat="{{ pr.stat }}" data-line="{{ pr.line }}"
-              data-pick="{{ pr.pick }}" data-confidence="{{ pr.confidence }}"
-              data-stars="{{ pr.stars }}" data-trend="{{ pr.trend or '' }}"
-              data-last5="" data-avg="{{ pr.line }}"
-              onclick="parlayState.toggleLeg(this)">+</button>
+      <div class="sr-main">
+        <span class="sr-label">{{ pr.label or pr.stat }}</span>
+        <span class="sr-line">{{ pr.line }}</span>
+        <span class="pick-pill {{ pr.pick|lower }}">{{ pr.pick }}</span>
+        <span class="sr-conf {% if pr.confidence >= 70 %}high{% elif pr.confidence >= 58 %}med{% else %}low{% endif %}">{{ pr.confidence }}%</span>
+        <button class="sr-add parlay-add-btn"
+                data-player="{{ p.name }}" data-team="{{ abbr }}" data-sport="NBA"
+                data-game="{{ game.away_team }} @ {{ game.home_team }}"
+                data-stat="{{ pr.stat }}" data-line="{{ pr.line }}"
+                data-pick="{{ pr.pick }}" data-confidence="{{ pr.confidence }}"
+                data-stars="{{ pr.stars }}" data-trend="{{ pr.trend or '' }}"
+                data-last5="" data-avg="{{ pr.line }}"
+                onclick="parlayState.toggleLeg(this)">+</button>
+      </div>
+      <div class="sr-detail">
+        <span class="grade-badge grade-{{ pr.grade }}">{{ pr.grade }}</span>
+        <span class="sr-edge {{ 'edge-pos' if pr.edge > 0 else 'edge-neg' }}">{% if pr.edge > 0 %}+{% endif %}{{ pr.edge }}% edge</span>
+        {% if pr.best_book %}<span class="sr-book">{{ pr.best_book|upper }}</span>{% endif %}
+        <span class="sr-stake">{{ pr.stake_rec }}</span>
+        <span class="sr-playable">max {{ pr.playable_to }}</span>
+      </div>
     </div>
     {% endfor %}
   </div>
@@ -336,16 +373,28 @@
     document.querySelectorAll('.player-card[data-group="nba"]').forEach(card => {
       let vis = 0;
       card.querySelectorAll('.stat-row').forEach(row => {
-        const statOk  = activeStat  === 'all' || row.dataset.stat  === activeStat;
-        const pickOk  = activePick  === 'all' || row.dataset.pick  === activePick;
-        const gradeOk = activeGrade === 'all' || row.dataset.grade === activeGrade;
-        const show = statOk && pickOk && gradeOk;
-        row.style.display = show ? 'flex' : 'none';
+        const grade = row.dataset.grade;
+        const stat  = row.dataset.stat;
+        const pick  = row.dataset.pick;
+        // Always hide Pass
+        if (grade === 'Pass') { row.style.display = 'none'; return; }
+        // Always hide double_double and first_basket
+        if (stat === 'double_double' || stat === 'first_basket') { row.style.display = 'none'; return; }
+        // Grade filter: "all" shows A and B only (NOT Watch)
+        let gradeMatch = false;
+        if (activeGrade === 'all') {
+          gradeMatch = grade === 'A' || grade === 'B';
+        } else {
+          gradeMatch = grade === activeGrade;
+        }
+        const statMatch = activeStat === 'all' || stat === activeStat;
+        const pickMatch = activePick === 'all' || pick === activePick;
+        const show = gradeMatch && statMatch && pickMatch;
+        row.style.display = show ? 'block' : 'none';
         if (show) {
           vis++;
           counts.all++;
-          const p = row.dataset.pick;
-          if (p) counts[p] = (counts[p] || 0) + 1;
+          if (pick) counts[pick] = (counts[pick] || 0) + 1;
         }
       });
       card.style.display = vis > 0 ? '' : 'none';
