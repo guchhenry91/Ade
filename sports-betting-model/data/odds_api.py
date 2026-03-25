@@ -610,9 +610,10 @@ _TEAM_ABBR: Dict[str, str] = {
     "Utah Jazz": "UTA", "Washington Wizards": "WAS",
 }
 
-def _assign_players_to_teams(
+def assign_players_to_teams(
     player_data: dict,
-    home_abbr: str, away_abbr: str,
+    home_team: str, home_abbr: str,
+    away_team: str, away_abbr: str,
 ) -> tuple:
     """Assign players to home/away teams without ESPN roster lookups.
 
@@ -654,6 +655,10 @@ def _assign_players_to_teams(
             away_players.append(pdata)
 
     return home_players, away_players
+
+
+# Keep private alias for any remaining internal references
+_assign_players_to_teams = assign_players_to_teams
 
 
 def _team_abbr(team_full_name: str) -> str:
@@ -1013,8 +1018,8 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 pdata["props"].sort(key=lambda x: x["confidence"], reverse=True)
 
             # Step 6: Assign players to teams (no ESPN roster calls — even split)
-            home_players, away_players = _assign_players_to_teams(
-                player_data, home_abbr, away_abbr,
+            home_players, away_players = assign_players_to_teams(
+                player_data, home_team, home_abbr, away_team, away_abbr,
             )
 
             def _best_conf(player):
@@ -1120,21 +1125,290 @@ def _fmt_american(price: float) -> str:
     return str(round(price))
 
 
-def build_soccer_props(ttl: int = 900) -> list:
+def fetch_soccer_game_data(
+    sport_key: str, event_id: str, home_team: str, away_team: str
+) -> dict:
+    """Fetch full match data for a single soccer game.
+
+    Returns a game dict with:
+      home_prob, draw_prob, away_prob,
+      btts_yes_prob, total_goals_line, over_goals_prob,
+      correct_scores (top 8 [{score, prob, odds}]),
+      home_players / away_players (player card format),
+      pick_badge_label, pick_badge_class, match_pick,
+      book_home_ml, book_draw_ml, book_away_ml.
+    """
+    api_key = _key()
+    game_data: dict = {
+        "event_id":         event_id,
+        "home_team":        home_team,
+        "away_team":        away_team,
+        "home_prob":        50.0,
+        "draw_prob":        25.0,
+        "away_prob":        25.0,
+        "btts_yes_prob":    None,
+        "total_goals_line": None,
+        "over_goals_prob":  None,
+        "correct_scores":   [],
+        "home_players":     [],
+        "away_players":     [],
+        "match_pick":       None,
+        "pick_badge_label": "\u2696\ufe0f Pick'em",
+        "pick_badge_class": "badge-pickem",
+        "book_home_ml":     None,
+        "book_draw_ml":     None,
+        "book_away_ml":     None,
+    }
+
+    # ── FETCH 1: Match odds (h2h + btts + totals) ────────────────────────────
+    try:
+        r = _requests.get(
+            f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
+            params={
+                "apiKey":     api_key,
+                "regions":    "us",
+                "markets":    "h2h,btts,totals",
+                "oddsFormat": "american",
+            },
+            timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            for bk in data.get("bookmakers", [])[:1]:
+                for market in bk.get("markets", []):
+                    mk = market.get("key", "")
+                    if mk == "h2h":
+                        raw: dict = {}
+                        for o in market.get("outcomes", []):
+                            t = o.get("name", "")
+                            p = float(o.get("price", 0) or 0)
+                            imp = _american_to_implied(p)
+                            raw[t] = imp
+                            if t == home_team:
+                                game_data["book_home_ml"] = _fmt_american(p)
+                            elif t == away_team:
+                                game_data["book_away_ml"] = _fmt_american(p)
+                            elif t.lower() == "draw":
+                                game_data["book_draw_ml"] = _fmt_american(p)
+                        total = sum(raw.values())
+                        if total > 0:
+                            hp = round(raw.get(home_team, 0) / total * 100, 1)
+                            dp_raw = raw.get("Draw", 0)
+                            dp = round(dp_raw / total * 100, 1)
+                            ap = round(100.0 - hp - dp, 1)
+                            game_data["home_prob"] = hp
+                            game_data["draw_prob"] = dp
+                            game_data["away_prob"] = ap
+                    elif mk == "btts":
+                        raw_b: dict = {}
+                        for o in market.get("outcomes", []):
+                            n = o.get("name", "").lower()
+                            p = float(o.get("price", 0) or 0)
+                            raw_b[n] = _american_to_implied(p)
+                        total_b = sum(raw_b.values())
+                        if total_b > 0:
+                            game_data["btts_yes_prob"] = round(
+                                raw_b.get("yes", 0) / total_b * 100, 1
+                            )
+                    elif mk == "totals":
+                        for o in market.get("outcomes", []):
+                            if o.get("name") == "Over":
+                                game_data["total_goals_line"] = o.get("point", 2.5)
+                                p = float(o.get("price", -110) or -110)
+                                prob = _american_to_implied(p)
+                                game_data["over_goals_prob"] = round(prob * 100, 1)
+    except Exception as e:
+        print(f"[SOCCER] {home_team} vs {away_team}: match odds failed: {e}")
+
+    # ── Match pick badge ──────────────────────────────────────────────────────
+    hp = game_data["home_prob"]
+    ap = game_data["away_prob"]
+    dp = game_data["draw_prob"]
+    best_prob = max(hp, ap, dp)
+    if hp == best_prob:
+        pick_team = home_team.split()[-1]
+        game_data["match_pick"] = home_team
+    elif ap == best_prob:
+        pick_team = away_team.split()[-1]
+        game_data["match_pick"] = away_team
+    else:
+        pick_team = "Draw"
+        game_data["match_pick"] = "Draw"
+
+    if best_prob >= 70:
+        game_data["pick_badge_label"] = f"\U0001f525 Strong Fav \u00b7 {pick_team}"
+        game_data["pick_badge_class"] = "badge-strong"
+    elif best_prob >= 60:
+        game_data["pick_badge_label"] = f"\u2705 Favoured \u00b7 {pick_team}"
+        game_data["pick_badge_class"] = "badge-favoured"
+    elif best_prob >= 55:
+        game_data["pick_badge_label"] = f"\U0001f4ca Slight Edge \u00b7 {pick_team}"
+        game_data["pick_badge_class"] = "badge-slight"
+
+    # ── FETCH 2: Correct score ────────────────────────────────────────────────
+    try:
+        r2 = _requests.get(
+            f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
+            params={
+                "apiKey":     api_key,
+                "regions":    "us",
+                "markets":    "correct_score",
+                "oddsFormat": "american",
+            },
+            timeout=10,
+        )
+        if r2.status_code == 200:
+            data2 = r2.json()
+            scores: list = []
+            for bk in data2.get("bookmakers", [])[:1]:
+                for market in bk.get("markets", []):
+                    if market.get("key") != "correct_score":
+                        continue
+                    for o in market.get("outcomes", []):
+                        price = float(o.get("price", 0) or 0)
+                        if price <= 0:
+                            continue
+                        prob = _american_to_implied(price)
+                        scores.append({
+                            "score": o.get("name", ""),
+                            "prob":  round(prob * 100, 1),
+                            "odds":  f"+{round(price)}",
+                        })
+            scores.sort(key=lambda x: x["prob"], reverse=True)
+            game_data["correct_scores"] = scores[:8]
+    except Exception as e:
+        print(f"[SOCCER] {home_team} vs {away_team}: correct score failed: {e}")
+
+    # ── FETCH 3: Player props ─────────────────────────────────────────────────
+    _SOCCER_PLAYER_MARKETS = [
+        "player_goal_scorer",
+        "player_first_goal_scorer",
+        "player_shots_on_target",
+        "player_shots",
+        "player_assists",
+    ]
+    _GOAL_MARKETS_SET = {"player_goal_scorer", "player_first_goal_scorer"}
+    _SOCCER_STAT_MAP = {
+        "player_goal_scorer":       "anytime_goal",
+        "player_first_goal_scorer": "first_goal",
+        "player_shots_on_target":   "shots_on_target",
+        "player_shots":             "total_shots",
+        "player_assists":           "assists",
+    }
+    try:
+        r3 = _requests.get(
+            f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
+            params={
+                "apiKey":     api_key,
+                "regions":    "us",
+                "markets":    ",".join(_SOCCER_PLAYER_MARKETS),
+                "oddsFormat": "american",
+            },
+            timeout=10,
+        )
+        if r3.status_code == 200:
+            data3 = r3.json()
+            player_props_map: Dict[str, Dict] = {}
+            for bk in data3.get("bookmakers", [])[:2]:
+                bk_key = bk.get("key", "")
+                for market in bk.get("markets", []):
+                    mk   = market.get("key", "")
+                    stat = _SOCCER_STAT_MAP.get(mk)
+                    if not stat:
+                        continue
+                    is_goal = mk in _GOAL_MARKETS_SET
+                    for o in market.get("outcomes", []):
+                        oname = o.get("name", "")
+                        price = float(o.get("price", -110) or -110)
+                        line  = float(o.get("point", 0.5) or 0.5)
+                        if is_goal:
+                            pname = oname
+                            line  = 0.5
+                        else:
+                            if oname != "Over":
+                                continue
+                            pname = (o.get("description") or "").strip()
+                            if not pname:
+                                continue
+
+                        prob = _american_to_implied(price)
+                        conf = round(prob * 100, 1)
+
+                        if is_goal:
+                            pick = "SCORE"
+                        elif conf >= 55:
+                            pick = "OVER"
+                        elif conf <= 45:
+                            pick = "UNDER"
+                            conf = round((1.0 - prob) * 100, 1)
+                        else:
+                            pick = "FAIR"
+
+                        grade = "A" if conf >= 68 else ("B" if conf >= 60 else "Watch")
+                        prop_entry = {
+                            "stat":        stat,
+                            "label":       STAT_LABELS.get(stat, stat),
+                            "line":        line,
+                            "pick":        pick,
+                            "confidence":  conf,
+                            "over_prob":   round(prob * 100, 1),
+                            "under_prob":  round((1.0 - prob) * 100, 1),
+                            "price":       price,
+                            "grade":       grade,
+                            "edge":        round(conf - 50, 1),
+                            "score":       int(conf),
+                            "score_class": "elite" if conf >= 80 else ("strong" if conf >= 70 else "playable"),
+                            "stake_rec":   "0.5u" if conf >= 68 else "0.25u",
+                            "best_book":   bk_key,
+                            "playable_to": "-130",
+                            "red_flags":   [],
+                            "reasons":     [f"{conf}% probability"],
+                            "sport":       "soccer",
+                        }
+                        if pname not in player_props_map:
+                            player_props_map[pname] = {"name": pname, "props": []}
+                        # Only add if not already present for this stat
+                        existing_stats = {pp["stat"] for pp in player_props_map[pname]["props"]}
+                        if stat not in existing_stats:
+                            player_props_map[pname]["props"].append(prop_entry)
+
+            # Even-split into home/away
+            plist = list(player_props_map.values())
+            home_p: list = []
+            away_p: list = []
+            home_abbr_s = home_team[:3].upper()
+            away_abbr_s = away_team[:3].upper()
+            for idx, p in enumerate(plist):
+                if len(home_p) <= len(away_p):
+                    p["team"] = home_abbr_s
+                    home_p.append(p)
+                else:
+                    p["team"] = away_abbr_s
+                    away_p.append(p)
+                for prop in p.get("props", []):
+                    prop["team"] = p["team"]
+
+            game_data["home_players"] = home_p[:12]
+            game_data["away_players"] = away_p[:12]
+            print(f"[SOCCER] {home_team} vs {away_team}: {len(plist)} players")
+    except Exception as e:
+        print(f"[SOCCER] {home_team} vs {away_team}: player props failed: {e}")
+
+    return game_data
+
+
+def build_soccer_props(ttl: int = 900) -> dict:
     """Build soccer match data for all leagues from Odds API only.
 
-    Returns list of game dicts with:
-        home_team, away_team, home_prob, away_prob, draw_prob,
-        btts_yes_prob, book_total, predicted_winner, win_prob, confidence,
-        players (list of {name, goal_scorer_prob, first_scorer_prob,
-                           shots_on_target_line, shots_on_target_prob,
-                           shots_line, shots_prob}),
-        home_roster / away_roster (today.html compatible format).
+    Returns {"games": [league_blocks], "upcoming": [fixture_dicts]}
+    where each league_block = {"league": ..., "sport_key": ..., "games": [...]}
+    and each game dict has the full fetch_soccer_game_data() structure plus
+    today.html-compat fields (home_roster / away_roster, players).
     """
     api_key = _key()
     if not api_key:
         logger.warning("[SOCCER] ODDS_API_KEY not set — no soccer props")
-        return []
+        return {"games": [], "upcoming": []}
 
     cache_key = "soccer_all"
     now = time.time()
@@ -1145,8 +1419,8 @@ def build_soccer_props(ttl: int = 900) -> list:
             if now < expires:
                 return data
 
-    all_games: list = []
-    upcoming:  list = []   # fixtures with no odds posted yet
+    all_league_blocks: list = []
+    upcoming: list = []
 
     for league_slug, league_cfg in SOCCER_LEAGUES.items():
         sport_key   = league_cfg["sport_key"]
@@ -1163,83 +1437,22 @@ def build_soccer_props(ttl: int = 900) -> list:
             continue
         print(f"[SOCCER] {league_name}: {len(events)} events")
 
-        # Match odds: h2h (3-way) + btts + totals in one bulk call
-        match_odds_resp = fetch(
-            f"{ODDS_BASE}/sports/{sport_key}/odds",
-            params={
-                "apiKey":     api_key,
-                "regions":    "us,uk",
-                "markets":    "h2h,btts,totals",
-                "oddsFormat": "american",
-            },
-            use_cache=False, timeout=12,
-        )
-        match_odds_map: Dict[str, dict] = {}
-        if match_odds_resp and isinstance(match_odds_resp, list):
-            for mo in match_odds_resp:
-                h = mo.get("home_team", "")
-                a = mo.get("away_team", "")
-                match_odds_map[f"{h}|{a}"] = mo
-
+        league_games: list = []
         for event in events[:10]:
             event_id  = event.get("id", "")
             home_team = event.get("home_team", "")
             away_team = event.get("away_team", "")
-            if not home_team or not away_team:
+            if not home_team or not away_team or not event_id:
                 continue
 
-            mo = match_odds_map.get(f"{home_team}|{away_team}", {})
+            try:
+                game = fetch_soccer_game_data(sport_key, event_id, home_team, away_team)
+            except Exception as _e:
+                print(f"[SOCCER] {home_team} vs {away_team} failed: {_e}")
+                continue
 
-            home_prob = draw_prob = away_prob = None
-            btts_yes_prob = None
-            total_goals_line = None
-            book_home_ml = book_draw_ml = book_away_ml = None
-            bookmaker_name = ""
-
-            for bm in mo.get("bookmakers", [])[:1]:
-                bookmaker_name = bm.get("title", "")
-                for market in bm.get("markets", []):
-                    mk       = market.get("key", "")
-                    outcomes = market.get("outcomes", [])
-
-                    if mk == "h2h":
-                        raw: Dict[str, float] = {}
-                        for o in outcomes:
-                            name  = o.get("name", "")
-                            price = float(o.get("price", 0) or 0)
-                            raw[name] = _american_to_implied(price)
-                            if name == home_team:
-                                book_home_ml = _fmt_american(price)
-                            elif name == away_team:
-                                book_away_ml = _fmt_american(price)
-                            elif name.lower() == "draw":
-                                book_draw_ml = _fmt_american(price)
-                        if raw:
-                            total = sum(raw.values())
-                            norm  = {k: round(v / total * 100, 1) for k, v in raw.items()}
-                            home_prob = norm.get(home_team, 33.3)
-                            away_prob = norm.get(away_team, 33.3)
-                            draw_prob = norm.get("Draw", round(100.0 - home_prob - away_prob, 1))
-
-                    elif mk == "btts":
-                        raw_btts: Dict[str, float] = {}
-                        for o in outcomes:
-                            name  = o.get("name", "").lower()
-                            price = float(o.get("price", 0) or 0)
-                            raw_btts[name] = _american_to_implied(price)
-                        if raw_btts:
-                            btotal = sum(raw_btts.values())
-                            bnorm  = {k: round(v / btotal * 100, 1) for k, v in raw_btts.items()}
-                            btts_yes_prob = bnorm.get("yes")
-
-                    elif mk == "totals":
-                        for o in outcomes:
-                            if o.get("name") == "Over":
-                                total_goals_line = o.get("point")
-                                break
-
-            # No bookmaker lines posted yet — save as upcoming fixture and skip
-            if home_prob is None:
+            # If no odds posted yet, treat as upcoming
+            if game["home_prob"] == 50.0 and game["draw_prob"] == 25.0:
                 upcoming.append({
                     "home_team":  home_team,
                     "away_team":  away_team,
@@ -1250,101 +1463,27 @@ def build_soccer_props(ttl: int = 900) -> list:
                 continue
 
             # Predicted winner
-            if home_prob >= draw_prob and home_prob >= away_prob:
-                predicted_winner, win_prob_val = home_team, home_prob
-            elif draw_prob >= away_prob:
-                predicted_winner, win_prob_val = "Draw", draw_prob
+            hp = game["home_prob"]
+            dp = game["draw_prob"]
+            ap = game["away_prob"]
+            if hp >= dp and hp >= ap:
+                predicted_winner, win_prob_val = home_team, hp
+            elif dp >= ap:
+                predicted_winner, win_prob_val = "Draw", dp
             else:
-                predicted_winner, win_prob_val = away_team, away_prob
+                predicted_winner, win_prob_val = away_team, ap
 
             conf_str = "HIGH" if win_prob_val >= 55 else ("MEDIUM" if win_prob_val >= 45 else "LOW")
 
-            # Match pick label
-            if win_prob_val >= 70:
-                match_pick_label = "🔥 Strong Favourite"
-                pick_badge_class = "badge-strong"
-            elif win_prob_val >= 60:
-                match_pick_label = "✅ Favoured"
-                pick_badge_class = "badge-favoured"
-            elif win_prob_val >= 50:
-                match_pick_label = "📊 Slight Edge"
-                pick_badge_class = "badge-slight"
-            else:
-                match_pick_label = "⚖️ Pick'em"
-                pick_badge_class = "badge-pickem"
-
-            # Per-event player props
-            prop_markets = ("player_goal_scorer,player_first_goal_scorer,"
-                            "player_shots_on_target,player_shots")
-            props_resp = fetch(
-                f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
-                params={
-                    "apiKey":     api_key,
-                    "regions":    "us,uk",
-                    "markets":    prop_markets,
-                    "bookmakers": "draftkings,fanduel,betmgm,bet365",
-                    "oddsFormat": "american",
-                },
-                use_cache=False, timeout=10,
-            )
-
-            player_data: Dict[str, Dict] = defaultdict(dict)
-            if props_resp and isinstance(props_resp, dict):
-                for bm in props_resp.get("bookmakers", [])[:1]:
-                    for market in bm.get("markets", []):
-                        mk       = market.get("key", "")
-                        for outcome in market.get("outcomes", []):
-                            # Player name: prefer description field
-                            player = (outcome.get("description") or "").strip()
-                            if not player:
-                                # For shots markets 'name' IS the player
-                                if mk in ("player_shots_on_target", "player_shots"):
-                                    continue
-                                player = outcome.get("name", "").strip()
-                            if not player:
-                                continue
-
-                            price  = float(outcome.get("price", -110) or -110)
-                            op     = round(_american_to_implied(price) * 100, 1)
-                            oname  = outcome.get("name", "")
-                            line   = outcome.get("point")
-
-                            if mk == "player_goal_scorer" and oname == "Yes":
-                                if "goal_scorer_prob" not in player_data[player]:
-                                    player_data[player]["goal_scorer_prob"] = op
-                            elif mk == "player_first_goal_scorer" and oname == "Yes":
-                                if "first_scorer_prob" not in player_data[player]:
-                                    player_data[player]["first_scorer_prob"] = op
-                            elif mk == "player_shots_on_target" and oname == "Over" and line is not None:
-                                if "shots_on_target_line" not in player_data[player]:
-                                    player_data[player]["shots_on_target_line"] = float(line)
-                                    player_data[player]["shots_on_target_prob"] = op
-                            elif mk == "player_shots" and oname == "Over" and line is not None:
-                                if "shots_line" not in player_data[player]:
-                                    player_data[player]["shots_line"] = float(line)
-                                    player_data[player]["shots_prob"] = op
-
-            # Build sorted player list
-            players = []
-            for pname, pdata in player_data.items():
-                if not pdata:
-                    continue
-                players.append({
-                    "name":                 pname,
-                    "goal_scorer_prob":     pdata.get("goal_scorer_prob"),
-                    "first_scorer_prob":    pdata.get("first_scorer_prob"),
-                    "shots_on_target_line": pdata.get("shots_on_target_line"),
-                    "shots_on_target_prob": pdata.get("shots_on_target_prob"),
-                    "shots_line":           pdata.get("shots_line"),
-                    "shots_prob":           pdata.get("shots_prob"),
-                })
-            players.sort(key=lambda p: p.get("goal_scorer_prob") or 0, reverse=True)
-
-            # today.html compat: convert to goal_prob roster format
-            def _to_today_roster(plist):
+            # today.html compat: build home_roster / away_roster from home_players / away_players
+            def _to_today_roster(plist: list) -> list:
                 out = []
                 for p in plist:
-                    gp = p.get("goal_scorer_prob") or 0
+                    best_prop = next(
+                        (pp for pp in p.get("props", []) if pp.get("stat") == "anytime_goal"),
+                        p.get("props", [{}])[0] if p.get("props") else {},
+                    )
+                    gp = best_prop.get("confidence", 0) if best_prop.get("stat") == "anytime_goal" else 0
                     out.append({
                         "name":       p["name"],
                         "shots_pg":   None,
@@ -1354,51 +1493,47 @@ def build_soccer_props(ttl: int = 900) -> list:
                     })
                 return out
 
-            half = max(len(players) // 2, 1)
-            home_roster_td = _to_today_roster(players[:half])
-            away_roster_td = _to_today_roster(players[half:])
-
-            print(f"[SOCCER] {home_team} vs {away_team}: {len(players)} players")
-
-            all_games.append({
-                "sport":      "Soccer",
-                "league":     league_name,
-                "sport_icon": icon,
-                "is_soccer":  True,
-                "home_team":  home_team,
-                "away_team":  away_team,
-                "home_prob":  home_prob,
-                "away_prob":  away_prob,
-                "draw_prob":  draw_prob,
-                "kickoff":    event.get("commence_time", ""),
-                "status":     "STATUS_SCHEDULED",
-                "home_score": None,
-                "away_score": None,
-                "spread":     None,
-                "over_under": total_goals_line,
-                "bookmaker":  bookmaker_name,
-                "book_home_ml": book_home_ml,
-                "book_away_ml": book_away_ml,
-                "book_draw_ml": book_draw_ml,
-                "book_total":   total_goals_line,
-                "btts_yes_prob": btts_yes_prob,
+            # Merge everything into a single game dict
+            game.update({
+                "sport":            "Soccer",
+                "league":           league_name,
+                "sport_icon":       icon,
+                "sport_key":        sport_key,
+                "is_soccer":        True,
+                "kickoff":          event.get("commence_time", ""),
+                "game_time":        event.get("commence_time", ""),
+                "status":           "STATUS_SCHEDULED",
+                "home_score":       None,
+                "away_score":       None,
+                "home_abbr":        home_team[:3].upper(),
+                "away_abbr":        away_team[:3].upper(),
+                "spread":           None,
+                "over_under":       game.get("total_goals_line"),
+                "book_total":       game.get("total_goals_line"),
                 "predicted_winner": predicted_winner,
                 "win_prob":         win_prob_val,
                 "confidence":       conf_str,
-                # Match pick badge
-                "match_pick_label": match_pick_label,
-                "pick_badge_class": pick_badge_class,
-                # Rich player data for soccer.html
-                "players":      players[:20],
-                # today.html compat
-                "home_roster":  home_roster_td,
-                "away_roster":  away_roster_td,
-                "home_wins":    0, "home_losses": 0,
-                "away_wins":    0, "away_losses": 0,
+                "home_wins":        0, "home_losses": 0,
+                "away_wins":        0, "away_losses": 0,
+                # Legacy compat fields for today.html
+                "match_pick_label": game.get("pick_badge_label", ""),
+                "players":          game.get("home_players", []) + game.get("away_players", []),
+                "home_roster":      _to_today_roster(game.get("home_players", [])),
+                "away_roster":      _to_today_roster(game.get("away_players", [])),
+            })
+            league_games.append(game)
+
+        if league_games:
+            all_league_blocks.append({
+                "league":    league_name,
+                "sport_key": sport_key,
+                "icon":      icon,
+                "games":     league_games,
             })
 
-    print(f"[SOCCER] Total: {len(all_games)} active games, {len(upcoming)} upcoming (no odds yet)")
-    result = {"games": all_games, "upcoming": upcoming}
+    total_games = sum(len(b["games"]) for b in all_league_blocks)
+    print(f"[SOCCER] Total: {total_games} active games, {len(upcoming)} upcoming (no odds yet)")
+    result = {"games": all_league_blocks, "upcoming": upcoming}
     with _SOCCER_LOCK:
         _SOCCER_CACHE[cache_key] = (result, now + ttl)
     return result

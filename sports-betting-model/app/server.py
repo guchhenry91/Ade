@@ -497,12 +497,21 @@ async def soccer_page(request: Request):
     from data.odds_api import build_soccer_props
     today_label = date.today().strftime("%A, %B %d %Y")
     result      = _cached("soccer", build_soccer_props, ttl=600)
+    league_blocks: list = []
+    upcoming: list = []
     if isinstance(result, dict):
-        games    = result.get("games", [])
-        upcoming = result.get("upcoming", [])
+        raw_games = result.get("games", [])
+        upcoming  = result.get("upcoming", [])
+        # New format: list of league blocks [{league, sport_key, games:[...]}]
+        if raw_games and isinstance(raw_games[0], dict) and "games" in raw_games[0]:
+            league_blocks = raw_games
+        else:
+            # Legacy flat list — wrap in a single block
+            league_blocks = [{"league": "Soccer", "sport_key": "soccer", "games": raw_games}]
     else:
-        games    = result or []
-        upcoming = []
+        league_blocks = []
+
+    total = sum(len(b.get("games", [])) for b in league_blocks)
 
     # Group upcoming fixtures by league for the "Coming Up" display
     _ul: dict = {}
@@ -514,8 +523,10 @@ async def soccer_page(request: Request):
     upcoming_leagues = list(_ul.values())
 
     return TEMPLATES.TemplateResponse(request, "soccer.html", {
-        "games": games, "today": today_label,
-        "total": len(games), "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
+        "league_blocks": league_blocks,
+        "today": today_label,
+        "total": total,
+        "has_odds_key": bool(os.getenv("ODDS_API_KEY")),
         "upcoming_leagues": upcoming_leagues,
         "generated_at": _now_iso(),
     })
@@ -1029,7 +1040,7 @@ async def sanity_check():
 
 @app.get("/mycard", response_class=HTMLResponse)
 async def mycard_page(request: Request):
-    from data.odds_api import build_sport_props, STAT_LABELS
+    from data.odds_api import build_sport_props, build_soccer_props, get_prop_grade, calculate_bet_score
     try:
         all_props_by_sport: dict = {}
         all_props_flat: list = []
@@ -1040,11 +1051,15 @@ async def mycard_page(request: Request):
         ]
         today_str = date.today().strftime("%Y%m%d")
         for sport_key, emoji, label in sports_to_load:
-            games = _cached(
-                f"{sport_key}_{today_str}",
-                lambda sk=sport_key: build_sport_props(sk),
-                ttl=900,
-            ) or []
+            try:
+                games = _cached(
+                    f"{sport_key}_{today_str}",
+                    lambda sk=sport_key: build_sport_props(sk),
+                    ttl=900,
+                ) or []
+            except Exception as _se:
+                print(f"[MYCARD] {sport_key}: {_se}")
+                games = []
             sport_props: list = []
             for game in games:
                 for player in (game.get("home_players", []) + game.get("away_players", [])):
@@ -1054,8 +1069,16 @@ async def mycard_page(request: Request):
                             "sport_key":   sport_key,
                             "sport_emoji": emoji,
                             "sport_label": label,
+                            "player_name": player.get("name", prop.get("player_name", "")),
+                            "team":        player.get("team", prop.get("team", "")),
                             "game": f"{game.get('away_abbr', '')} @ {game.get('home_abbr', '')}",
                         }
+                        if "grade" not in p:
+                            grade, edge = get_prop_grade(p.get("confidence", 50), p.get("price", -110))
+                            p["grade"] = grade
+                            p["edge"]  = edge
+                        if "score" not in p:
+                            p["score"] = calculate_bet_score(p)
                         sport_props.append(p)
                         all_props_flat.append(p)
 
@@ -1068,7 +1091,82 @@ async def mycard_page(request: Request):
                 "window":  window,
                 "a_count": sum(1 for p in sport_props if p.get("grade") == "A"),
                 "b_count": sum(1 for p in sport_props if p.get("grade") == "B"),
+                "total":   len(sport_props),
             }
+
+        # Soccer
+        try:
+            soccer_result = _cached("soccer", build_soccer_props, ttl=900) or {}
+            soccer_games_raw = soccer_result.get("games", []) if isinstance(soccer_result, dict) else []
+            soccer_props: list = []
+            for league_block in soccer_games_raw:
+                for game in league_block.get("games", []) if isinstance(league_block, dict) and "games" in league_block else ([league_block] if isinstance(league_block, dict) else []):
+                    home = game.get("home_team", "")
+                    away = game.get("away_team", "")
+                    # Match winner as a prop
+                    hp = game.get("home_prob", 50)
+                    ap = game.get("away_prob", 50)
+                    if hp >= 60:
+                        grade_s, edge_s = get_prop_grade(hp, -110)
+                        sp = {
+                            "player_name": home, "sport_key": "soccer",
+                            "sport_emoji": "⚽", "sport_label": "Soccer",
+                            "stat": "match_winner", "label": "Match Winner",
+                            "line": 1.0, "pick": "HOME", "confidence": hp,
+                            "grade": "A" if hp >= 68 else "B", "edge": round(hp - 50, 1),
+                            "score": int(hp), "team": home[:3].upper(),
+                            "game": f"{away[:3].upper()} @ {home[:3].upper()}",
+                            "stake_rec": "0.5u", "best_book": "", "playable_to": "-150",
+                            "score_class": "strong", "reasons": [f"{hp}% win probability"],
+                            "red_flags": [], "price": -110, "all_prices": {},
+                        }
+                        soccer_props.append(sp)
+                        all_props_flat.append(sp)
+                    elif ap >= 60:
+                        grade_s, edge_s = get_prop_grade(ap, -110)
+                        sp = {
+                            "player_name": away, "sport_key": "soccer",
+                            "sport_emoji": "⚽", "sport_label": "Soccer",
+                            "stat": "match_winner", "label": "Match Winner",
+                            "line": 1.0, "pick": "AWAY", "confidence": ap,
+                            "grade": "A" if ap >= 68 else "B", "edge": round(ap - 50, 1),
+                            "score": int(ap), "team": away[:3].upper(),
+                            "game": f"{away[:3].upper()} @ {home[:3].upper()}",
+                            "stake_rec": "0.5u", "best_book": "", "playable_to": "-150",
+                            "score_class": "strong", "reasons": [f"{ap}% win probability"],
+                            "red_flags": [], "price": -110, "all_prices": {},
+                        }
+                        soccer_props.append(sp)
+                        all_props_flat.append(sp)
+                    # Player props
+                    for player in (game.get("home_players", []) + game.get("away_players", [])):
+                        for prop in player.get("props", []):
+                            p = {
+                                **prop,
+                                "sport_key":   "soccer",
+                                "sport_emoji": "⚽",
+                                "sport_label": "Soccer",
+                                "player_name": player.get("name", ""),
+                                "team":        player.get("team", ""),
+                                "game": f"{away[:3].upper()} @ {home[:3].upper()}",
+                            }
+                            soccer_props.append(p)
+                            all_props_flat.append(p)
+
+            soccer_props.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+            window_s = [p for p in soccer_props if 60 <= p.get("confidence", 0) <= 80][:15]
+            if soccer_props:
+                all_props_by_sport["soccer"] = {
+                    "emoji":   "⚽",
+                    "label":   "Soccer",
+                    "all":     soccer_props,
+                    "window":  window_s,
+                    "a_count": sum(1 for p in soccer_props if p.get("grade") == "A"),
+                    "b_count": sum(1 for p in soccer_props if p.get("grade") == "B"),
+                    "total":   len(soccer_props),
+                }
+        except Exception as _soccer_err:
+            print(f"[MYCARD] Soccer failed: {_soccer_err}")
 
         all_props_flat.sort(key=lambda x: x.get("confidence", 0), reverse=True)
         a_props     = [p for p in all_props_flat if p.get("grade") == "A"]
@@ -1076,9 +1174,9 @@ async def mycard_page(request: Request):
         watch_props = [p for p in all_props_flat if p.get("grade") == "Watch"]
         pass_props  = [p for p in all_props_flat if p.get("grade") == "Pass"]
 
-        best3 = a_props[:3] or b_props[:3]
-        low_risk = sorted(a_props + b_props, key=lambda x: x.get("confidence", 0), reverse=True)[:1]
-        best_value = sorted(a_props + b_props, key=lambda x: x.get("edge", 0), reverse=True)[:1]
+        best3 = (a_props + b_props)[:3]
+        low_risk = sorted(a_props + b_props, key=lambda x: x.get("confidence", 0), reverse=True)
+        best_value = sorted(a_props + b_props, key=lambda x: x.get("edge", 0), reverse=True)
         parlay_legs = sorted(
             [p for p in a_props + b_props if p.get("edge", 0) >= 4],
             key=lambda x: x.get("score", 0), reverse=True,
