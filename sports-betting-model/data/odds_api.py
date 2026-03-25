@@ -990,6 +990,40 @@ def balance_prop_sides(
     )
 
 
+def _balance_props(props: List[Dict], target: int = 15) -> List[Dict]:
+    """Force OVER/UNDER balance. Max 60% from one side. Re-sorts by score."""
+    overs  = [p for p in props if p.get("pick") == "OVER"]
+    unders = [p for p in props if p.get("pick") == "UNDER"]
+    max_one_side = int(target * 0.60)   # max 9 of 15
+    if len(unders) > max_one_side:
+        unders = unders[:max_one_side]
+    remaining = target - len(unders)
+    overs = overs[:remaining]
+    merged = unders + overs
+    merged.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return merged[:target]
+
+
+def _balance_game_props(props: List[Dict], target: int = 2) -> List[Dict]:
+    """Per-game balance: try 1 OVER + 1 UNDER; fill remaining from best available."""
+    overs  = [p for p in props if p.get("pick") == "OVER"]
+    unders = [p for p in props if p.get("pick") == "UNDER"]
+    result = []
+    if unders: result.append(unders[0])
+    if overs:  result.append(overs[0])
+    # If only one side exists, fill remaining slots from the full pool
+    if len(result) < target:
+        seen = {id(p) for p in result}
+        for p in props:
+            if len(result) >= target:
+                break
+            if id(p) not in seen:
+                result.append(p)
+    if not result:
+        result = props[:target]
+    return result[:target]
+
+
 def build_display_props(
     games: List[Dict],
     sport: str = "nba",
@@ -1032,13 +1066,16 @@ def build_display_props(
         f"({over_ct} OVER / {under_ct} UNDER)"
     )
 
-    # Final selection: diversity + balance + game cap in one pass
-    top_props = _final_diversity_select(
+    # Step 1: diversity + game cap
+    selected = _final_diversity_select(
         deduped,
-        target=max_cap,
+        target=30,          # large pool; _balance_props does the hard 15 cap
         max_per_game=max_per_game,
         max_side_ratio=0.70,
     )
+
+    # Step 2: force OVER/UNDER balance then hard-cap to 15
+    top_props = _balance_props(selected, target=15)
 
     # Debug: log final composition
     final_over  = sum(1 for p in top_props if p.get("pick") == "OVER")
@@ -1611,22 +1648,16 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 reverse=True,
             )
 
-            # top_props: diversity-aware selection for this game (max 3, balanced)
+            # top_props: max 2 per game, 1 OVER + 1 UNDER where possible
             _per_game_playable = [p for p in all_game_props_clean if is_playable_prop(p)]
             _per_game_playable.sort(key=prop_rank_score, reverse=True)
             _per_game_deduped = dedupe_best_per_player(_per_game_playable)
             _per_game_deduped.sort(key=prop_rank_score, reverse=True)
-            top_props = _final_diversity_select(
-                _per_game_deduped,
-                target=3,
-                max_per_game=3,   # one game; cap prevents >3 per side in pool
-                max_side_ratio=0.67,  # max 2 of same side in a 3-prop display
-            )
+            top_props = _balance_game_props(_per_game_deduped, target=2)
             # Fallback: if playable filter too strict, show best A/B grade props
             if not top_props:
-                top_props = [
-                    p for p in all_game_props_clean if p.get("grade") in ("A", "B")
-                ][:3]
+                _ab = [p for p in all_game_props_clean if p.get("grade") in ("A", "B")]
+                top_props = _balance_game_props(_ab, target=2)
 
             # more_props: remaining A/B after top 3, plus Watch grade
             ab_rest = [
