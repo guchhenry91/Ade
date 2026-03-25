@@ -536,7 +536,11 @@ def get_red_flags(prop: Dict) -> List[str]:
     flags = []
     conf = prop.get("confidence", 50)
     price = prop.get("price", -110)
-    playable = prop.get("playable_to", -150)
+    playable = prop.get("playable_to_raw", -150)
+    try:
+        playable = float(playable)
+    except:
+        playable = -150
     stat = prop.get("stat", "")
     line = prop.get("line", 0)
     if conf < 55:
@@ -1042,7 +1046,8 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
                 "all_prices":     all_prices,
                 "grade":          grade,
                 "edge":           edge,
-                "playable_to":    format_american(playable),
+                "playable_to":     format_american(playable),
+                "playable_to_raw": float(playable),
                 "sport":          sport_name,
                 "game":           f"{away_abbr} @ {home_abbr}",
                 # Legacy compat
