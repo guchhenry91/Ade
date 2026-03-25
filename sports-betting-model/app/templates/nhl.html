@@ -81,8 +81,7 @@
 .stat-row[data-grade="Pass"] { display: none !important; }
 .stat-row[data-stat="double_double"] { display: none !important; }
 .stat-row[data-stat="first_basket"]  { display: none !important; }
-/* Hide Watch by default; shown only when Watch filter active */
-.stat-row[data-grade="Watch"] { display: none; }
+/* Watch rows are shown by default; JS controls visibility */
 
 /* Two-line layout */
 .sr-main {
@@ -171,6 +170,15 @@
 .ppill.fair.active  { background: var(--fair-dim, #88889918); border-color: var(--border); color: var(--fair, #888899); }
 .ppill .badge { background: rgba(255,255,255,.1); border-radius: 8px; padding: 0 5px; font-size: 10px; margin-left: 3px; }
 
+/* ── No-props banner ────────────────────────── */
+.no-props-banner {
+  background: #111128; border: 1px solid #2a2a4a; border-radius: 12px;
+  padding: 40px 24px; text-align: center; margin-top: 12px;
+}
+.no-props-banner .npb-icon { font-size: 40px; margin-bottom: 10px; }
+.no-props-banner .npb-title { font-size: 16px; font-weight: 700; color: #aaa; margin-bottom: 6px; }
+.no-props-banner .npb-sub { font-size: 13px; color: #555; }
+
 /* ── Mobile ──────────────────────────────────── */
 @media (max-width: 600px) {
   .filter-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
@@ -234,6 +242,20 @@
     <button class="gpill" data-grade="Watch">Watch</button>
   </div>
 </div>
+
+{% set total_nhl_props = namespace(count=0) %}
+{% for game in games %}
+  {% for roster in [game.home_roster or [], game.away_roster or []] %}
+    {% for p in roster %}{% set total_nhl_props.count = total_nhl_props.count + (p.props|length) %}{% endfor %}
+  {% endfor %}
+{% endfor %}
+{% if total_nhl_props.count == 0 %}
+<div class="no-props-banner">
+  <div class="npb-icon">📊</div>
+  <div class="npb-title">No player props available yet</div>
+  <div class="npb-sub">Props for today's NHL games haven't been posted yet. Check back closer to puck drop.</div>
+</div>
+{% endif %}
 
 {% for game in games %}
 {% set gid = loop.index0|string %}
@@ -361,10 +383,10 @@
         if (grade === 'Pass') { row.style.display = 'none'; return; }
         // Always hide double_double and first_basket
         if (stat === 'double_double' || stat === 'first_basket') { row.style.display = 'none'; return; }
-        // Grade filter: "all" shows A and B only (NOT Watch)
+        // Grade filter: "all" shows A, B, and Watch (hides only Pass)
         let gradeMatch = false;
         if (activeGrade === 'all') {
-          gradeMatch = grade === 'A' || grade === 'B';
+          gradeMatch = grade === 'A' || grade === 'B' || grade === 'Watch';
         } else {
           gradeMatch = grade === activeGrade;
         }

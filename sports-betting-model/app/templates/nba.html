@@ -81,8 +81,7 @@
 .stat-row[data-grade="Pass"] { display: none !important; }
 .stat-row[data-stat="double_double"] { display: none !important; }
 .stat-row[data-stat="first_basket"]  { display: none !important; }
-/* Hide Watch by default; shown only when Watch filter active */
-.stat-row[data-grade="Watch"] { display: none; }
+/* Watch rows are shown by default; JS controls visibility */
 
 /* Two-line layout */
 .sr-main {
@@ -380,10 +379,10 @@
         if (grade === 'Pass') { row.style.display = 'none'; return; }
         // Always hide double_double and first_basket
         if (stat === 'double_double' || stat === 'first_basket') { row.style.display = 'none'; return; }
-        // Grade filter: "all" shows A and B only (NOT Watch)
+        // Grade filter: "all" shows A, B, and Watch (hides only Pass)
         let gradeMatch = false;
         if (activeGrade === 'all') {
-          gradeMatch = grade === 'A' || grade === 'B';
+          gradeMatch = grade === 'A' || grade === 'B' || grade === 'Watch';
         } else {
           gradeMatch = grade === activeGrade;
         }

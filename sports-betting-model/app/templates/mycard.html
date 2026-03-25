@@ -201,7 +201,7 @@
   </div>
 
   {% if sdata.window %}
-  <div class="mc-window-label">🎯 60-80% Confidence Window · {{ sdata.window|length }} props</div>
+  <div class="mc-window-label">🎯 {{ sdata.window_label }} · {{ sdata.window|length }} props</div>
   <div style="overflow-x:auto;">
   <table class="props-table mc-props-table">
     <thead><tr>
@@ -229,7 +229,7 @@
   </table>
   </div>
   {% else %}
-  <div class="mc-empty">No props in 60-80% window for {{ sdata.label }} today.</div>
+  <div class="mc-empty">No props available for {{ sdata.label }} today.</div>
   {% endif %}
 </div>
 {% endfor %}

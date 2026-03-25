@@ -570,13 +570,48 @@ async def nfl_page(request: Request):
 
 @app.get("/reports", response_class=HTMLResponse)
 async def reports_page(request: Request):
-    reports_dir = Path(__file__).parent.parent / "reports"
-    files = sorted(reports_dir.glob("*.md"), reverse=True) if reports_dir.exists() else []
-    reports = []
-    for f in files:
-        content = f.read_text()
-        reports.append({"date": f.stem, "content": content, "name": f.name})
-    return TEMPLATES.TemplateResponse(request, "reports.html", {"reports": reports})
+    return TEMPLATES.TemplateResponse(request, "reports.html", {})
+
+
+@app.get("/api/mycard-preview")
+async def mycard_preview():
+    """Return top 3 A/B grade props + passes for the homepage sharp card."""
+    today_str = date.today().strftime("%Y%m%d")
+    try:
+        all_props = []
+        for sport_key, build_fn in [
+            ("nba", lambda: _build_nba_games(today_str)),
+            ("mlb", lambda: _build_mlb_props(today_str)),
+            ("nhl", lambda: _build_nhl_props(today_str)),
+        ]:
+            try:
+                games = _cached(f"{sport_key}_{today_str}", build_fn, ttl=900) or []
+            except Exception:
+                continue
+            for game in games:
+                game_label = f"{game.get('away_abbr', '')} @ {game.get('home_abbr', '')}"
+                for player in (game.get("home_roster", []) + game.get("away_roster", [])):
+                    for prop in player.get("props", []):
+                        all_props.append({
+                            **prop,
+                            "player_name": player.get("name", ""),
+                            "sport": sport_key,
+                            "game": game_label,
+                        })
+        all_props.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+        a_props   = [p for p in all_props if p.get("grade") == "A"]
+        b_props   = [p for p in all_props if p.get("grade") == "B"]
+        pass_props = [p for p in all_props if p.get("grade") == "Pass"]
+        best3  = (a_props + b_props)[:3]
+        passes = sorted(pass_props, key=lambda x: x.get("confidence", 0), reverse=True)[:3]
+        return JSONResponse({
+            "best3":   best3,
+            "passes":  passes,
+            "a_count": len(a_props),
+            "b_count": len(b_props),
+        })
+    except Exception as e:
+        return JSONResponse({"error": str(e), "best3": []})
 
 
 # ─────────────────────────────────────────────
@@ -1062,7 +1097,8 @@ async def mycard_page(request: Request):
                 games = []
             sport_props: list = []
             for game in games:
-                for player in (game.get("home_players", []) + game.get("away_players", [])):
+                game_label = f"{game.get('away_abbr', '')} @ {game.get('home_abbr', '')}"
+                for player in (game.get("home_roster", []) + game.get("away_roster", [])):
                     for prop in player.get("props", []):
                         p = {
                             **prop,
@@ -1071,7 +1107,7 @@ async def mycard_page(request: Request):
                             "sport_label": label,
                             "player_name": player.get("name", prop.get("player_name", "")),
                             "team":        player.get("team", prop.get("team", "")),
-                            "game": f"{game.get('away_abbr', '')} @ {game.get('home_abbr', '')}",
+                            "game":        game_label,
                         }
                         if "grade" not in p:
                             grade, edge = get_prop_grade(p.get("confidence", 50), p.get("price", -110))
@@ -1079,19 +1115,32 @@ async def mycard_page(request: Request):
                             p["edge"]  = edge
                         if "score" not in p:
                             p["score"] = calculate_bet_score(p)
+                        if "score_class" not in p:
+                            sc = p.get("score", 0)
+                            p["score_class"] = "elite" if sc >= 80 else "strong" if sc >= 65 else "playable" if sc >= 50 else "pass"
                         sport_props.append(p)
                         all_props_flat.append(p)
 
             sport_props.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+            has_window = any(60 <= p.get("confidence", 0) <= 80 for p in sport_props)
             window = [p for p in sport_props if 60 <= p.get("confidence", 0) <= 80][:15]
+            # Fallback: show A+B grade props (conf <= 85) sorted by edge if window is empty
+            if not window:
+                window = sorted(
+                    [p for p in sport_props if p.get("grade") in ("A", "B") and p.get("confidence", 0) <= 85],
+                    key=lambda x: x.get("edge", 0),
+                    reverse=True,
+                )[:15]
+            window_label = "60–80% Confidence Window" if has_window else "Best Value A+B Grade Picks"
             all_props_by_sport[sport_key] = {
-                "emoji":   emoji,
-                "label":   label,
-                "all":     sport_props,
-                "window":  window,
-                "a_count": sum(1 for p in sport_props if p.get("grade") == "A"),
-                "b_count": sum(1 for p in sport_props if p.get("grade") == "B"),
-                "total":   len(sport_props),
+                "emoji":        emoji,
+                "label":        label,
+                "all":          sport_props,
+                "window":       window,
+                "window_label": window_label,
+                "a_count":      sum(1 for p in sport_props if p.get("grade") == "A"),
+                "b_count":      sum(1 for p in sport_props if p.get("grade") == "B"),
+                "total":        len(sport_props),
             }
 
         # Soccer
@@ -1139,7 +1188,7 @@ async def mycard_page(request: Request):
                         soccer_props.append(sp)
                         all_props_flat.append(sp)
                     # Player props
-                    for player in (game.get("home_players", []) + game.get("away_players", [])):
+                    for player in (game.get("home_players", []) + game.get("away_players", []) + game.get("home_roster", []) + game.get("away_roster", [])):
                         for prop in player.get("props", []):
                             p = {
                                 **prop,
@@ -1154,16 +1203,23 @@ async def mycard_page(request: Request):
                             all_props_flat.append(p)
 
             soccer_props.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+            has_window_s = any(60 <= p.get("confidence", 0) <= 80 for p in soccer_props)
             window_s = [p for p in soccer_props if 60 <= p.get("confidence", 0) <= 80][:15]
+            if not window_s:
+                window_s = sorted(
+                    [p for p in soccer_props if p.get("grade") in ("A", "B") and p.get("confidence", 0) <= 85],
+                    key=lambda x: x.get("edge", 0), reverse=True,
+                )[:15]
             if soccer_props:
                 all_props_by_sport["soccer"] = {
-                    "emoji":   "⚽",
-                    "label":   "Soccer",
-                    "all":     soccer_props,
-                    "window":  window_s,
-                    "a_count": sum(1 for p in soccer_props if p.get("grade") == "A"),
-                    "b_count": sum(1 for p in soccer_props if p.get("grade") == "B"),
-                    "total":   len(soccer_props),
+                    "emoji":        "⚽",
+                    "label":        "Soccer",
+                    "all":          soccer_props,
+                    "window":       window_s,
+                    "window_label": "60–80% Confidence Window" if has_window_s else "Best Value A+B Grade Picks",
+                    "a_count":      sum(1 for p in soccer_props if p.get("grade") == "A"),
+                    "b_count":      sum(1 for p in soccer_props if p.get("grade") == "B"),
+                    "total":        len(soccer_props),
                 }
         except Exception as _soccer_err:
             print(f"[MYCARD] Soccer failed: {_soccer_err}")

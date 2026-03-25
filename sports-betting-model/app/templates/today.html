@@ -139,7 +139,7 @@
     <span class="today-pick {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>
     {% endif %}
     {% if game.top_pick %}
-    <span class="today-top">⭐ {{ game.top_pick.player.split()[-1] }} {{ game.top_pick.stat }} <strong>{{ game.top_pick.confidence }}%</strong></span>
+    <span class="today-top">⭐ {{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }} {{ game.top_pick.label or game.top_pick.stat or '' }} <strong>{{ game.top_pick.confidence }}%</strong></span>
     {% endif %}
     {% if game.kickoff and game.kickoff|length > 10 %}
     <span class="today-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
@@ -178,7 +178,7 @@
     <span class="today-pick {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>
     {% endif %}
     {% if game.top_pick %}
-    <span class="today-top">⭐ {{ game.top_pick.player.split()[-1] }} {{ game.top_pick.stat }} <strong>{{ game.top_pick.confidence }}%</strong></span>
+    <span class="today-top">⭐ {{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }} {{ game.top_pick.label or game.top_pick.stat or '' }} <strong>{{ game.top_pick.confidence }}%</strong></span>
     {% endif %}
     {% if game.kickoff and game.kickoff|length > 10 %}
     <span class="today-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
@@ -217,7 +217,7 @@
     <span class="today-pick {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>
     {% endif %}
     {% if game.top_pick %}
-    <span class="today-top">⭐ {{ game.top_pick.player.split()[-1] }} {{ game.top_pick.stat }} <strong>{{ game.top_pick.confidence }}%</strong></span>
+    <span class="today-top">⭐ {{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }} {{ game.top_pick.label or game.top_pick.stat or '' }} <strong>{{ game.top_pick.confidence }}%</strong></span>
     {% endif %}
     {% if game.kickoff and game.kickoff|length > 10 %}
     <span class="today-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
