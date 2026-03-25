@@ -164,50 +164,59 @@ def fetch_player_props(sport: str, markets: str,
 # ── build_sport_props — Odds API as single source of truth ────────────────────
 
 import math
+import json as _json
 import requests as _requests
 from collections import defaultdict
+from datetime import datetime as _dt
 
-# Sport config: what markets to pull and how to label them
+# ════════════════════════════════════════════════════════════════════════════════
+# PART 1 — COMPLETE SPORT CONFIG (ALL MARKETS)
+# ════════════════════════════════════════════════════════════════════════════════
+
 _SPORT_CONFIG: Dict[str, Dict] = {
     "nba": {
         "sport_key": "basketball_nba",
         "sport_label": "Basketball",
         "league": "NBA",
-        "icon": "🏀",
+        "icon": "\U0001f3c0",
         "espn_path": "basketball/nba",
         "primary_stat": "PTS",
         "markets": [
             "player_points", "player_rebounds", "player_assists",
             "player_threes", "player_blocks", "player_steals",
             "player_points_rebounds_assists",
+            "player_points_rebounds", "player_points_assists",
+            "player_rebounds_assists",
+            "player_first_basket", "player_double_double",
         ],
         "stat_map": {
-            "player_points":                  "PTS",
-            "player_rebounds":                "REB",
-            "player_assists":                 "AST",
-            "player_threes":                  "3PM",
-            "player_blocks":                  "blocks",
-            "player_steals":                  "steals",
-            "player_points_rebounds_assists":  "pra",
-        },
-        "stat_labels": {
-            "PTS": "Points", "REB": "Rebounds",
-            "AST": "Assists", "3PM": "3-Pointers",
-            "blocks": "Blocks", "steals": "Steals",
-            "pra": "Pts + Reb + Ast",
+            "player_points":                   "PTS",
+            "player_rebounds":                 "REB",
+            "player_assists":                  "AST",
+            "player_threes":                   "3PM",
+            "player_blocks":                   "BLK",
+            "player_steals":                   "STL",
+            "player_points_rebounds_assists":   "PRA",
+            "player_points_rebounds":           "PR",
+            "player_points_assists":            "PA",
+            "player_rebounds_assists":          "RA",
+            "player_first_basket":              "first_basket",
+            "player_double_double":             "double_double",
         },
     },
     "mlb": {
         "sport_key": "baseball_mlb",
         "sport_label": "Baseball",
         "league": "MLB",
-        "icon": "⚾",
+        "icon": "\u26be",
         "espn_path": "baseball/mlb",
         "primary_stat": "hits",
         "markets": [
             "batter_hits", "batter_total_bases", "batter_home_runs",
-            "batter_rbis", "batter_runs_scored", "pitcher_strikeouts",
-            "batter_hits_runs_rbis", "batter_singles",
+            "batter_rbis", "batter_runs_scored", "batter_hits_runs_rbis",
+            "batter_singles", "batter_stolen_bases",
+            "pitcher_strikeouts", "pitcher_hits_allowed",
+            "pitcher_earned_runs", "pitcher_outs",
         ],
         "stat_map": {
             "batter_hits":             "hits",
@@ -215,43 +224,125 @@ _SPORT_CONFIG: Dict[str, Dict] = {
             "batter_home_runs":        "home_runs",
             "batter_rbis":             "rbi",
             "batter_runs_scored":      "runs",
-            "pitcher_strikeouts":      "strikeouts",
             "batter_hits_runs_rbis":   "hits_runs_rbis",
             "batter_singles":          "singles",
-        },
-        "stat_labels": {
-            "hits": "Hits", "total_bases": "Total Bases",
-            "home_runs": "Home Runs", "rbi": "RBI",
-            "runs": "Runs", "strikeouts": "Strikeouts",
-            "hits_runs_rbis": "Hits + Runs + RBI", "singles": "Singles",
+            "batter_stolen_bases":     "stolen_bases",
+            "pitcher_strikeouts":      "strikeouts",
+            "pitcher_hits_allowed":    "hits_allowed",
+            "pitcher_earned_runs":     "earned_runs",
+            "pitcher_outs":            "pitcher_outs",
         },
     },
     "nhl": {
         "sport_key": "icehockey_nhl",
         "sport_label": "Ice Hockey",
         "league": "NHL",
-        "icon": "🏒",
+        "icon": "\U0001f3d2",
         "espn_path": "hockey/nhl",
         "primary_stat": "shots",
-        # player_goals returns Yes/No outcomes — handled by _YES_NO_MARKETS below.
         "markets": [
-            "player_points", "player_shots_on_goal", "player_assists",
-            "player_goals", "player_power_play_points", "player_blocked_shots",
+            "player_points", "player_goals", "player_assists",
+            "player_shots_on_goal", "player_power_play_points",
+            "player_blocked_shots", "player_saves",
         ],
         "stat_map": {
             "player_points":            "points",
-            "player_shots_on_goal":     "shots",
-            "player_assists":           "assists",
             "player_goals":             "goals",
+            "player_assists":           "assists",
+            "player_shots_on_goal":     "shots",
             "player_power_play_points": "pp_points",
             "player_blocked_shots":     "blocked_shots",
-        },
-        "stat_labels": {
-            "points": "Points", "shots": "Shots on Goal",
-            "goals": "Goals", "assists": "Assists",
-            "pp_points": "Power Play Points", "blocked_shots": "Blocked Shots",
+            "player_saves":             "saves",
         },
     },
+    "nfl": {
+        "sport_key": "americanfootball_nfl",
+        "sport_label": "Football",
+        "league": "NFL",
+        "icon": "\U0001f3c8",
+        "espn_path": "football/nfl",
+        "primary_stat": "pass_yds",
+        "markets": [
+            "player_pass_yds", "player_pass_tds", "player_pass_completions",
+            "player_pass_attempts", "player_pass_interceptions",
+            "player_rush_yds", "player_rush_attempts", "player_rush_tds",
+            "player_reception_yds", "player_receptions",
+            "player_receiving_tds", "player_sacks", "player_kicking_points",
+        ],
+        "stat_map": {
+            "player_pass_yds":           "pass_yds",
+            "player_pass_tds":           "pass_tds",
+            "player_pass_completions":   "pass_comp",
+            "player_pass_attempts":      "pass_att",
+            "player_pass_interceptions": "pass_int",
+            "player_rush_yds":           "rush_yds",
+            "player_rush_attempts":      "rush_att",
+            "player_rush_tds":           "rush_tds",
+            "player_reception_yds":      "rec_yds",
+            "player_receptions":         "receptions",
+            "player_receiving_tds":      "rec_tds",
+            "player_sacks":              "sacks",
+            "player_kicking_points":     "kicking_pts",
+        },
+    },
+    "soccer_epl": {
+        "sport_key": "soccer_epl",
+        "sport_label": "Soccer",
+        "league": "Premier League",
+        "icon": "\U0001f3f4\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f",
+        "espn_path": "soccer/eng.1",
+        "primary_stat": "anytime_goal",
+        "match_markets": "h2h,btts,totals,correct_score",
+        "markets": [
+            "player_goal_scorer", "player_first_goal_scorer",
+            "player_shots_on_target", "player_shots", "player_assists",
+        ],
+        "stat_map": {
+            "player_goal_scorer":       "anytime_goal",
+            "player_first_goal_scorer": "first_goal",
+            "player_shots_on_target":   "shots_on_target",
+            "player_shots":             "shots",
+            "player_assists":           "assists",
+        },
+    },
+}
+
+# Copy soccer config for other leagues
+for _lk in [
+    "soccer_spain_la_liga", "soccer_uefa_champs_league",
+    "soccer_italy_serie_a", "soccer_germany_bundesliga",
+    "soccer_france_ligue_one", "soccer_usa_mls",
+]:
+    _SPORT_CONFIG[_lk] = {**_SPORT_CONFIG["soccer_epl"], "sport_key": _lk}
+
+# Global stat labels dict
+STAT_LABELS: Dict[str, str] = {
+    # NBA
+    "PTS": "Points", "REB": "Rebounds", "AST": "Assists",
+    "3PM": "3-Pointers", "BLK": "Blocks", "STL": "Steals",
+    "PRA": "Pts+Reb+Ast", "PR": "Pts+Reb", "PA": "Pts+Ast",
+    "RA": "Reb+Ast", "first_basket": "First Basket",
+    "double_double": "Double-Double",
+    # MLB
+    "hits": "Hits", "total_bases": "Total Bases", "home_runs": "Home Runs",
+    "rbi": "RBI", "runs": "Runs", "hits_runs_rbis": "H+R+RBI",
+    "singles": "Singles", "stolen_bases": "Stolen Bases",
+    "strikeouts": "Strikeouts", "hits_allowed": "Hits Allowed",
+    "earned_runs": "Earned Runs", "pitcher_outs": "Pitcher Outs",
+    # NHL
+    "points": "Points", "goals": "Goals", "assists": "Assists",
+    "shots": "Shots on Goal", "pp_points": "PP Points",
+    "blocked_shots": "Blocked Shots", "saves": "Saves",
+    # NFL
+    "pass_yds": "Pass Yards", "pass_tds": "Pass TDs",
+    "pass_comp": "Completions", "pass_att": "Pass Attempts",
+    "pass_int": "Interceptions", "rush_yds": "Rush Yards",
+    "rush_att": "Rush Attempts", "rush_tds": "Rush TDs",
+    "rec_yds": "Rec Yards", "receptions": "Receptions",
+    "rec_tds": "Rec TDs", "sacks": "Sacks", "kicking_pts": "Kicking Points",
+    # Soccer
+    "anytime_goal": "Anytime Scorer", "first_goal": "First Scorer",
+    "shots_on_target": "Shots on Target",
 }
 
 # Markets that use Yes/No outcomes instead of Over/Under
@@ -259,9 +350,241 @@ _YES_NO_MARKETS = {
     "player_goals",
     "player_anytime_scorer",
     "player_first_goal_scorer",
+    "player_goal_scorer",
+    "player_first_basket",
+    "player_double_double",
 }
 # Keep old name as alias for any external references
 _ANYTIME_SCORER_MARKETS = _YES_NO_MARKETS
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# PART 3 — SELF-CALIBRATING MODEL
+# ════════════════════════════════════════════════════════════════════════════════
+
+_CALIBRATION_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "calibration.json")
+
+
+def load_calibration() -> Dict:
+    """Load calibration data from JSON file."""
+    try:
+        if os.path.exists(_CALIBRATION_FILE):
+            with open(_CALIBRATION_FILE) as f:
+                return _json.load(f)
+    except Exception as e:
+        logger.debug("calibration load error: %s", e)
+    return {}
+
+
+def save_calibration(cal: Dict):
+    """Save calibration data to JSON file."""
+    os.makedirs(os.path.dirname(_CALIBRATION_FILE), exist_ok=True)
+    with open(_CALIBRATION_FILE, "w") as f:
+        _json.dump(cal, f, indent=2)
+
+
+def get_calibration_factor(sport: str, stat: str) -> float:
+    """Get calibration multiplier for a sport/stat. Returns 1.0 if no data."""
+    cal = load_calibration()
+    return cal.get(sport, {}).get(stat, {}).get("calibration_factor", 1.0)
+
+
+def record_bet_result(sport: str, stat: str, confidence: float, result: bool):
+    """Record a bet result for calibration. result: True=hit, False=miss."""
+    cal = load_calibration()
+    if sport not in cal:
+        cal[sport] = {}
+    if stat not in cal[sport]:
+        cal[sport][stat] = {
+            "buckets": {
+                "55-60": {"bets": 0, "hits": 0},
+                "60-65": {"bets": 0, "hits": 0},
+                "65-70": {"bets": 0, "hits": 0},
+                "70-75": {"bets": 0, "hits": 0},
+                "75-80": {"bets": 0, "hits": 0},
+                "80+":   {"bets": 0, "hits": 0},
+            },
+            "calibration_factor": 1.0,
+            "total_bets": 0,
+            "total_hits": 0,
+            "last_updated": None,
+        }
+
+    bucket = ("80+" if confidence >= 80
+              else "75-80" if confidence >= 75
+              else "70-75" if confidence >= 70
+              else "65-70" if confidence >= 65
+              else "60-65" if confidence >= 60
+              else "55-60")
+    cal[sport][stat]["buckets"][bucket]["bets"] += 1
+    if result:
+        cal[sport][stat]["buckets"][bucket]["hits"] += 1
+    cal[sport][stat]["total_bets"] += 1
+    if result:
+        cal[sport][stat]["total_hits"] += 1
+
+    total = cal[sport][stat]["total_bets"]
+    if total >= 20:
+        actual_rate = cal[sport][stat]["total_hits"] / total
+        expected_rate = 0.67
+        factor = max(0.7, min(1.3, actual_rate / expected_rate))
+        cal[sport][stat]["calibration_factor"] = round(factor, 3)
+
+    cal[sport][stat]["last_updated"] = _dt.now().isoformat()
+    save_calibration(cal)
+
+
+def apply_calibration(confidence: float, sport: str, stat: str) -> float:
+    """Apply calibration factor to raw confidence."""
+    factor = get_calibration_factor(sport, stat)
+    calibrated = confidence * factor
+    return max(30.0, min(95.0, round(calibrated, 1)))
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# PART 4 — GRADING + SCORING SYSTEM
+# ════════════════════════════════════════════════════════════════════════════════
+
+def get_prop_grade(confidence: float, price: float = -110) -> Tuple[str, float]:
+    """A/B/Watch/Pass grade based on confidence + edge vs market."""
+    if price > 0:
+        market_prob = 100 / (price + 100)
+    elif price < 0:
+        market_prob = abs(price) / (abs(price) + 100)
+    else:
+        market_prob = 0.5
+    model_prob = confidence / 100
+    edge = round((model_prob - market_prob) * 100, 1)
+    if confidence >= 68 and edge >= 5:
+        return "A", edge
+    elif confidence >= 62 and edge >= 3:
+        return "B", edge
+    elif confidence >= 55:
+        return "Watch", edge
+    return "Pass", edge
+
+
+def calculate_bet_score(prop: Dict) -> int:
+    """Bet quality score 0-100."""
+    score = 0
+    conf = prop.get("confidence", 50)
+    edge = prop.get("edge", 0)
+    grade = prop.get("grade", "Pass")
+    # Confidence (40pts)
+    if conf >= 80:     score += 40
+    elif conf >= 72:   score += 32
+    elif conf >= 65:   score += 24
+    elif conf >= 58:   score += 16
+    else:              score += 8
+    # Edge (35pts)
+    if edge >= 12:     score += 35
+    elif edge >= 8:    score += 28
+    elif edge >= 5:    score += 21
+    elif edge >= 3:    score += 14
+    else:              score += 5
+    # Grade (15pts)
+    score += {"A": 15, "B": 10, "Watch": 5, "Pass": 1}.get(grade, 1)
+    # Line shopping bonus (10pts)
+    all_prices = prop.get("all_prices", {})
+    if len(all_prices) >= 3:
+        score += 10
+    elif len(all_prices) >= 2:
+        score += 5
+    return min(100, score)
+
+
+def get_score_label(score: int) -> Tuple[str, str]:
+    """Return (label, css_class) for a bet score."""
+    if score >= 85:
+        return "Elite", "elite"
+    if score >= 75:
+        return "Strong", "strong"
+    if score >= 65:
+        return "Playable", "playable"
+    return "Pass", "pass"
+
+
+def get_playable_price(model_prob: float, min_edge: float = 0.03) -> int:
+    """Return worst playable American odds price."""
+    max_implied = max(0.01, min(0.99, model_prob - min_edge))
+    if max_implied >= 0.5:
+        american = -(max_implied / (1 - max_implied)) * 100
+    else:
+        american = ((1 - max_implied) / max_implied) * 100
+    return round(american)
+
+
+def get_stake_rec(grade: str, edge: float, score: int) -> str:
+    """Return stake recommendation string."""
+    if grade == "A" and score >= 80:
+        return "1.0u"
+    elif grade == "A" and edge >= 7:
+        return "0.75u"
+    elif grade == "A":
+        return "0.5u"
+    elif grade == "B" and edge >= 6:
+        return "0.5u"
+    elif grade == "B":
+        return "0.25u"
+    elif grade == "Watch":
+        return "0.1u"
+    return "Pass"
+
+
+def get_red_flags(prop: Dict) -> List[str]:
+    """Return list of red flag strings for a prop."""
+    flags = []
+    conf = prop.get("confidence", 50)
+    price = prop.get("price", -110)
+    playable = prop.get("playable_to", -150)
+    stat = prop.get("stat", "")
+    line = prop.get("line", 0)
+    if conf < 55:
+        flags.append("Low confidence")
+    if price != -110 and price < playable:
+        flags.append("Price at limit")
+    if len(prop.get("all_prices", {})) <= 1:
+        flags.append("Low market liquidity")
+    if stat in ("goals", "home_runs") and line <= 0.5:
+        flags.append("Binary prop")
+    return flags
+
+
+def get_bet_reasons(prop: Dict) -> List[str]:
+    """Return list of reasons supporting the bet."""
+    reasons = []
+    conf = prop.get("confidence", 50)
+    edge = prop.get("edge", 0)
+    pick = prop.get("pick", "")
+    books = prop.get("all_prices", {})
+    if edge >= 8:
+        reasons.append(f"+{edge}% edge vs market implied prob")
+    elif edge >= 5:
+        reasons.append(f"+{edge}% model edge over book")
+    if conf >= 72 and pick == "OVER":
+        reasons.append("Model projects well above posted line")
+    elif conf >= 72 and pick == "UNDER":
+        reasons.append("Market overpricing player output")
+    best_book = prop.get("best_book", "")
+    best_price = prop.get("price", -110)
+    if best_book and len(books) >= 2:
+        reasons.append(f"Best price at {best_book.upper()} ({format_american(best_price)})")
+    cal_factor = prop.get("cal_factor", 1.0)
+    if cal_factor < 0.95:
+        reasons.append("Model historically overconfident in this market")
+    elif cal_factor > 1.05:
+        reasons.append("Model historically accurate in this market")
+    return reasons[:3]
+
+
+def format_american(price) -> str:
+    """Format American odds price as display string (+150, -110)."""
+    if price is None:
+        return "N/A"
+    price = float(price)
+    if price > 0:
+        return f"+{round(price)}"
+    return str(round(price))
 
 # Full team name → abbreviation (NBA, MLB, NHL combined)
 _TEAM_ABBR: Dict[str, str] = {
@@ -394,120 +717,159 @@ def _team_abbr(team_full_name: str) -> str:
     return words[-1][:3] if words else "UNK"
 
 
-def _build_prop_card(stat: str, line: float,
-                     stat_labels: Dict[str, str], sport: str,
-                     over_prob: Optional[float] = None) -> Dict:
-    """Build a single prop card from an Odds API line + bookmaker price.
+# ════════════════════════════════════════════════════════════════════════════════
+# PART 2 — LINE SHOPPING + GAME LINES
+# ════════════════════════════════════════════════════════════════════════════════
 
-    over_prob: implied probability from American odds (0.0–1.0).
-    If not provided, falls back to a lean-over default.
-    """
-    if over_prob is not None:
-        over_p = float(over_prob)
-    else:
-        over_p = 0.52  # neutral fallback
-
-    under_p = 1.0 - over_p
-    pick    = "OVER" if over_p > 0.55 else ("UNDER" if over_p < 0.45 else "FAIR")
-    best    = max(over_p, under_p)
-    conf_pct = round(best * 100, 1)
-
-    if conf_pct >= 85:
-        stars, conf_label = 5, "Elite Pick"
-    elif conf_pct >= 78:
-        stars, conf_label = 4, "Strong Pick"
-    elif conf_pct >= 68:
-        stars, conf_label = 3, "Good Pick"
-    elif conf_pct >= 58:
-        stars, conf_label = 2, "Moderate"
-    else:
-        stars, conf_label = 1, "Use Caution"
-
-    # Map conf_pct to legacy confidence string for template compatibility
-    if best >= 0.78:
-        conf_str = "HIGH"
-    elif best >= 0.62:
-        conf_str = "MEDIUM"
-    else:
-        conf_str = "LOW"
-
-    return {
-        "stat":           stat,
-        "label":          stat_labels.get(stat, stat),
-        "line":           line,
-        "avg":            line,       # use line as season-avg reference
-        "over_prob":      round(over_p  * 100, 1),
-        "under_prob":     round(under_p * 100, 1),
-        "pick":           pick,
-        "confidence":     conf_str,
-        "stars":          stars,
-        "conf_label":     conf_label,
-        "last5_avg":      None,
-        "last10_avg":     None,
-        "hit_over_last5": None,
-        "trend":          "→",
-    }
-
-
-def _fetch_h2h_probs(sport_key: str) -> Dict[str, Dict[str, float]]:
-    """Fetch h2h win probabilities. Returns {f"{home}|{away}": {home: %, away: %}}."""
+def fetch_best_odds_props(sport_key: str, event_id: str,
+                          markets: List[str]) -> Dict[str, Dict]:
+    """Fetch props from ALL bookmakers and return best price per player/stat."""
     api_key = _key()
     if not api_key:
         return {}
-
+    markets_str = ",".join(markets)
     data = fetch(
-        f"{ODDS_BASE}/sports/{sport_key}/odds",
+        f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
         params={
-            "apiKey": api_key,
-            "regions": "us",
-            "markets": "h2h",
+            "apiKey":     api_key,
+            "regions":    "us,uk,eu",
+            "markets":    markets_str,
             "oddsFormat": "american",
         },
         use_cache=False,
         timeout=12,
     )
+    if not data or not isinstance(data, dict):
+        return {}
+
+    best_odds: Dict[str, Dict] = {}
+    cfg = _SPORT_CONFIG.get(sport_key, {})
+    stat_map = cfg.get("stat_map", {})
+    # Also check by sport_name keys
+    if not stat_map:
+        for _sn, _sc in _SPORT_CONFIG.items():
+            if _sc.get("sport_key") == sport_key:
+                stat_map = _sc.get("stat_map", {})
+                break
+
+    for bookmaker in data.get("bookmakers", []):
+        book_key = bookmaker.get("key", "")
+        for market in bookmaker.get("markets", []):
+            market_key = market.get("key", "")
+            stat = stat_map.get(market_key)
+            if not stat:
+                continue
+            is_yes_no = market_key in _YES_NO_MARKETS
+            target = "Yes" if is_yes_no else "Over"
+            for outcome in market.get("outcomes", []):
+                if outcome.get("name") != target:
+                    continue
+                player_name = (outcome.get("description") or "").strip()
+                if not player_name:
+                    player_name = outcome.get("name", "").strip()
+                line = 0.5 if is_yes_no else outcome.get("point")
+                price = float(outcome.get("price", -110) or -110)
+                if not player_name or line is None:
+                    continue
+                line = float(line)
+                prob = _american_to_implied(price)
+                key = f"{player_name}|{stat}"
+                if key not in best_odds:
+                    best_odds[key] = {
+                        "player": player_name,
+                        "stat":   stat,
+                        "line":   line,
+                        "over_prob": prob,
+                        "price":  price,
+                        "best_book": book_key,
+                        "all_prices": {book_key: price},
+                    }
+                else:
+                    best_odds[key]["all_prices"][book_key] = price
+                    if price > best_odds[key]["price"]:
+                        best_odds[key]["price"] = price
+                        best_odds[key]["best_book"] = book_key
+                        best_odds[key]["over_prob"] = prob
+    return best_odds
+
+
+def fetch_game_lines(sport_key: str) -> Dict[str, Dict]:
+    """Get ML, spread, total for all games. Returns {home|away: lines_dict}."""
+    api_key = _key()
+    if not api_key:
+        return {}
+    data = fetch(
+        f"{ODDS_BASE}/sports/{sport_key}/odds",
+        params={
+            "apiKey":     api_key,
+            "regions":    "us",
+            "markets":    "h2h,spreads,totals",
+            "oddsFormat": "american",
+            "bookmakers": "draftkings,fanduel",
+        },
+        use_cache=False,
+        timeout=10,
+    )
     if not data or not isinstance(data, list):
         return {}
 
-    result: Dict[str, Dict[str, float]] = {}
+    lines: Dict[str, Dict] = {}
     for game in data:
         home = game.get("home_team", "")
         away = game.get("away_team", "")
-        for bm in game.get("bookmakers", [])[:1]:
-            for market in bm.get("markets", []):
-                if market.get("key") != "h2h":
-                    continue
-                raw_probs: Dict[str, float] = {}
-                for outcome in market.get("outcomes", []):
-                    team  = outcome.get("name", "")
-                    price = float(outcome.get("price", 0) or 0)
-                    if price > 0:
-                        prob = 100 / (price + 100)
-                    elif price < 0:
-                        prob = abs(price) / (abs(price) + 100)
-                    else:
-                        prob = 0.5
-                    raw_probs[team] = prob
-                if raw_probs:
-                    # Normalize to remove bookmaker vig — probs sum to 100%
-                    total = sum(raw_probs.values())
-                    probs = {k: round(v / total * 100, 1) for k, v in raw_probs.items()}
-                    result[f"{home}|{away}"] = probs
-    return result
+        key = f"{home}|{away}"
+        gl: Dict = {
+            "home_ml": None, "away_ml": None,
+            "home_prob": 50.0, "away_prob": 50.0, "draw_prob": 0.0,
+            "home_spread": None, "away_spread": None,
+            "home_spread_price": -110, "away_spread_price": -110,
+            "total_line": None, "total_over_price": -110,
+        }
+        for bookmaker in game.get("bookmakers", [])[:1]:
+            for market in bookmaker.get("markets", []):
+                mk = market.get("key", "")
+                if mk == "h2h":
+                    probs: Dict[str, float] = {}
+                    for o in market.get("outcomes", []):
+                        t = o.get("name", "")
+                        p = float(o.get("price", 0) or 0)
+                        if t == home:
+                            gl["home_ml"] = p
+                        elif t == away:
+                            gl["away_ml"] = p
+                        probs[t] = _american_to_implied(p)
+                    total_prob = sum(probs.values())
+                    if total_prob > 0:
+                        gl["home_prob"] = round(probs.get(home, 0.5) / total_prob * 100, 1)
+                        gl["away_prob"] = round(probs.get(away, 0.5) / total_prob * 100, 1)
+                        gl["draw_prob"] = round(probs.get("Draw", 0) / total_prob * 100, 1)
+                elif mk == "spreads":
+                    for o in market.get("outcomes", []):
+                        t = o.get("name", "")
+                        if t == home:
+                            gl["home_spread"] = o.get("point", 0)
+                            gl["home_spread_price"] = float(o.get("price", -110) or -110)
+                        elif t == away:
+                            gl["away_spread"] = o.get("point", 0)
+                            gl["away_spread_price"] = float(o.get("price", -110) or -110)
+                elif mk == "totals":
+                    for o in market.get("outcomes", []):
+                        if o.get("name") == "Over":
+                            gl["total_line"] = o.get("point")
+                            gl["total_over_price"] = float(o.get("price", -110) or -110)
+        lines[key] = gl
+    return lines
 
+
+# ════════════════════════════════════════════════════════════════════════════════
+# PART 5 — REWRITTEN build_sport_props() INTEGRATING ALL SYSTEMS
+# ════════════════════════════════════════════════════════════════════════════════
 
 def build_sport_props(sport_name: str, ttl: int = 900) -> list:
-    """Build all prop cards for a sport using ONLY the Odds API.
+    """Build all prop cards for a sport using Odds API with line shopping,
+    calibration, grading, and scoring.
 
-    Returns list of game dicts each containing:
-        home_team, away_team, home_abbr, away_abbr,
-        home_prob, away_prob,
-        home_roster, away_roster (list of player card dicts),
-        sport, league, sport_icon, kickoff, status.
-
-    Player cards: {name, pos, pts, props[]}
-    Prop cards:   {stat, label, line, avg, over_prob, under_prob,
-                   pick, confidence, stars, conf_label, trend, ...}
+    Returns list of game dicts with home_players, away_players, top_props, etc.
     """
     cfg = _SPORT_CONFIG.get(sport_name)
     if not cfg:
@@ -515,11 +877,10 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
         return []
 
     sport_key  = cfg["sport_key"]
-    espn_path  = cfg["espn_path"]
-    markets    = cfg["markets"]
-    stat_map   = cfg["stat_map"]
-    stat_labels = cfg["stat_labels"]
-    primary    = cfg["primary_stat"]
+    espn_path  = cfg.get("espn_path", "")
+    markets    = cfg.get("markets", [])
+    stat_map   = cfg.get("stat_map", {})
+    primary    = cfg.get("primary_stat", "")
     api_key    = _key()
 
     if not api_key:
@@ -538,16 +899,14 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
         return []
     print(f"[ODDS] {sport_name}: {len(events)} events")
 
-    # Step 2: h2h win probabilities
-    h2h_probs = _fetch_h2h_probs(sport_key)
+    # Step 2: game lines (ML + spread + total)
+    game_lines_map = fetch_game_lines(sport_key)
 
-    games: list = []
-    markets_str = ",".join(markets)
+    results: list = []
 
     for i, event in enumerate(events[:15]):
-        # Throttle: pause 500 ms every 3 requests to avoid 429 rate limits
         if i > 0 and i % 3 == 0:
-            import time as _t; _t.sleep(0.5)
+            time.sleep(0.5)
 
         event_id  = event.get("id", "")
         home_team = event.get("home_team", "")
@@ -555,190 +914,237 @@ def build_sport_props(sport_name: str, ttl: int = 900) -> list:
         if not home_team or not away_team:
             continue
 
-        # Win probabilities from h2h odds
-        probs    = h2h_probs.get(f"{home_team}|{away_team}", {})
-        home_prob = probs.get(home_team, 50.0)
-        away_prob = probs.get(away_team, 100.0 - home_prob)
-
-        # Step 3: player props for this game — use regions=us without bookmakers
-        # filter so the API returns data from any US bookmaker that has the market.
-        props_data = fetch(
-            f"{ODDS_BASE}/sports/{sport_key}/events/{event_id}/odds",
-            params={
-                "apiKey":     api_key,
-                "regions":    "us",
-                "markets":    markets_str,
-                "oddsFormat": "american",
-            },
-            use_cache=False,
-            timeout=10,
-        )
-        if not props_data or not isinstance(props_data, dict):
-            continue
-
-        # player_name → {stat: {"line": float, "over_prob": float}}
-        # over_prob is derived from the American odds price (removes hardcoded 0.54)
-        player_lines: Dict[str, Dict[str, Dict]] = defaultdict(dict)
-        for bookmaker in props_data.get("bookmakers", [])[:2]:
-            for market in bookmaker.get("markets", []):
-                mk   = market.get("key", "")
-                stat = stat_map.get(mk)
-                if not stat:
-                    continue
-                is_yes_no = mk in _YES_NO_MARKETS
-                for outcome in market.get("outcomes", []):
-                    oname = outcome.get("name", "")
-                    # Accept "Over" for standard O/U markets; "Yes" for Yes/No markets
-                    if is_yes_no:
-                        if oname != "Yes":
-                            continue
-                        # Yes/No market (e.g. player_goals): use line=0.5 (binary prop)
-                        player = (outcome.get("description") or "").strip() or oname
-                        line   = 0.5
-                    else:
-                        if oname != "Over":
-                            continue
-                        player = outcome.get("description", "")
-                        line   = outcome.get("point")
-
-                    price  = float(outcome.get("price", -110) or -110)
-                    if player and line is not None and stat not in player_lines[player]:
-                        op = _american_to_implied(price)
-                        player_lines[player][stat] = {
-                            "line":      float(line),
-                            "over_prob": round(op, 4),
-                        }
-
-        print(f"[ODDS] {home_team} vs {away_team}: {len(player_lines)} players")
-
-        # Step 4: get ESPN rosters to assign players to teams
-        home_roster_names = _get_team_roster_names(espn_path, home_team)
-        away_roster_names = _get_team_roster_names(espn_path, away_team)
+        # Game lines
+        line_key = f"{home_team}|{away_team}"
+        lines = game_lines_map.get(line_key, {})
+        home_prob = lines.get("home_prob", 50.0)
+        away_prob = lines.get("away_prob", 50.0)
+        draw_prob = lines.get("draw_prob", 0.0)
 
         home_abbr = _team_abbr(home_team)
         away_abbr = _team_abbr(away_team)
 
+        # Badge
+        best_prob = max(home_prob, away_prob)
+        fav_team = (home_team if home_prob > away_prob else away_team).split()[-1]
+        if best_prob >= 70:
+            badge_label = f"Strong Fav - {fav_team}"
+            badge_class = "badge-strong"
+        elif best_prob >= 60:
+            badge_label = f"Favoured - {fav_team}"
+            badge_class = "badge-favoured"
+        elif best_prob >= 55:
+            badge_label = f"Slight Edge - {fav_team}"
+            badge_class = "badge-slight"
+        else:
+            badge_label = "Pick'em"
+            badge_class = "badge-pickem"
+
+        # Step 3: player props with line shopping
+        best_odds = fetch_best_odds_props(sport_key, event_id, markets)
+
+        if not best_odds:
+            # No props — still include game with game lines
+            results.append({
+                "event_id":    event_id,
+                "sport":       cfg.get("sport_label", ""),
+                "league":      cfg.get("league", ""),
+                "sport_icon":  cfg.get("icon", ""),
+                "home_team":   home_team,
+                "away_team":   away_team,
+                "home_abbr":   home_abbr,
+                "away_abbr":   away_abbr,
+                "home_prob":   home_prob,
+                "away_prob":   away_prob,
+                "draw_prob":   draw_prob,
+                "home_ml":     lines.get("home_ml"),
+                "away_ml":     lines.get("away_ml"),
+                "home_spread": lines.get("home_spread"),
+                "away_spread": lines.get("away_spread"),
+                "home_spread_price": lines.get("home_spread_price", -110),
+                "away_spread_price": lines.get("away_spread_price", -110),
+                "total_line":  lines.get("total_line"),
+                "total_over_price": lines.get("total_over_price", -110),
+                "pick_badge_label": badge_label,
+                "pick_badge_class": badge_class,
+                "kickoff":     event.get("commence_time", ""),
+                "status":      "STATUS_SCHEDULED",
+                "home_players": [],
+                "away_players": [],
+                "home_roster":  [],
+                "away_roster":  [],
+                "top_props":    [],
+                "top_pick":     None,
+                "is_soccer":    "soccer" in sport_name,
+                # today.html compat
+                "predicted_winner": home_team if home_prob >= away_prob else away_team,
+                "win_prob":     best_prob,
+                "confidence":   "HIGH" if best_prob >= 65 else "MEDIUM" if best_prob >= 55 else "LOW",
+                "home_score":   None, "away_score": None,
+                "home_wins": 0, "home_losses": 0,
+                "away_wins": 0, "away_losses": 0,
+                "bookmaker": "",
+                "book_home_ml": format_american(lines.get("home_ml")),
+                "book_away_ml": format_american(lines.get("away_ml")),
+                "book_home_spread": lines.get("home_spread"),
+                "book_total":  lines.get("total_line"),
+                "spread":      lines.get("home_spread"),
+                "over_under":  lines.get("total_line"),
+            })
+            continue
+
+        # Step 4: ESPN rosters for team assignment
+        home_roster_names = _get_team_roster_names(espn_path, home_team) if espn_path else set()
+        away_roster_names = _get_team_roster_names(espn_path, away_team) if espn_path else set()
+
+        # Build player props with grading + scoring
+        player_data: Dict[str, Dict] = {}
+        for key, odds in best_odds.items():
+            player_name = odds["player"]
+            stat        = odds["stat"]
+            line        = odds["line"]
+            over_prob   = odds["over_prob"]
+            price       = odds["price"]
+            all_prices  = odds["all_prices"]
+            best_book   = odds["best_book"]
+
+            raw_conf = round(over_prob * 100, 1)
+            conf = apply_calibration(raw_conf, sport_name, stat)
+            cal_factor = get_calibration_factor(sport_name, stat)
+
+            if conf >= 55:
+                pick = "OVER"
+                display_conf = conf
+            elif conf <= 45:
+                pick = "UNDER"
+                under_raw = round((1 - over_prob) * 100, 1)
+                display_conf = apply_calibration(under_raw, sport_name, stat)
+            else:
+                pick = "FAIR"
+                display_conf = round(max(conf, (1 - over_prob) * 100), 1)
+
+            grade, edge = get_prop_grade(display_conf, price)
+            playable = get_playable_price(display_conf / 100)
+
+            prop = {
+                "player_name":    player_name,
+                "stat":           stat,
+                "label":          STAT_LABELS.get(stat, stat),
+                "line":           line,
+                "pick":           pick,
+                "confidence":     display_conf,
+                "raw_confidence": raw_conf,
+                "cal_factor":     cal_factor,
+                "over_prob":      round(over_prob * 100, 1),
+                "under_prob":     round((1 - over_prob) * 100, 1),
+                "price":          price,
+                "best_book":      best_book,
+                "all_prices":     all_prices,
+                "grade":          grade,
+                "edge":           edge,
+                "playable_to":    format_american(playable),
+                "sport":          sport_name,
+                "game":           f"{away_abbr} @ {home_abbr}",
+                # Legacy compat
+                "avg":            line,
+                "stars":          5 if display_conf >= 85 else 4 if display_conf >= 78 else 3 if display_conf >= 68 else 2 if display_conf >= 58 else 1,
+                "conf_label":     "Elite Pick" if display_conf >= 85 else "Strong Pick" if display_conf >= 78 else "Good Pick" if display_conf >= 68 else "Moderate" if display_conf >= 58 else "Use Caution",
+                "trend":          "->",
+            }
+            prop["score"] = calculate_bet_score(prop)
+            prop["score_label"], prop["score_class"] = get_score_label(prop["score"])
+            prop["stake_rec"] = get_stake_rec(grade, edge, prop["score"])
+            prop["red_flags"] = get_red_flags(prop)
+            prop["reasons"]   = get_bet_reasons(prop)
+
+            if player_name not in player_data:
+                player_data[player_name] = {"name": player_name, "props": []}
+            player_data[player_name]["props"].append(prop)
+
+        # Assign players to teams
         home_players: list = []
         away_players: list = []
+        all_game_props: list = []
 
-        for player_name, lines in player_lines.items():
-            if not lines:
-                continue
-            team_abbr = _assign_to_team(
+        for player_name, pdata in player_data.items():
+            team = _assign_to_team(
                 player_name,
                 home_team, home_abbr, home_roster_names,
                 away_team, away_abbr, away_roster_names,
             )
-            props = []
-            for stat, stat_data in lines.items():
-                line_val = stat_data["line"]
-                op       = stat_data["over_prob"]
-                props.append(_build_prop_card(stat, line_val, stat_labels,
-                                              sport_name, over_prob=op))
-
-            # Primary stat value used for sort (first available)
-            primary_data = lines.get(primary, {})
-            primary_val  = primary_data.get("line", 0.0) if isinstance(primary_data, dict) else float(primary_data or 0)
-
-            card = {
-                "name":  player_name,
-                "pos":   "",
-                "pts":   primary_val,
-                "props": props,
-            }
-            if team_abbr == home_abbr:
-                home_players.append(card)
+            pdata["team"] = team
+            pdata["props"].sort(key=lambda x: x["confidence"], reverse=True)
+            for p in pdata["props"]:
+                p["team"] = team
+                all_game_props.append(p)
+            if team == home_abbr:
+                home_players.append(pdata)
             else:
-                away_players.append(card)
+                away_players.append(pdata)
 
-        # Sort by primary stat line descending
-        home_players.sort(key=lambda p: p["pts"], reverse=True)
-        away_players.sort(key=lambda p: p["pts"], reverse=True)
+        def _best_conf(player):
+            return player["props"][0]["confidence"] if player["props"] else 0
+        home_players.sort(key=_best_conf, reverse=True)
+        away_players.sort(key=_best_conf, reverse=True)
 
-        # Compute predicted winner for today.html compatibility
-        if home_prob >= away_prob:
-            predicted_winner = home_team
-            win_prob_val     = home_prob
-        else:
-            predicted_winner = away_team
-            win_prob_val     = away_prob
-        conf_str = "HIGH" if win_prob_val >= 65 else "MEDIUM" if win_prob_val >= 55 else "LOW"
-
-        # Best single prop across all players for "TOP PICK" banner
-        all_game_props: list = []
-        for _pl, _abbr in [(home_players, home_abbr), (away_players, away_abbr)]:
-            for _p in _pl:
-                for _pr in _p.get("props", []):
-                    _conf = _pr.get("over_prob" if _pr["pick"] != "UNDER" else "under_prob", 0)
-                    all_game_props.append({
-                        "player":     _p["name"],
-                        "team":       _abbr,
-                        "stat":       _pr.get("label", _pr.get("stat", "")),
-                        "line":       _pr["line"],
-                        "pick":       _pr["pick"],
-                        "confidence": _conf,
-                        "conf_label": _pr.get("conf_label", ""),
-                    })
+        # Top props sorted by confidence
         all_game_props.sort(key=lambda x: x["confidence"], reverse=True)
-        top_pick = all_game_props[0] if all_game_props else None
+        prop_count = max(10, min(30, len(all_game_props)))
+        top_props = all_game_props[:prop_count]
+        top_pick = top_props[0] if top_props else None
 
-        # Win badge label for game header
-        best_prob = max(home_prob, away_prob)
-        best_team = home_team if home_prob >= away_prob else away_team
-        best_team_short = best_team.split()[-1]
-        if best_prob >= 70:
-            pick_badge_label = f"🔥 Strong Fav · {best_team_short}"
-            pick_badge_class = "badge-strong"
-        elif best_prob >= 60:
-            pick_badge_label = f"✅ Favoured · {best_team_short}"
-            pick_badge_class = "badge-favoured"
-        elif best_prob >= 55:
-            pick_badge_label = f"📊 Slight Edge · {best_team_short}"
-            pick_badge_class = "badge-slight"
-        else:
-            pick_badge_label = "⚖️ Pick'em"
-            pick_badge_class = "badge-pickem"
+        print(f"[ODDS] {away_team} @ {home_team}: {len(player_data)} players, {len(top_props)} top props")
 
-        games.append({
-            "sport":      cfg["sport_label"],
-            "league":     cfg["league"],
-            "sport_icon": cfg["icon"],
-            "home_team":  home_team,
-            "away_team":  away_team,
-            "home_abbr":  home_abbr,
-            "away_abbr":  away_abbr,
-            "home_prob":  home_prob,
-            "away_prob":  away_prob,
-            "home_roster": home_players[:12],
-            "away_roster": away_players[:12],
-            "kickoff":    event.get("commence_time", ""),
-            "status":     "STATUS_SCHEDULED",
-            "spread":     None,
-            "over_under": None,
-            "bookmaker":  "",
-            "book_home_ml":     None,
-            "book_away_ml":     None,
-            "book_home_spread": None,
-            "book_total":       None,
-            # today.html compatibility
-            "predicted_winner": predicted_winner,
-            "win_prob":         win_prob_val,
-            "confidence":       conf_str,
-            "draw_prob":        None,
-            "home_score":       None,
-            "away_score":       None,
-            "home_wins":        0,
-            "home_losses":      0,
-            "away_wins":        0,
-            "away_losses":      0,
-            # Smart pick badges
-            "top_pick":         top_pick,
-            "pick_badge_label": pick_badge_label,
-            "pick_badge_class": pick_badge_class,
+        results.append({
+            "event_id":    event_id,
+            "sport":       cfg.get("sport_label", ""),
+            "league":      cfg.get("league", ""),
+            "sport_icon":  cfg.get("icon", ""),
+            "home_team":   home_team,
+            "away_team":   away_team,
+            "home_abbr":   home_abbr,
+            "away_abbr":   away_abbr,
+            "home_prob":   home_prob,
+            "away_prob":   away_prob,
+            "draw_prob":   draw_prob,
+            "home_ml":     lines.get("home_ml"),
+            "away_ml":     lines.get("away_ml"),
+            "home_spread": lines.get("home_spread"),
+            "away_spread": lines.get("away_spread"),
+            "home_spread_price": lines.get("home_spread_price", -110),
+            "away_spread_price": lines.get("away_spread_price", -110),
+            "total_line":  lines.get("total_line"),
+            "total_over_price": lines.get("total_over_price", -110),
+            "pick_badge_label": badge_label,
+            "pick_badge_class": badge_class,
+            "kickoff":     event.get("commence_time", ""),
+            "status":      "STATUS_SCHEDULED",
+            "home_players": home_players[:15],
+            "away_players": away_players[:15],
+            "home_roster":  home_players[:15],
+            "away_roster":  away_players[:15],
+            "top_props":    top_props,
+            "top_pick":     top_pick,
+            "is_soccer":    "soccer" in sport_name,
+            # today.html compat
+            "predicted_winner": home_team if home_prob >= away_prob else away_team,
+            "win_prob":     best_prob,
+            "confidence":   "HIGH" if best_prob >= 65 else "MEDIUM" if best_prob >= 55 else "LOW",
+            "home_score":   None, "away_score": None,
+            "home_wins": 0, "home_losses": 0,
+            "away_wins": 0, "away_losses": 0,
+            "bookmaker":    "",
+            "book_home_ml": format_american(lines.get("home_ml")),
+            "book_away_ml": format_american(lines.get("away_ml")),
+            "book_home_spread": lines.get("home_spread"),
+            "book_total":  lines.get("total_line"),
+            "spread":      lines.get("home_spread"),
+            "over_under":  lines.get("total_line"),
         })
 
-    print(f"[ODDS] {sport_name}: {len(games)} games built")
-    return games
+    games_with = sum(1 for g in results if g.get("top_props"))
+    print(f"[ODDS] {sport_name}: {len(results)} games, {games_with} with props")
+    return results
 
 
 SOCCER_LEAGUES: Dict[str, Dict] = {

@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}My Card – BetModel Pro{% endblock %}
+
+{% block head %}
+<style>
+/* ── Sport tabs ──────────────────────────────── */
+.mc-sport-tabs {
+  display: flex; gap: 6px; padding: 12px 0; overflow-x: auto; scrollbar-width: none;
+  border-bottom: 1px solid var(--border); margin-bottom: 20px;
+}
+.mc-sport-tabs::-webkit-scrollbar { display: none; }
+.mc-stab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 16px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--bg-card);
+  color: var(--text-secondary); font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap; transition: all 0.12s; flex-shrink: 0;
+}
+.mc-stab.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.mc-stab-count {
+  background: rgba(255,255,255,0.12); border-radius: 20px;
+  padding: 1px 7px; font-size: 11px;
+}
+.mc-sport-panel { display: none; }
+.mc-sport-panel.active { display: block; }
+.mc-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 0; margin-bottom: 8px;
+}
+.mc-panel-header h3 { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+.mc-panel-stats { display: flex; gap: 12px; font-size: 13px; font-weight: 700; }
+.mc-window-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 20px;
+  background: var(--accent-dim); border: 1px solid var(--accent);
+  color: var(--accent); font-size: 11px; font-weight: 700; margin-bottom: 12px;
+}
+
+/* ── Props table ─────────────────────────────── */
+.props-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.props-table th {
+  padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 700;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border); background: var(--bg-elevated); white-space: nowrap;
+}
+.prop-row { border-bottom: 1px solid var(--border); transition: background 0.12s; }
+.prop-row:hover { background: var(--bg-hover); }
+.prop-row td { padding: 9px 12px; vertical-align: middle; }
+.grade-border-A     { border-left: 3px solid var(--over); }
+.grade-border-B     { border-left: 3px solid var(--accent); }
+.grade-border-Watch { border-left: 3px solid var(--hot, #ff9500); }
+.grade-border-Pass  { border-left: 3px solid var(--border); }
+.grade-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; }
+.grade-badge.grade-A     { background: var(--over-dim); color: var(--over); }
+.grade-badge.grade-B     { background: var(--accent-dim); color: var(--accent); }
+.grade-badge.grade-Watch { background: var(--hot-dim, #ff950018); color: var(--hot, #ff9500); }
+.grade-badge.grade-Pass  { background: var(--fair-dim, #88889918); color: var(--fair, #888899); opacity: 0.6; }
+.pick-pill { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; display:inline-block; }
+.pick-pill.over  { background: var(--over-dim); color: var(--over); }
+.pick-pill.under { background: var(--under-dim); color: var(--under); }
+.pick-pill.fair  { background: var(--fair-dim, #88889918); color: var(--fair, #888899); }
+.conf-high { color: var(--over); font-weight: 700; }
+.conf-med  { color: var(--hot, #ff9500); font-weight: 700; }
+.conf-low  { color: var(--fair, #888899); font-weight: 600; }
+.score-badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 20px; }
+.score-badge.elite    { background: var(--over-dim); color: var(--over); }
+.score-badge.strong   { background: var(--accent-dim); color: var(--accent); }
+.score-badge.playable { background: var(--hot-dim, #ff950018); color: var(--hot, #ff9500); }
+.score-badge.pass     { background: var(--fair-dim, #88889918); color: var(--fair, #888899); }
+.edge-pos { color: var(--over); font-weight: 600; }
+.edge-neg { color: var(--under); font-weight: 600; }
+.pr-player { font-weight: 600; color: var(--text-primary); }
+.pr-book { font-size: 11px; color: var(--accent); font-weight: 600; }
+.pr-stake { font-size: 12px; font-weight: 700; color: var(--over); }
+.pr-game { font-size: 11px; color: var(--text-muted); }
+.log-btn {
+  padding: 3px 10px; border-radius: 6px;
+  border: 1px solid var(--border-light); background: var(--bg-card);
+  color: var(--accent); font-size: 11px; font-weight: 600; cursor: pointer;
+  transition: all 0.12s;
+}
+.log-btn:hover { background: var(--accent-dim); border-color: var(--accent); }
+.mc-empty { padding: 40px; text-align: center; color: var(--text-muted); font-size: 14px; }
+
+/* ── Best picks cards ────────────────────────── */
+.best-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.best-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px; transition: border-color 0.15s;
+}
+.best-card:hover { border-color: var(--border-light); }
+.best-card-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.best-card-player { font-size: 16px; font-weight: 800; color: var(--text-primary); margin-bottom: 4px; }
+.best-card-meta { font-size: 12px; color: var(--text-secondary); }
+
+@media (max-width: 768px) {
+  .props-table { font-size: 11px; }
+  .props-table th, .prop-row td { padding: 6px 8px; }
+  .hide-mobile { display: none; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:16px;">
+  <div class="section-hdr">🎯 My Card</div>
+  <div class="section-sub">Today's best plays across all sports · {{ total_eligible }} eligible props</div>
+</div>
+
+{% if error %}
+<div class="card" style="padding:30px;text-align:center;color:var(--under);">{{ error }}</div>
+{% endif %}
+
+<!-- Sport tabs -->
+<div class="mc-sport-tabs">
+  <button class="mc-stab active" data-sport="all">🏆 All Sports <span class="mc-stab-count">{{ total_eligible }}</span></button>
+  {% for sk, sdata in sports.items() %}
+  <button class="mc-stab" data-sport="{{ sk }}">{{ sdata.emoji }} {{ sdata.label }} <span class="mc-stab-count">{{ sdata.window|length }}</span></button>
+  {% endfor %}
+</div>
+
+<!-- All sports panel -->
+<div class="mc-sport-panel active" data-panel="all">
+  {% if best3 %}
+  <h3 style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:12px;">⭐ Best 3 Plays</h3>
+  <div class="best-picks">
+    {% for prop in best3 %}
+    <div class="best-card" style="border-left:3px solid var(--over);">
+      <div class="best-card-label" style="color:var(--over);">{{ prop.sport_emoji }} {{ prop.sport_label }} · {{ prop.grade }} Grade</div>
+      <div class="best-card-player">{{ prop.player_name }}</div>
+      <div class="best-card-meta">
+        {{ prop.label }} {{ prop.line }} <span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span>
+        · <strong style="color:var(--over);">{{ prop.confidence }}%</strong>
+        · Edge: +{{ prop.edge }}%
+        · {{ prop.game }}
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:var(--text-muted);">
+        Best at {{ prop.best_book|upper if prop.best_book else 'N/A' }} · Stake: {{ prop.stake_rec }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if low_risk %}
+  <div class="best-picks" style="margin-bottom:20px;">
+    <div class="best-card" style="border-left:3px solid var(--accent);">
+      <div class="best-card-label" style="color:var(--accent);">🛡 Low Risk Pick</div>
+      <div class="best-card-player">{{ low_risk.player_name }}</div>
+      <div class="best-card-meta">{{ low_risk.label }} {{ low_risk.line }} {{ low_risk.pick }} · {{ low_risk.confidence }}% · {{ low_risk.game }}</div>
+    </div>
+    {% if best_value %}
+    <div class="best-card" style="border-left:3px solid var(--hot, #ff9500);">
+      <div class="best-card-label" style="color:var(--hot, #ff9500);">💎 Best Value</div>
+      <div class="best-card-player">{{ best_value.player_name }}</div>
+      <div class="best-card-meta">{{ best_value.label }} {{ best_value.line }} {{ best_value.pick }} · Edge: +{{ best_value.edge }}% · {{ best_value.game }}</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if parlay_legs %}
+  <h3 style="font-size:15px;font-weight:700;color:var(--text-primary);margin:20px 0 12px;">🎰 Suggested Parlay Legs</h3>
+  <div style="overflow-x:auto;">
+  <table class="props-table">
+    <thead><tr><th>Player</th><th>Game</th><th>Stat</th><th>Line</th><th>Pick</th><th>Conf</th><th>Grade</th><th>Edge</th></tr></thead>
+    <tbody>
+      {% for prop in parlay_legs %}
+      <tr class="prop-row grade-border-{{ prop.grade }}">
+        <td class="pr-player">{{ prop.player_name }}</td>
+        <td class="pr-game">{{ prop.sport_emoji }} {{ prop.game }}</td>
+        <td>{{ prop.label }}</td><td style="font-weight:700;">{{ prop.line }}</td>
+        <td><span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span></td>
+        <td><span class="{% if prop.confidence >= 72 %}conf-high{% elif prop.confidence >= 65 %}conf-med{% else %}conf-low{% endif %}">{{ prop.confidence }}%</span></td>
+        <td><span class="grade-badge grade-{{ prop.grade }}">{{ prop.grade }}</span></td>
+        <td class="edge-pos">+{{ prop.edge }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  <div style="display:flex;gap:12px;margin-top:20px;font-size:12px;color:var(--text-muted);">
+    <span style="color:var(--over);">{{ a_count }} A Grade</span>
+    <span style="color:var(--accent);">{{ b_count }} B Grade</span>
+    <span style="color:var(--hot, #ff9500);">{{ watch_count }} Watch</span>
+    <span>{{ pass_count }} Pass</span>
+  </div>
+</div>
+
+<!-- Per-sport panels -->
+{% for sk, sdata in sports.items() %}
+<div class="mc-sport-panel" data-panel="{{ sk }}">
+  <div class="mc-panel-header">
+    <h3>{{ sdata.emoji }} {{ sdata.label }} Top Picks Today</h3>
+    <div class="mc-panel-stats">
+      <span style="color:var(--over);">{{ sdata.a_count }} A Grade</span>
+      <span style="color:var(--accent);">{{ sdata.b_count }} B Grade</span>
+    </div>
+  </div>
+
+  {% if sdata.window %}
+  <div class="mc-window-label">🎯 60-80% Confidence Window · {{ sdata.window|length }} props</div>
+  <div style="overflow-x:auto;">
+  <table class="props-table mc-props-table">
+    <thead><tr>
+      <th>Player</th><th>Game</th><th>Stat</th><th>Line</th><th>Pick</th><th>Conf</th>
+      <th>Grade</th><th>Score</th><th>Edge</th><th class="hide-mobile">Book</th><th>Stake</th><th>Log</th>
+    </tr></thead>
+    <tbody>
+      {% for prop in sdata.window %}
+      <tr class="prop-row grade-border-{{ prop.grade }}">
+        <td class="pr-player">{{ prop.player_name }}</td>
+        <td class="pr-game">{{ prop.game }}</td>
+        <td>{{ prop.label }}</td>
+        <td style="font-weight:700;">{{ prop.line }}</td>
+        <td><span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span></td>
+        <td><span class="{% if prop.confidence >= 72 %}conf-high{% elif prop.confidence >= 65 %}conf-med{% else %}conf-low{% endif %}">{{ prop.confidence }}%</span></td>
+        <td><span class="grade-badge grade-{{ prop.grade }}">{{ prop.grade }}</span></td>
+        <td><span class="score-badge {{ prop.score_class }}">{{ prop.score }}</span></td>
+        <td class="{{ 'edge-pos' if prop.edge > 0 else 'edge-neg' }}">{% if prop.edge > 0 %}+{% endif %}{{ prop.edge }}%</td>
+        <td class="pr-book hide-mobile">{{ prop.best_book|upper if prop.best_book else '-' }}</td>
+        <td class="pr-stake">{{ prop.stake_rec }}</td>
+        <td><button class="log-btn" onclick="logBet({player:'{{ prop.player_name }}',stat:'{{ prop.label }}',line:{{ prop.line }},pick:'{{ prop.pick }}',odds:'{{ prop.price }}',grade:'{{ prop.grade }}',score:{{ prop.score }},sport:'{{ prop.sport_key }}',game:'{{ prop.game }}',confidence:{{ prop.confidence }}})">Log</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="mc-empty">No props in 60-80% window for {{ sdata.label }} today.</div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Sport tab switching
+document.querySelectorAll('.mc-stab').forEach(tab => {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.mc-stab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.mc-sport-panel').forEach(p => p.classList.remove('active'));
+    this.classList.add('active');
+    const panel = document.querySelector(`[data-panel="${this.dataset.sport}"]`);
+    if (panel) panel.classList.add('active');
+  });
+});
+
+// Log bet (stores to localStorage)
+function logBet(data) {
+  const log = JSON.parse(localStorage.getItem('betLog') || '[]');
+  data.id = Date.now();
+  data.timestamp = new Date().toISOString();
+  data.result = null;
+  log.push(data);
+  localStorage.setItem('betLog', JSON.stringify(log));
+  if (typeof showToast === 'function') showToast('Bet logged', 'success');
+}
+</script>
+{% endblock %}

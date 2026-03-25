@@ -3,81 +3,82 @@
 
 {% block head %}
 <style>
-.player-card {
-  background: #111122; border: 1px solid #1e1e3a;
-  border-radius: 10px; margin-bottom: 8px; overflow: hidden;
-}
-.player-header {
-  display: flex; align-items: center; gap: 8px;
-  padding: 9px 14px; background: #16162a; border-bottom: 1px solid #1e1e3a;
-}
-.player-name { font-size: 14px; font-weight: 700; color: #fff; flex: 1; }
-.player-team-badge { font-size: 11px; font-weight: 700; color: #00d4ff; background: #00d4ff15; border: 1px solid #00d4ff33; border-radius: 6px; padding: 2px 7px; flex-shrink: 0; }
-.player-top-pick { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; flex-shrink: 0; }
-.player-top-pick.hot   { background:#00ff8822; color:#00ff88; }
-.player-top-pick.solid { background:#00d4ff22; color:#00d4ff; }
-.player-top-pick.lean  { background:#ff950022; color:#ff9500; }
-
-.stat-row { display: flex; align-items: center; padding: 7px 14px; border-bottom: 1px solid #1a1a2e; gap: 8px; transition: background 0.12s; }
-.stat-row:last-child { border-bottom: none; }
-.stat-row:hover { background: #1a1a2e; }
-.sr-name { font-size: 13px; color: #aaa; width: 104px; flex-shrink: 0; }
-.sr-name[data-stat="goals"]         { color: #ff6b6b; }
-.sr-name[data-stat="assists"]       { color: #00ff88; }
-.sr-name[data-stat="shots"]         { color: #00d4ff; }
-.sr-name[data-stat="points"]        { color: #bf5af2; }
-.sr-name[data-stat="pp_points"]     { color: #f59e0b; }
-.sr-name[data-stat="blocked_shots"] { color: #64748b; }
-.sr-name[data-stat="saves"]         { color: #ffa500; }
-.sr-line  { font-size: 14px; font-weight: 700; color: #fff; width: 40px; text-align: center; flex-shrink: 0; }
-.sr-pick  { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; width: 50px; text-align: center; flex-shrink: 0; }
-.sr-pick.over  { background:#00ff8822; color:#00ff88; border:1px solid #00ff8844; }
-.sr-pick.under { background:#ff444422; color:#ff6666; border:1px solid #ff444444; }
-.sr-pick.fair  { background:#88888822; color:#888;    border:1px solid #88888844; }
-.sr-conf { font-size: 13px; font-weight: 600; flex: 1; }
-.sr-conf.high { color: #00ff88; }
-.sr-conf.med  { color: #ff9500; }
-.sr-conf.low  { color: #888; }
-.sr-avg { font-size: 11px; color: #555; flex-shrink: 0; white-space: nowrap; }
-.sr-add { font-size: 11px; padding: 3px 9px; border-radius: 6px; border: 1px solid #333; background: transparent; color: #666; cursor: pointer; flex-shrink: 0; transition: all 0.12s; }
-.sr-add:hover { border-color: #00d4ff; color: #00d4ff; background: #00d4ff11; }
-
 .game-section { margin-bottom: 14px; }
-.game-hdr-compact { background: #0d0d1a; border: 1px solid #1e1e3a; border-radius: 12px; padding: 12px 16px; cursor: pointer; user-select: none; transition: background 0.12s; }
-.game-hdr-compact:hover { background: #111128; }
-.game-section.expanded .game-hdr-compact { border-radius: 12px 12px 0 0; border-bottom-color: #252540; }
-.game-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
-.game-matchup { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: 0.3px; }
-.game-time-badge { font-size: 12px; color: #666; margin-left: auto; white-space: nowrap; }
-.chevron { color: #555; font-size: 10px; flex-shrink: 0; }
-.game-meta-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.game-header {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px); padding: 14px 16px;
+  cursor: pointer; transition: background 0.15s, border-color 0.15s; margin-bottom: 4px;
+}
+.game-header:hover { border-color: var(--border-light); background: var(--bg-hover); }
+.game-section.open .game-header { border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0; }
+.gh-row1 { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.gh-matchup { font-size: 18px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.5px; }
+.gh-time { font-size: 13px; color: var(--text-muted); margin-left: auto; }
+.gh-toggle { font-size: 11px; color: var(--text-muted); transition: transform 0.2s; }
+.game-section.open .gh-toggle { transform: rotate(180deg); }
+.gh-probs { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.gh-team { display: flex; align-items: center; gap: 8px; }
+.gh-team.right { flex-direction: row-reverse; }
+.gh-tname { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
+.gh-prob { font-size: 20px; font-weight: 800; }
+.gh-prob.home { color: var(--over); }
+.gh-prob.away { color: var(--accent); }
+.gh-ml { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.gh-center { flex: 1; text-align: center; display: flex; flex-direction: column; gap: 3px; }
+.gh-spread, .gh-total { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.gh-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .game-pick-badge { display:inline-flex;align-items:center;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:700;white-space:nowrap; }
-.badge-strong   { background:#00ff8822; color:#00ff88; border:1px solid #00ff88; }
-.badge-favoured { background:#00d4ff22; color:#00d4ff; border:1px solid #00d4ff; }
-.badge-slight   { background:#ff950022; color:#ff9500; border:1px solid #ff9500; }
-.badge-pickem   { background:#88888822; color:#888;    border:1px solid #444; }
-.game-top-prop { font-size: 12px; color: #888; }
-.game-top-prop strong { color: #00ff88; }
-.game-players { display: none; background: #0d0d1a; border: 1px solid #1e1e3a; border-top: none; border-radius: 0 0 12px 12px; padding: 14px; }
-.game-section.expanded .game-players { display: block; }
-.team-label-compact { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #00d4ff; padding: 6px 0 8px; }
-
-.team-grid { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0 14px; border-bottom: 1px solid #1e1e3a; margin-bottom: 14px; }
-.team-btn { padding: 3px 11px; border-radius: 14px; border: 1px solid #2a2a4a; background: #111128; color: #888; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.12s; }
-.team-btn:hover  { border-color: #00d4ff; color: #00d4ff; }
-.team-btn.active { background: #00d4ff22; border-color: #00d4ff; color: #00d4ff; }
-@media (max-width: 640px) { .team-grid { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .team-grid::-webkit-scrollbar { display: none; } }
-
-.filter-bar { display: flex; align-items: center; gap: 6px; padding: 10px 0 14px; flex-wrap: wrap; }
-.filter-pills, .pick-pills { display: flex; gap: 4px; flex-wrap: wrap; }
-.fpill, .ppill { padding: 4px 12px; border-radius: 16px; border: 1px solid #2a2a4a; background: #111128; color: #888; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.12s; }
-.fpill.active, .ppill.active { background: #00d4ff22; border-color: #00d4ff; color: #00d4ff; }
-.ppill.over.active  { background:#00ff8822; border-color:#00ff88; color:#00ff88; }
-.ppill.under.active { background:#ff444422; border-color:#ff6666; color:#ff6666; }
-.ppill.fair.active  { background:#88888822; border-color:#888; color:#aaa; }
-.ppill .badge { background:rgba(255,255,255,.1); border-radius:8px; padding:0 5px; font-size:10px; margin-left:3px; }
-.sort-select { margin-left: auto; background: #111128; border: 1px solid #2a2a4a; color: #888; padding: 4px 8px; border-radius: 8px; font-size: 12px; }
-@media (max-width: 640px) { .filter-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .filter-bar::-webkit-scrollbar { display: none; } .filter-pills, .pick-pills { flex-wrap: nowrap; } }
+.badge-strong   { background:var(--over-dim); color:var(--over); border:1px solid var(--over); }
+.badge-favoured { background:var(--accent-dim); color:var(--accent); border:1px solid var(--accent); }
+.badge-slight   { background:var(--hot-dim, #ff950018); color:var(--hot, #ff9500); border:1px solid var(--hot, #ff9500); }
+.badge-pickem   { background:var(--fair-dim, #88889918); color:var(--fair, #888899); border:1px solid var(--border); }
+.gh-top-prop { font-size: 12px; color: var(--text-secondary); }
+.gh-top-prop strong { color: var(--over); }
+.game-props {
+  display: none; background: var(--bg-elevated);
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 var(--radius-lg, 12px) var(--radius-lg, 12px); overflow: hidden;
+}
+.game-section.open .game-props { display: block; }
+.tps-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg-card); font-size: 13px; font-weight: 700; color: var(--text-secondary);
+}
+.tps-filter-pills { display: flex; gap: 4px; }
+.tpf { padding: 3px 10px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); font-size: 11px; cursor: pointer; transition: all 0.12s; }
+.tpf.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.tpf.grade-a.active { background: var(--over-dim); border-color: var(--over); color: var(--over); }
+.props-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.props-table th { padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); white-space: nowrap; }
+.prop-row { border-bottom: 1px solid var(--border); transition: background 0.12s; }
+.prop-row:hover { background: var(--bg-hover); }
+.prop-row td { padding: 9px 12px; vertical-align: middle; }
+.grade-border-A     { border-left: 3px solid var(--over); }
+.grade-border-B     { border-left: 3px solid var(--accent); }
+.grade-border-Watch { border-left: 3px solid var(--hot, #ff9500); }
+.grade-border-Pass  { border-left: 3px solid var(--border); }
+.grade-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; }
+.grade-badge.grade-A     { background: var(--over-dim); color: var(--over); }
+.grade-badge.grade-B     { background: var(--accent-dim); color: var(--accent); }
+.grade-badge.grade-Watch { background: var(--hot-dim, #ff950018); color: var(--hot, #ff9500); }
+.grade-badge.grade-Pass  { background: var(--fair-dim, #88889918); color: var(--fair, #888899); opacity: 0.6; }
+.conf-bar-cell { position: relative; display: flex; align-items: center; gap: 6px; min-width: 80px; }
+.conf-bar-fill { position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--under), var(--hot, #ff9500), var(--over)); opacity: 0.3; }
+.conf-num { position: relative; font-weight: 700; font-size: 13px; }
+.edge-pos { color: var(--over); font-weight: 600; }
+.edge-neg { color: var(--under); font-weight: 600; }
+.pr-player { font-weight: 600; color: var(--text-primary); }
+.pr-team { display: block; font-size: 10px; color: var(--text-muted); font-weight: 400; }
+.pr-book { font-size: 11px; color: var(--accent); font-weight: 600; }
+.pr-stake { font-size: 12px; font-weight: 700; color: var(--over); }
+.pick-pill { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; display:inline-block; }
+.pick-pill.over  { background: var(--over-dim); color: var(--over); }
+.pick-pill.under { background: var(--under-dim); color: var(--under); }
+.pick-pill.fair  { background: var(--fair-dim, #88889918); color: var(--fair, #888899); }
+.add-btn { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border-light); background: var(--bg-elevated); color: var(--text-secondary); cursor: pointer; font-size: 16px; transition: all 0.12s; display: flex; align-items: center; justify-content: center; }
+.add-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+@media (max-width: 768px) { .props-table { font-size: 11px; } .props-table th, .prop-row td { padding: 6px 8px; } .hide-mobile { display: none; } }
 </style>
 {% endblock %}
 
@@ -95,103 +96,80 @@
 
 {% if total == 0 %}
 <div class="card" style="padding:56px;text-align:center;">
-  <div style="font-size:48px;margin-bottom:12px;">🏒</div>
-  <div style="font-size:18px;font-weight:700;color:var(--txt1);">No NHL games today</div>
-  <div style="color:var(--txt2);margin-top:6px;font-size:13px;">Check back on a game day for live picks and player props.</div>
+  <div style="font-size:48px;margin-bottom:12px;">😴</div>
+  <div style="font-size:18px;font-weight:700;color:var(--text-primary);">No NHL games today</div>
+  <div style="color:var(--text-secondary);margin-top:6px;font-size:13px;">Check back on a game day for live picks.</div>
 </div>
 {% else %}
 
-<div class="team-grid" id="nhl-team-grid">
-  <button class="team-btn active" data-team="all">All</button>
-  {% for game in games %}
-  <button class="team-btn" data-team="{{ game.home_abbr }}">{{ game.home_abbr }}</button>
-  <button class="team-btn" data-team="{{ game.away_abbr }}">{{ game.away_abbr }}</button>
-  {% endfor %}
-</div>
-
-<div class="filter-bar">
-  <div class="filter-pills" id="nhl-stat-pills">
-    {% for label, val in [('All','all'),('Goals','goals'),('Assists','assists'),('Shots','shots'),('Points','points'),('PP Pts','pp_points'),('Blocked','blocked_shots'),('Saves','saves')] %}
-    <button class="fpill {% if loop.first %}active{% endif %}" data-filter="{{ val }}">{{ label }}</button>
-    {% endfor %}
-  </div>
-  <div class="pick-pills" id="nhl-pick-pills" style="margin-left:8px;">
-    <button class="ppill active" data-pick="all">All <span class="badge" id="nhl-cnt-all"></span></button>
-    <button class="ppill over"   data-pick="OVER">▲ OVER <span class="badge" id="nhl-cnt-over"></span></button>
-    <button class="ppill under"  data-pick="UNDER">▼ UNDER <span class="badge" id="nhl-cnt-under"></span></button>
-    <button class="ppill fair"   data-pick="FAIR">↔ FAIR <span class="badge" id="nhl-cnt-fair"></span></button>
-  </div>
-  <select class="sort-select" id="nhl-sort">
-    <option value="confidence">★ Best picks first</option>
-    <option value="name">A–Z player</option>
-  </select>
-</div>
-
 {% for game in games %}
-{% set gid = loop.index0|string %}
-<div class="game-section {% if loop.first %}expanded{% endif %} game-card"
-     data-teams="{{ game.home_abbr }},{{ game.away_abbr }}">
-
-  <div class="game-hdr-compact" onclick="toggleGame(this)">
-    <div class="game-title-row">
-      <span class="game-matchup">{{ game.away_abbr }} @ {{ game.home_abbr }}</span>
-      {% if game.kickoff and game.kickoff|length > 10 %}
-      <span class="game-time-badge local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] }} UTC</span>
+<div class="game-section {% if loop.first %}open{% endif %}">
+  <div class="game-header" onclick="toggleGame(this)">
+    <div class="gh-row1">
+      <span class="gh-matchup">{{ game.away_abbr }} @ {{ game.home_abbr }}</span>
+      {% if game.kickoff %}<span class="gh-time local-game-time" data-utc="{{ game.kickoff }}">{{ game.kickoff[11:16] if game.kickoff|length > 10 else '' }} UTC</span>{% endif %}
+      <span class="gh-toggle">▼</span>
+    </div>
+    <div class="gh-probs">
+      <div class="gh-team">
+        <span class="gh-tname">{{ game.home_team.split()[-1] }}</span>
+        <span class="gh-prob home">{{ game.home_prob }}%</span>
+        {% if game.home_ml %}<span class="gh-ml">{{ game.home_ml|format_american }}</span>{% endif %}
+      </div>
+      <div class="gh-center">
+        {% if game.home_spread is not none %}<div class="gh-spread">{{ game.home_team.split()[-1] }} {{ game.home_spread }}</div>{% endif %}
+        {% if game.total_line %}<div class="gh-total">O/U {{ game.total_line }}</div>{% endif %}
+      </div>
+      <div class="gh-team right">
+        <span class="gh-prob away">{{ game.away_prob }}%</span>
+        {% if game.away_ml %}<span class="gh-ml">{{ game.away_ml|format_american }}</span>{% endif %}
+        <span class="gh-tname">{{ game.away_team.split()[-1] }}</span>
+      </div>
+    </div>
+    <div class="gh-meta">
+      <span class="game-pick-badge {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>
+      {% if game.top_pick %}
+      <span class="gh-top-prop">⭐ {{ game.top_pick.player_name.split()[-1] if game.top_pick.player_name else '' }} {{ game.top_pick.label }} {{ game.top_pick.line }} <span class="pick-pill {{ game.top_pick.pick|lower }}">{{ game.top_pick.pick }}</span> <strong>{{ game.top_pick.confidence }}%</strong> <span class="grade-badge grade-{{ game.top_pick.grade }}">{{ game.top_pick.grade }}</span></span>
       {% endif %}
-      <span class="chevron">▼</span>
-    </div>
-    <div class="game-meta-row">
-      {% if game.pick_badge_label %}<span class="game-pick-badge {{ game.pick_badge_class }}">{{ game.pick_badge_label }}</span>{% endif %}
-      <span style="font-size:11px;color:#555;">{{ game.home_abbr }} {{ game.home_prob }}% · {{ game.away_abbr }} {{ game.away_prob }}%</span>
-      {% if game.book_total %}<span style="font-size:11px;color:#555;">O/U {{ game.book_total }}</span>{% endif %}
-      {% if game.top_pick %}<span class="game-top-prop">⭐ {{ game.top_pick.player }} {{ game.top_pick.stat }} {{ game.top_pick.line }} {{ game.top_pick.pick }} <strong>{{ game.top_pick.confidence }}%</strong></span>{% endif %}
     </div>
   </div>
-
-  <div class="game-players">
-  {% for team_label, roster, abbr in [(game.home_team, game.home_roster, game.home_abbr),(game.away_team, game.away_roster, game.away_abbr)] %}
-  {% if roster %}
-  <div class="team-label-compact">{{ team_label }} · {{ roster|length }} player{{ 's' if roster|length != 1 else '' }}</div>
-  {% for p in roster %}
-  {% set best = namespace(val=0) %}
-  {% for pr in p.props %}{% set c = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}{% if c > best.val %}{% set best.val = c %}{% endif %}{% endfor %}
-  <div class="player-card" data-group="nhl"
-       data-stats="{% for pr in p.props %}{{ pr.stat|lower }} {% endfor %}"
-       data-conf="{{ best.val }}" data-team="{{ abbr }}">
-    <div class="player-header">
-      <span class="player-name">{{ p.name }}{% if p.get('pos') %}<span style="font-size:10px;color:#555;margin-left:5px;">{{ p.pos }}</span>{% endif %}</span>
-      <span class="player-team-badge">{{ abbr }}</span>
-      {% if best.val >= 75 %}<span class="player-top-pick hot">🔥 HOT</span>
-      {% elif best.val >= 65 %}<span class="player-top-pick solid">✅ SOLID</span>
-      {% elif best.val >= 58 %}<span class="player-top-pick lean">📊 LEAN</span>{% endif %}
+  <div class="game-props">
+    {% if game.top_props %}
+    <div class="top-props-section">
+      <div class="tps-header">
+        <span>Top {{ game.top_props|length }} Props</span>
+        <div class="tps-filter-pills">
+          <button class="tpf active" data-grade="all">All</button>
+          <button class="tpf grade-a" data-grade="A">A Grade</button>
+          <button class="tpf grade-b" data-grade="B">B Grade</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+      <table class="props-table">
+        <thead><tr><th>Player</th><th>Stat</th><th>Line</th><th>Pick</th><th>Conf%</th><th>Grade</th><th>Edge</th><th class="hide-mobile">Book</th><th class="hide-mobile">Playable</th><th>Stake</th><th></th></tr></thead>
+        <tbody>
+          {% for prop in game.top_props %}
+          <tr class="prop-row grade-border-{{ prop.grade }}" data-grade="{{ prop.grade }}">
+            <td class="pr-player">{{ prop.player_name }}<span class="pr-team">{{ prop.team }}</span></td>
+            <td>{{ prop.label }}</td><td style="font-weight:700;">{{ prop.line }}</td>
+            <td><span class="pick-pill {{ prop.pick|lower }}">{{ prop.pick }}</span></td>
+            <td><span class="conf-bar-cell"><span class="conf-bar-fill" style="width:{{ prop.confidence }}%"></span><span class="conf-num">{{ prop.confidence }}%</span></span></td>
+            <td><span class="grade-badge grade-{{ prop.grade }}">{{ prop.grade }}</span></td>
+            <td class="{{ 'edge-pos' if prop.edge > 0 else 'edge-neg' }}">{% if prop.edge > 0 %}+{% endif %}{{ prop.edge }}%</td>
+            <td class="pr-book hide-mobile">{{ prop.best_book|upper if prop.best_book else '-' }}</td>
+            <td class="pr-playable hide-mobile">{{ prop.playable_to }}</td>
+            <td class="pr-stake">{{ prop.stake_rec }}</td>
+            <td><button class="add-btn parlay-add-btn" data-player="{{ prop.player_name }}" data-team="{{ prop.team }}" data-sport="NHL" data-game="{{ game.away_team }} @ {{ game.home_team }}" data-stat="{{ prop.stat }}" data-line="{{ prop.line }}" data-pick="{{ prop.pick }}" data-confidence="{{ prop.confidence }}" data-stars="{{ prop.stars }}" onclick="parlayState.toggleLeg(this)">+</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
     </div>
-    {% for pr in p.props %}
-    {% set cp = pr.over_prob if pr.pick != 'UNDER' else pr.under_prob %}
-    <div class="stat-row" data-stat="{{ pr.stat|lower }}" data-pick="{{ pr.pick }}">
-      <span class="sr-name" data-stat="{{ pr.stat|lower }}">{{ pr.stat }}</span>
-      <span class="sr-line">{{ pr.line }}</span>
-      <span class="sr-pick {{ pr.pick|lower }}">{{ pr.pick }}</span>
-      <span class="sr-conf {% if cp >= 70 %}high{% elif cp >= 58 %}med{% else %}low{% endif %}">{{ cp }}%</span>
-      {% if pr.avg is not none %}<span class="sr-avg">avg {{ pr.avg }}</span>{% endif %}
-      <button class="sr-add parlay-add-btn"
-              data-player="{{ p.name }}" data-team="{{ abbr }}" data-sport="NHL"
-              data-game="{{ game.away_team }} @ {{ game.home_team }}"
-              data-stat="{{ pr.stat }}" data-line="{{ pr.line }}"
-              data-pick="{{ pr.pick }}" data-confidence="{{ cp }}"
-              data-stars="{{ pr.stars }}" data-trend="{{ pr.trend or '' }}"
-              data-last5="{{ pr.last5_avg if pr.last5_avg is not none else '' }}"
-              data-avg="{{ pr.avg or '' }}"
-              onclick="parlayState.toggleLeg(this)">+</button>
-    </div>
-    {% endfor %}
+    {% else %}
+    <div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">No player props available yet.</div>
+    {% endif %}
   </div>
-  {% endfor %}
-  {% else %}
-  <div style="padding:10px 0;font-size:12px;color:#555;">No props for {{ abbr }} tonight.</div>
-  {% endif %}
-  {% endfor %}
-  </div>
-
 </div>
 {% endfor %}
 {% endif %}
@@ -199,47 +177,29 @@
 
 {% block scripts %}
 <script>
-(function() {
-  let activeStat = 'all', activePick = 'all';
-  function applyFilters() {
-    let counts = {all:0,OVER:0,UNDER:0,FAIR:0};
-    document.querySelectorAll('.player-card[data-group="nhl"]').forEach(card => {
-      let vis = 0;
-      card.querySelectorAll('.stat-row').forEach(row => {
-        const show = (activeStat==='all'||row.dataset.stat===activeStat) && (activePick==='all'||row.dataset.pick===activePick);
-        row.style.display = show ? '' : 'none';
-        if (show) { vis++; counts.all++; const p=row.dataset.pick; if(p) counts[p]=(counts[p]||0)+1; }
-      });
-      card.style.display = vis > 0 ? '' : 'none';
-    });
-    ['all','OVER','UNDER','FAIR'].forEach(k => { const el=document.getElementById('nhl-cnt-'+k.toLowerCase()); if(el) el.textContent=counts[k]||0; });
-  }
-  document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('#nhl-stat-pills .fpill').forEach(btn => {
-      btn.addEventListener('click', () => { document.querySelectorAll('#nhl-stat-pills .fpill').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); activeStat=btn.dataset.filter; applyFilters(); });
-    });
-    document.querySelectorAll('#nhl-pick-pills .ppill').forEach(btn => {
-      btn.addEventListener('click', () => { document.querySelectorAll('#nhl-pick-pills .ppill').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); activePick=btn.dataset.pick; applyFilters(); });
-    });
-    document.querySelectorAll('#nhl-team-grid .team-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('#nhl-team-grid .team-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
-        const team=btn.dataset.team;
-        document.querySelectorAll('.game-card').forEach(card => { card.style.display=(team==='all'||((card.dataset.teams||'').split(',').includes(team)))?'':'none'; });
+function toggleGame(header) {
+  const section = header.closest('.game-section');
+  const isOpen = section.classList.contains('open');
+  document.querySelectorAll('.game-section.open').forEach(s => s.classList.remove('open'));
+  if (!isOpen) section.classList.add('open');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const first = document.querySelector('.game-section');
+  if (first && !first.classList.contains('open')) first.classList.add('open');
+  document.querySelectorAll('.tpf').forEach(pill => {
+    pill.addEventListener('click', function() {
+      const table = this.closest('.top-props-section').querySelector('.props-table');
+      const grade = this.dataset.grade;
+      this.closest('.tps-filter-pills').querySelectorAll('.tpf').forEach(p => p.classList.remove('active'));
+      this.classList.add('active');
+      table.querySelectorAll('.prop-row').forEach(row => {
+        row.style.display = (grade === 'all' || row.dataset.grade === grade) ? '' : 'none';
       });
     });
-    document.getElementById('nhl-sort').addEventListener('change', function() {
-      document.querySelectorAll('.game-players').forEach(grid => {
-        const cards=Array.from(grid.querySelectorAll('.player-card'));
-        if(this.value==='confidence') cards.sort((a,b)=>parseFloat(b.dataset.conf||0)-parseFloat(a.dataset.conf||0));
-        else cards.sort((a,b)=>(a.querySelector('.player-name')?.textContent.trim()||'').localeCompare(b.querySelector('.player-name')?.textContent.trim()||''));
-        cards.forEach(c=>grid.appendChild(c));
-      });
-    });
-    document.querySelectorAll('.local-game-time').forEach(el => { try { el.textContent=new Date(el.dataset.utc).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); } catch(e){} });
-    applyFilters();
   });
-  window.toggleGame = function(hdr) { hdr.closest('.game-section').classList.toggle('expanded'); };
-})();
+  document.querySelectorAll('.local-game-time').forEach(el => {
+    try { el.textContent = new Date(el.dataset.utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); } catch(e) {}
+  });
+});
 </script>
 {% endblock %}

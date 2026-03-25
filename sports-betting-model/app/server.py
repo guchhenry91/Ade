@@ -62,6 +62,21 @@ BASE_DIR   = Path(__file__).parent
 TEMPLATES  = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 TEMPLATES.env.cache = None  # disable LRU cache (Python 3.14 compatibility)
 
+# Part 8 — Jinja format_american filter
+def _format_american_filter(price):
+    """Jinja2 filter: format American odds price as display string."""
+    if price is None:
+        return "\u2013"
+    try:
+        price = float(price)
+    except (TypeError, ValueError):
+        return str(price)
+    if price > 0:
+        return f"+{round(price)}"
+    return str(round(price))
+
+TEMPLATES.env.filters["format_american"] = _format_american_filter
+
 app = FastAPI(title="Sports Betting Model", version="1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
@@ -1005,4 +1020,134 @@ async def sanity_check():
         "failures": failures,
         "warnings": warnings,
         "passed":   passed,
+    }
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  PART 7 — MY CARD PAGE
+# ═════════════════════════════════════════════════════════════════════════════
+
+@app.get("/mycard", response_class=HTMLResponse)
+async def mycard_page(request: Request):
+    from data.odds_api import build_sport_props, STAT_LABELS
+    try:
+        all_props_by_sport: dict = {}
+        all_props_flat: list = []
+        sports_to_load = [
+            ("nba", "\U0001f3c0", "NBA"),
+            ("mlb", "\u26be", "MLB"),
+            ("nhl", "\U0001f3d2", "NHL"),
+        ]
+        today_str = date.today().strftime("%Y%m%d")
+        for sport_key, emoji, label in sports_to_load:
+            games = _cached(
+                f"{sport_key}_{today_str}",
+                lambda sk=sport_key: build_sport_props(sk),
+                ttl=900,
+            ) or []
+            sport_props: list = []
+            for game in games:
+                for player in (game.get("home_players", []) + game.get("away_players", [])):
+                    for prop in player.get("props", []):
+                        p = {
+                            **prop,
+                            "sport_key":   sport_key,
+                            "sport_emoji": emoji,
+                            "sport_label": label,
+                            "game": f"{game.get('away_abbr', '')} @ {game.get('home_abbr', '')}",
+                        }
+                        sport_props.append(p)
+                        all_props_flat.append(p)
+
+            sport_props.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+            window = [p for p in sport_props if 60 <= p.get("confidence", 0) <= 80][:15]
+            all_props_by_sport[sport_key] = {
+                "emoji":   emoji,
+                "label":   label,
+                "all":     sport_props,
+                "window":  window,
+                "a_count": sum(1 for p in sport_props if p.get("grade") == "A"),
+                "b_count": sum(1 for p in sport_props if p.get("grade") == "B"),
+            }
+
+        all_props_flat.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+        a_props     = [p for p in all_props_flat if p.get("grade") == "A"]
+        b_props     = [p for p in all_props_flat if p.get("grade") == "B"]
+        watch_props = [p for p in all_props_flat if p.get("grade") == "Watch"]
+        pass_props  = [p for p in all_props_flat if p.get("grade") == "Pass"]
+
+        best3 = a_props[:3] or b_props[:3]
+        low_risk = sorted(a_props + b_props, key=lambda x: x.get("confidence", 0), reverse=True)[:1]
+        best_value = sorted(a_props + b_props, key=lambda x: x.get("edge", 0), reverse=True)[:1]
+        parlay_legs = sorted(
+            [p for p in a_props + b_props if p.get("edge", 0) >= 4],
+            key=lambda x: x.get("score", 0), reverse=True,
+        )[:5]
+
+        return TEMPLATES.TemplateResponse(request, "mycard.html", {
+            "sports":         all_props_by_sport,
+            "best3":          best3,
+            "low_risk":       low_risk[0] if low_risk else None,
+            "best_value":     best_value[0] if best_value else None,
+            "parlay_legs":    parlay_legs,
+            "watchlist":      watch_props[:8],
+            "passlist":       sorted(pass_props, key=lambda x: x.get("confidence", 0), reverse=True)[:10],
+            "a_count":        len(a_props),
+            "b_count":        len(b_props),
+            "watch_count":    len(watch_props),
+            "pass_count":     len(pass_props),
+            "total_eligible": len(a_props) + len(b_props),
+            "generated_at":   _now_iso(),
+        })
+    except Exception as e:
+        print(f"[MYCARD] Error: {e}")
+        traceback.print_exc()
+        return TEMPLATES.TemplateResponse(request, "mycard.html", {
+            "sports": {}, "best3": [], "low_risk": None, "best_value": None,
+            "parlay_legs": [], "watchlist": [], "passlist": [],
+            "a_count": 0, "b_count": 0, "watch_count": 0, "pass_count": 0,
+            "total_eligible": 0, "generated_at": _now_iso(), "error": str(e),
+        })
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  PART 9 — CALIBRATION API ENDPOINTS
+# ═════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/calibration")
+async def get_calibration_data():
+    """View current calibration state."""
+    from data.odds_api import load_calibration
+    cal = load_calibration()
+    summary: dict = {}
+    for sport, stats in cal.items():
+        summary[sport] = {}
+        for stat, data in stats.items():
+            total = data.get("total_bets", 0)
+            hits  = data.get("total_hits", 0)
+            summary[sport][stat] = {
+                "total_bets": total,
+                "hit_rate": round(hits / total * 100, 1) if total > 0 else None,
+                "calibration_factor": data.get("calibration_factor", 1.0),
+                "min_bets_needed": max(0, 20 - total),
+            }
+    return summary
+
+
+@app.post("/api/bet/result")
+async def update_bet_result(request: Request):
+    """Record a bet result for model calibration."""
+    from data.odds_api import record_bet_result, get_calibration_factor
+    data = await request.json()
+    sport      = data.get("sport")
+    stat       = data.get("stat")
+    confidence = data.get("confidence")
+    result     = data.get("result")
+    if not all([sport, stat, confidence, result]):
+        return JSONResponse({"error": "Missing fields"}, status_code=400)
+    hit = result == "win"
+    record_bet_result(sport, stat, float(confidence), hit)
+    return {
+        "status": "recorded",
+        "new_factor": get_calibration_factor(sport, stat),
     }
